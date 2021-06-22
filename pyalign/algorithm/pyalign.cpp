@@ -160,18 +160,22 @@ inline alignments::GapTensorFactory<float> to_gap_tensor_factory(const py::objec
 	}
 }
 
-inline std::optional<float> to_affine_gap_cost(const py::object &p_gap) {
-	if (p_gap.is_none()) {
-		return 0.0f;
-	} else {
-        const py::object cost = p_gap.attr("to_affine_cost")();
-        if (cost.is_none()) {
-            return std::optional<float>();
-        } else {
-           return cost.cast<float>();
-        }
- 	}
-}
+struct GapCostSpecialCases {
+	inline GapCostSpecialCases(const py::object &p_gap) {
+		if (p_gap.is_none()) {
+			affine = 0.0f;
+		} else {
+	        const py::dict cost = p_gap.attr("to_special_case")().cast<py::dict>();
+	        if (!cost.contains("affine")) {
+	            return;
+	        } else {
+	            affine = cost["affine"].cast<float>();
+	        }
+	    }
+	}
+
+	std::optional<float> affine;
+};
 
 template<typename Locality>
 SolverRef create_solver_instance(
@@ -181,16 +185,16 @@ SolverRef create_solver_instance(
 	const size_t p_max_len_s,
 	const size_t p_max_len_t) {
 
-	const std::optional<float> affine_gap_s = to_affine_gap_cost(p_gap_s);
-	const std::optional<float> affine_gap_t = to_affine_gap_cost(p_gap_t);
+	const GapCostSpecialCases x_gap_s(p_gap_s);
+	const GapCostSpecialCases x_gap_t(p_gap_t);
 
-	if (affine_gap_s.has_value() && affine_gap_t.has_value()) {
+	if (x_gap_s.affine.has_value() && x_gap_t.affine.has_value()) {
 
 		return std::make_shared<SolverImpl<alignments::AffineGapCostSolver<
 			Locality, Alignment::Index>>>(
 				p_locality,
-				affine_gap_s.value(),
-				affine_gap_t.value(),
+				x_gap_s.affine.value(),
+				x_gap_t.affine.value(),
 				p_max_len_s,
 				p_max_len_t);
 

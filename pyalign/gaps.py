@@ -2,8 +2,8 @@ import numpy as np
 
 
 class GapCost:
-	def to_affine_cost(self):
-		return None
+	def to_special_case(self):
+		return {}
 
 	def costs(self, n):
 		raise NotImplementedError
@@ -49,11 +49,13 @@ class ConstantGapCost(GapCost):
 	def __init__(self, u):
 		self._cost = u
 
-	def to_affine_cost(self):
+	def to_special_case(self):
 		if self._cost == 0:
-			return 0
+			return {
+				'affine': 0
+			}
 		else:
-			return None
+			return {}
 
 	def costs(self, n):
 		c = np.empty((n,), dtype=np.float32)
@@ -71,8 +73,10 @@ class AffineGapCost(GapCost):
 	def __init__(self, u):
 		self._u = u
 
-	def to_affine_cost(self):
-		return self._u
+	def to_special_case(self):
+		return {
+			'affine': self._u
+		}
 
 	def costs(self, n):
 		return np.linspace(0., (n - 1) * self._u, n, dtype=np.float32)
@@ -93,6 +97,11 @@ class GotohGapCost(GapCost):
 		self._v = v
 		self._k1 = k1
 		self._wk1 = wk1
+
+	def to_special_case(self):
+		return {
+			'gotoh': (self._u, self._v, self._k1, self._wk1)
+		}
 
 	def costs(self, n):
 		w = np.linspace(0., (n - 1) * self._u, n, dtype=np.float32) + self._v
