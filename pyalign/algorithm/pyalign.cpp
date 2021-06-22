@@ -1,7 +1,10 @@
 #define FORCE_IMPORT_ARRAY
+
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/functional.h>
+
+#include <xtensor-python/pytensor.hpp>
 
 #include "solver.h"
 
@@ -13,16 +16,16 @@ public:
 	typedef int16_t Index;
 
 private:
-	xt::pyarray<Index> m_s_to_t;
-	xt::pyarray<Index> m_t_to_s;
+	xt::pytensor<Index, 1> m_s_to_t;
+	xt::pytensor<Index, 1> m_t_to_s;
 	float m_score;
 
 public:
 	inline void resize(const size_t len_s, const size_t len_t) {
-		m_s_to_t.resize({len_s});
+		m_s_to_t.resize({static_cast<ssize_t>(len_s)});
 		m_s_to_t.fill(-1);
 
-		m_t_to_s.resize({len_t});
+		m_t_to_s.resize({static_cast<ssize_t>(len_t)});
 		m_t_to_s.fill(-1);
 	}
 
@@ -39,25 +42,61 @@ public:
 		return m_score;
 	}
 
-	inline const xt::pyarray<Index> &s_to_t() const {
+	inline const xt::pytensor<Index, 1> &s_to_t() const {
 		return m_s_to_t;
 	}
 
-	inline const xt::pyarray<Index> &t_to_s() const {
+	inline const xt::pytensor<Index, 1> &t_to_s() const {
 		return m_t_to_s;
 	}
 };
 
 typedef std::shared_ptr<Alignment> AlignmentRef;
 
+class Solution {
+public:
+	typedef float Value;
+	typedef Alignment::Index Index;
+
+private:
+	const alignments::SolutionRef<Index, Value> m_solution;
+
+public:
+	Solution(const alignments::SolutionRef<Index, Value> p_solution) : m_solution(p_solution) {
+	}
+
+	xt::pytensor<Value, 2> values() const {
+		return m_solution->values();
+	}
+
+	xt::pytensor<Index, 3> traceback() const {
+		return m_solution->traceback();
+	}
+
+	xt::pytensor<Index, 2> path() const {
+		return m_solution->path();
+	}
+
+	auto score() const {
+		return m_solution->score();
+	}
+};
+
+typedef std::shared_ptr<Solution> SolutionRef;
 
 class Solver {
 public:
 	virtual inline ~Solver() {
 	}
 
-	virtual AlignmentRef solve(
-		const xt::pyarray<float> &similarity) const = 0;
+	virtual void solve(
+		const xt::pytensor<float, 2> &similarity) const = 0;
+
+	virtual float score() const = 0;
+
+	virtual AlignmentRef alignment() const = 0;
+
+	virtual SolutionRef solution() const = 0;
 };
 
 typedef std::shared_ptr<Solver> SolverRef;
@@ -67,40 +106,57 @@ template<typename S>
 class SolverImpl : public Solver {
 private:
 	S m_solver;
+	mutable size_t m_len_s; // of last problem solved
+	mutable size_t m_len_t; // of last problem solved
 
 public:
 	template<typename... Args>
-	inline SolverImpl(const Args&... args) : m_solver(args...) {
+	inline SolverImpl(const Args&... args) :
+		m_solver(args...), m_len_s(0), m_len_t(0) {
 	}
 
-	virtual AlignmentRef solve(
-		const xt::pyarray<float> &similarity) const override {
+	virtual void solve(
+		const xt::pytensor<float, 2> &similarity) const override {
 
-		const auto alignment = std::make_shared<Alignment>();
+		m_len_s = similarity.shape(0);
+		m_len_t = similarity.shape(1);
 
-		const float score = m_solver.solve(
-			*alignment.get(),
+		m_solver.solve(
 			similarity,
-			similarity.shape(0),
-			similarity.shape(1));
+			m_len_s,
+			m_len_t);
+	}
 
+	virtual float score() const override {
+		return m_solver.score(m_len_s, m_len_t);
+	}
+
+	virtual AlignmentRef alignment() const override {
+		const auto alignment = std::make_shared<Alignment>();
+		const float score = m_solver.alignment(
+			m_len_s, m_len_t, *alignment.get());
 		alignment->set_score(score);
 		return alignment;
 	}
+
+	virtual SolutionRef solution() const override {
+		return std::make_shared<Solution>(
+			m_solver.solution(m_len_s, m_len_t));
+	}
 };
 
-inline xt::pyarray<float> default_gap_tensor(const size_t p_len) {
-	xt::pyarray<float> w;
-	w.resize({p_len});
+inline xt::pytensor<float, 1> default_gap_tensor(const size_t p_len) {
+	xt::pytensor<float, 1> w;
+	w.resize({static_cast<ssize_t>(p_len)});
 	w.fill(0);
 	return w;
 }
 
-inline alignments::GapTensorFactory to_gap_tensor_factory(const py::object &p_gap) {
+inline alignments::GapTensorFactory<float> to_gap_tensor_factory(const py::object &p_gap) {
 	if (p_gap.is_none()) {
 		return default_gap_tensor;
 	} else {
-		return p_gap.attr("costs").cast<alignments::GapTensorFactory>();
+		return p_gap.attr("costs").cast<alignments::GapTensorFactory<float>>();
 	}
 }
 
@@ -155,9 +211,18 @@ PYBIND11_MODULE(algorithm, m) {
 
 	py::class_<Solver, SolverRef> solver(m, "Solver");
 	solver.def("solve", &Solver::solve);
+	solver.def_property_readonly("score", &Solver::score);
+	solver.def_property_readonly("alignment", &Solver::alignment);
+	solver.def_property_readonly("solution", &Solver::solution);
 
 	py::class_<Alignment, AlignmentRef> alignment(m, "Alignment");
 	alignment.def_property_readonly("score", &Alignment::score);
 	alignment.def_property_readonly("s_to_t", &Alignment::s_to_t);
 	alignment.def_property_readonly("t_to_s", &Alignment::t_to_s);
+
+	py::class_<Solution, SolutionRef> solution(m, "Solution");
+	solution.def_property_readonly("values", &Solution::values);
+	solution.def_property_readonly("traceback", &Solution::traceback);
+	solution.def_property_readonly("path", &Solution::path);
+	solution.def_property_readonly("score", &Solution::score);
 }

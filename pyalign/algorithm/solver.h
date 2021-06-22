@@ -9,8 +9,6 @@
 #include <xtensor/xview.hpp>
 #include <xtensor/xfixed.hpp>
 #include <xtensor/xsort.hpp>
-#include <xtensor-python/pyarray.hpp>
-#include <xtensor-python/pytensor.hpp>
 
 namespace alignments {
 
@@ -72,7 +70,8 @@ public:
 	}
 };
 
-typedef std::function<xt::pyarray<float>(size_t)> GapTensorFactory;
+template<typename Value>
+using GapTensorFactory = std::function<xt::xtensor<Value, 1>(size_t)>;
 
 template<typename Index, typename Value>
 class Matrix;
@@ -234,6 +233,88 @@ inline size_t argmax(const V &v) {
 	return best_i;
 }
 
+template<typename Index>
+class PathBuilder {
+	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Coord;
+
+	std::vector<Coord> m_path;
+
+public:
+	inline void begin(const Index len_s, const Index len_t) {
+		m_path.reserve(len_s + len_t);
+	}
+
+	inline void step(
+		const Index last_u,
+		const Index last_v,
+		const Index u,
+		const Index v) {
+
+		if (m_path.empty()) {
+			m_path.push_back(Coord{last_u, last_v});
+			m_path.push_back(Coord{u, v});
+		} else {
+			if (m_path.back()(0) != last_u) {
+				throw std::runtime_error("internal error in traceback generation");
+			}
+			if (m_path.back()(1) != last_v) {
+				throw std::runtime_error("internal error in traceback generation");
+			}
+			m_path.push_back(Coord{u, v});
+		}
+	}
+
+	inline xt::xtensor<Index, 2> path() const {
+		xt::xtensor<Index, 2> path;
+		path.resize({m_path.size(), 2});
+		for (size_t i = 0; i < m_path.size(); i++) {
+			xt::view(path, i, xt::all()) = m_path[i];
+		}
+		return path;
+
+	}
+};
+
+
+class NoOpBuilder {
+public:
+	inline void begin(
+		const ssize_t len_s,
+		const ssize_t len_t) const {
+	}
+
+	inline void step(
+		const ssize_t last_u,
+		const ssize_t last_v,
+		const ssize_t u,
+		const ssize_t v) const {
+	}
+};
+
+template<typename Alignment, typename Index>
+class AlignmentBuilder {
+	Alignment &m_alignment;
+
+public:
+	inline AlignmentBuilder(Alignment &p_alignment) : m_alignment(p_alignment) {
+	}
+
+	inline void begin(const Index len_s, const Index len_t) const {
+		m_alignment.resize(len_s, len_t);
+	}
+
+	inline void step(
+		const Index last_u,
+		const Index last_v,
+		const Index u,
+		const Index v) const {
+
+		if (u != last_u && v != last_v) {
+			m_alignment.add_edge(last_u, last_v);
+		}
+	}
+};
+
 template<typename Value=float>
 class Local {
 private:
@@ -259,10 +340,10 @@ public:
 		fold.update(m_zero, -1, -1);
 	}
 
-	template<typename Alignment, typename Index>
+	template<typename Path, typename Index>
 	inline Value traceback(
-		Alignment &alignment,
-		Matrix<Index, Value> &matrix) const {
+		Matrix<Index, Value> &matrix,
+		Path &path) const {
 
 		const auto len_s = matrix.len_s();
 		const auto len_t = matrix.len_t();
@@ -292,7 +373,7 @@ public:
 			return 0;
 		}
 
-		alignment.resize(len_s, len_t);
+		path.begin(len_s, len_t);
 
 		Index u = best_u;
 		Index v = best_v;
@@ -305,9 +386,7 @@ public:
 			u = t(0);
 			v = t(1);
 
-			if (u != last_u && v != last_v) {
-				alignment.add_edge(last_u, last_v);
-			}
+			path.step(last_u, last_v, u, v);
 		}
 
 		if (u >= 0 && v >= 0) {
@@ -339,10 +418,10 @@ public:
 	inline void update_best(Fold &fold) const {
 	}
 
-	template<typename Alignment, typename Index>
-	inline float traceback(
-		Alignment &alignment,
-		Matrix<Index, Value> &matrix) const {
+	template<typename Path, typename Index>
+	inline Value traceback(
+		Matrix<Index, Value> &matrix,
+		Path &path) const {
 
 		const auto len_s = matrix.len_s();
 		const auto len_t = matrix.len_t();
@@ -350,7 +429,7 @@ public:
 		const auto values = matrix.values();
 		const auto traceback = matrix.traceback();
 
-		alignment.resize(len_s, len_t);
+		path.begin(len_s, len_t);
 
 		Index u = len_s - 1;
 		Index v = len_t - 1;
@@ -364,9 +443,7 @@ public:
 			u = t(0);
 			v = t(1);
 
-			if (u != last_u && v != last_v) {
-				alignment.add_edge(last_u, last_v);
-			}
+			path.step(last_u, last_v, u, v);
 		}
 
 		return best_score;
@@ -392,10 +469,10 @@ public:
 	inline void update_best(Fold &fold) const {
 	}
 
-	template<typename Alignment, typename Index>
-	inline float traceback(
-		Alignment &alignment,
-		Matrix<Index, Value> &matrix) const {
+	template<typename Path, typename Index>
+	inline Value traceback(
+		Matrix<Index, Value> &matrix,
+		Path &path) const {
 
 		const auto len_s = matrix.len_s();
 		const auto len_t = matrix.len_t();
@@ -403,7 +480,7 @@ public:
 		const auto values = matrix.values();
 		const auto traceback = matrix.traceback();
 
-		alignment.resize(len_s, len_t);
+		path.begin(len_s, len_t);
 
 		const Index last_row = len_s - 1;
 		const Index last_col = len_t - 1;
@@ -433,9 +510,7 @@ public:
 			u = t(0);
 			v = t(1);
 
-			if (u != last_u && v != last_v) {
-				alignment.add_edge(last_u, last_v);
-			}
+			path.step(last_u, last_v, u, v);
 		}
 
 		return best_score;
@@ -496,7 +571,33 @@ public:
 	}
 };
 
+template<typename Index, typename Value>
+class Solution {
+public:
+	xt::xtensor<Value, 2> m_values;
+	xt::xtensor<Index, 3> m_traceback;
+	xt::xtensor<Index, 2> m_path;
+	Value m_score;
 
+	const auto &values() const {
+		return m_values;
+	}
+
+	const auto &traceback() const {
+		return m_traceback;
+	}
+
+	const auto &path() const {
+		return m_path;
+	}
+
+	const auto score() const {
+		return m_score;
+	}
+};
+
+template<typename Index, typename Value>
+using SolutionRef = std::shared_ptr<Solution<Index, Value>>;
 
 template<typename Locality, typename Index=int16_t>
 class Solver {
@@ -525,8 +626,46 @@ public:
 		return m_factory.max_len_t();
 	}
 
-	auto matrix(const Index len_s, const Index len_t) {
+	inline auto matrix(const Index len_s, const Index len_t) {
 		return m_factory.make(len_s, len_t);
+	}
+
+	inline Value score(
+		const size_t len_s,
+		const size_t len_t) const {
+
+		auto matrix = m_factory.make(len_s, len_t);
+		NoOpBuilder builder;
+		return m_locality.traceback(matrix, builder);
+	}
+
+	template<typename Alignment>
+	inline Value alignment(
+		const size_t len_s,
+		const size_t len_t,
+		Alignment &alignment) const {
+
+		auto matrix = m_factory.make(len_s, len_t);
+		AlignmentBuilder<Alignment, Index> builder(alignment);
+		return m_locality.traceback(matrix, builder);
+	}
+
+	SolutionRef<Index, Value> solution(
+		const size_t len_s,
+		const size_t len_t) const {
+
+		SolutionRef<Index, Value> solution = std::make_shared<Solution<Index, Value>>();
+
+		auto matrix = m_factory.make(len_s, len_t);
+		solution->m_values = matrix.values_non_neg_ij();
+		solution->m_traceback = matrix.traceback();
+
+		PathBuilder<Index> builder;
+		const auto score = m_locality.traceback(matrix, builder);
+		solution->m_path = builder.path();
+		solution->m_score = score;
+
+		return solution;
 	}
 };
 
@@ -569,9 +708,8 @@ public:
 		return m_gap_cost_t * len;
 	}
 
-	template<typename Alignment, typename Similarity>
-	Value solve(
-		Alignment &alignment,
+	template<typename Similarity>
+	void solve(
 		const Similarity &similarity,
 		const size_t len_s,
 		const size_t len_t) const {
@@ -632,8 +770,6 @@ public:
 				xt::view(traceback, u, v, xt::all()) = best.traceback();
 			}
 		}
-
-		return this->m_locality.traceback(alignment, matrix);
 	}
 };
 
@@ -658,12 +794,12 @@ private:
 public:
 	typedef Locality LocalityType;
 	typedef Index IndexType;
-	typedef GapTensorFactory GapCostSpec;
+	typedef GapTensorFactory<Value> GapCostSpec;
 
 	inline GeneralGapCostSolver(
 		const Locality &p_locality,
-		const GapTensorFactory &p_gap_cost_s,
-		const GapTensorFactory &p_gap_cost_t,
+		const GapTensorFactory<Value> &p_gap_cost_s,
+		const GapTensorFactory<Value> &p_gap_cost_t,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
@@ -690,9 +826,8 @@ public:
 		return m_gap_cost_t(len);
 	}
 
-	template<typename Alignment, typename Similarity>
-	Value solve(
-		Alignment &alignment,
+	template<typename Similarity>
+	void solve(
 		const Similarity &similarity,
 		const size_t len_s,
 		const size_t len_t) const {
@@ -744,8 +879,6 @@ public:
 				xt::view(traceback, u, v, xt::all()) = best.traceback();
 			}
 		}
-
-		return this->m_locality.traceback(alignment, matrix);
 	}
 };
 
