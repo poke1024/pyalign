@@ -1,5 +1,8 @@
 import pyalign.algorithm
 
+from cached_property import cached_property
+from .gaps import GapCost
+
 
 class Problem:
 	def __init__(self, matrix, s=None, t=None):
@@ -31,6 +34,32 @@ class Problem:
 	@property
 	def t(self):
 		return self._t
+
+
+class Solution:
+	def __init__(self, problem, solution):
+		self._problem = problem
+		self._solution = solution
+
+	@property
+	def problem(self):
+		return self._problem
+
+	@cached_property
+	def values(self):
+		return self._solution.values
+
+	@cached_property
+	def traceback(self):
+		return self._solution.traceback
+
+	@cached_property
+	def path(self):
+		return self._solution.path
+
+	@property
+	def score(self):
+		return self._solution.score
 
 
 class Alignment:
@@ -89,8 +118,8 @@ class Alignment:
 
 
 class Solver:
-	def __init__(self, **kwargs):
-		self._options = kwargs
+	def __init__(self, gap_cost: GapCost = None, **kwargs):
+		self._options = dict(gap_cost=gap_cost, **kwargs)
 
 		max_len_s = self._options.get("max_len_s")
 		max_len_t = self._options.get("max_len_t")
@@ -101,15 +130,21 @@ class Solver:
 		else:
 			self._default_solver = None
 		self._last_solver = None
+		self._last_problem = None
 
 	def solve(self, problem):
 		matrix = problem.matrix
+
 		solver = self._default_solver
 		if solver is None:
 			solver = pyalign.algorithm.create_solver(
 				matrix.shape[0], matrix.shape[1], self._options)
-		self._last_solver = solver
+
 		solver.solve(matrix)
+
+		self._last_problem = problem
+		self._last_solver = solver
+
 		return Alignment(problem, solver.alignment)
 
 	@property
@@ -120,7 +155,7 @@ class Solver:
 
 		if self._last_solver is None:
 			raise RuntimeError("need to solve a problem first to get solution details")
-		return self._last_solver.solution
+		return Solution(self._last_problem, self._last_solver.solution)
 
 	def display_solution(self):
 		pass

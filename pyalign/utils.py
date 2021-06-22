@@ -1,5 +1,7 @@
 import numpy as np
+
 from .solve import Problem
+from typing import Dict
 
 
 class Encoder:
@@ -17,44 +19,61 @@ class Encoder:
 
 
 class SimilarityOperator:
-	def __init__(self, sim={}, eq=1, neq=0):
-		self._sim = sim  # FIXME symmetry
-		self._eq = eq
-		self._neq = neq
+	def get(self, u, v):
+		raise NotImplementedError()
+
+	def build_matrix(self, encoder, matrix):
+		raise NotImplementedError()
+
+
+class CoalescedSimilarity(SimilarityOperator):
+	def __init__(self, *ops):
+		self._ops = ops
 
 	def get(self, u, v):
-		w = self._sim.get((u, v))
-		if w is not None:
-			return w
+		for op in self._ops:
+			x = op.get(u, v)
+			if x is not None:
+				return x
+		return 0
+
+	def build_matrix(self, encoder, matrix):
+		for op in self._ops:
+			op.build_matrix(encoder, matrix)
+
+
+class PairwiseSimilarity(SimilarityOperator):
+	def __init__(self, pairs: Dict):
+		self._dict = pairs
+
+	def get(self, u, v):
+		return self._dict.get(u, v)
+
+	def build_matrix(self, encoder, matrix):
+		for uv, w in self._dict.items():
+			i, j = encoder.encode(uv)
+			matrix[i, j] = w
+			matrix[j, i] = w
+
+
+class BinarySimilarity(SimilarityOperator):
+	def __init__(self, eq=1, ne=-1):
+		self._eq = eq
+		self._ne = ne
+
+	def get(self, u, v):
 		if u == v:
 			return self._eq
 		else:
-			return self._neq
+			return self._ne
 
-	def to_matrix(self, encoder):
-		n = len(encoder.alphabet)
-		m = np.full((n, n), self._neq, dtype=np.float32)
-		np.fill_diagonal(m, self._eq)
-		for uv, w in self._sim.items():
-			i, j = encoder.encode(uv)
-			m[i, j] = w
-			m[j, i] = w
-		return m
-
-
-class EncoderProblemFactory:
-	def __init__(self, sim, encoder):
-		self._encoder = encoder
-		self._sim = sim.to_matrix(encoder)
-
-	def new_problem(self, s, t):
-		return Problem(self._sim[np.ix_(
-			self._encoder.encode(s),
-			self._encoder.encode(t))], s, t)
+	def build_matrix(self, encoder, matrix):
+		matrix.fill(self._ne)
+		np.fill_diagonal(matrix, self._eq)
 
 
 class SimpleProblemFactory:
-	def __init__(self, sim):
+	def __init__(self, sim: SimilarityOperator):
 		self._sim = sim
 
 	def new_problem(self, s, t):
@@ -64,3 +83,15 @@ class SimpleProblemFactory:
 				m[i, j] = self._sim.get(x, y)
 		return Problem(m, s, t)
 
+
+class EncoderProblemFactory:
+	def __init__(self, sim: SimilarityOperator, encoder: Encoder):
+		self._encoder = encoder
+		n = len(encoder.alphabet)
+		self._sim = np.empty((n, n), dtype=np.float32)
+		sim.build_matrix(encoder, self._sim)
+
+	def new_problem(self, s, t):
+		return Problem(self._sim[np.ix_(
+			self._encoder.encode(s),
+			self._encoder.encode(t))], s, t)

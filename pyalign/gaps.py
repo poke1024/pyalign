@@ -2,9 +2,8 @@ import numpy as np
 
 
 class GapCost:
-	@property
-	def is_affine(self):
-		return False
+	def to_affine_cost(self):
+		return None
 
 	def costs(self, n):
 		raise NotImplementedError
@@ -50,13 +49,11 @@ class ConstantGapCost(GapCost):
 	def __init__(self, u):
 		self._cost = u
 
-	@property
-	def is_affine(self):
-		return self._cost == 0
-
-	def to_scalar(self):
-		assert self._cost == 0
-		return 0
+	def to_affine_cost(self):
+		if self._cost == 0:
+			return 0
+		else:
+			return None
 
 	def costs(self, n):
 		c = np.empty((n,), dtype=np.float32)
@@ -74,11 +71,7 @@ class AffineGapCost(GapCost):
 	def __init__(self, u):
 		self._u = u
 
-	@property
-	def is_affine(self):
-		return True
-
-	def to_scalar(self):
+	def to_affine_cost(self):
 		return self._u
 
 	def costs(self, n):
@@ -125,6 +118,18 @@ class ExponentialGapCost(GapCost):
 		return c
 
 
+class UserFuncGapCost(GapCost):
+	def __init__(self, costs_fn):
+		self._costs_fn = costs_fn
+
+	def costs(self, n):
+		c = np.empty((n,), dtype=np.float32)
+		c[0] = 0
+		for i in range(1, n):
+			c[i] = self._costs_fn(i)
+		return c
+
+
 def smooth_gap_cost(k):
 	"""
 	Models gap cost as the complement of an exponentially decaying
@@ -136,15 +141,3 @@ def smooth_gap_cost(k):
 		return ExponentialGapCost(2, 1 / k)
 	else:
 		return ConstantGapCost(0)
-
-
-class UserFuncGapCost(GapCost):
-	def __init__(self, costs_fn):
-		self._costs_fn = costs_fn
-
-	def costs(self, n):
-		c = np.empty((n,), dtype=np.float32)
-		c[0] = 0
-		for i in range(1, n):
-			c[i] = self._costs_fn(i)
-		return c

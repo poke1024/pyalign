@@ -145,7 +145,7 @@ public:
 	}
 };
 
-inline xt::pytensor<float, 1> default_gap_tensor(const size_t p_len) {
+inline xt::pytensor<float, 1> zero_gap_tensor(const size_t p_len) {
 	xt::pytensor<float, 1> w;
 	w.resize({static_cast<ssize_t>(p_len)});
 	w.fill(0);
@@ -154,9 +154,55 @@ inline xt::pytensor<float, 1> default_gap_tensor(const size_t p_len) {
 
 inline alignments::GapTensorFactory<float> to_gap_tensor_factory(const py::object &p_gap) {
 	if (p_gap.is_none()) {
-		return default_gap_tensor;
+		return zero_gap_tensor;
 	} else {
 		return p_gap.attr("costs").cast<alignments::GapTensorFactory<float>>();
+	}
+}
+
+inline std::optional<float> to_affine_gap_cost(const py::object &p_gap) {
+	if (p_gap.is_none()) {
+		return 0.0f;
+	} else {
+        const py::object cost = p_gap.attr("to_affine_cost")();
+        if (cost.is_none()) {
+            return std::optional<float>();
+        } else {
+           return cost.cast<float>();
+        }
+ 	}
+}
+
+template<typename Locality>
+SolverRef create_solver_instance(
+	const Locality &p_locality,
+	const py::object &p_gap_s,
+	const py::object &p_gap_t,
+	const size_t p_max_len_s,
+	const size_t p_max_len_t) {
+
+	const std::optional<float> affine_gap_s = to_affine_gap_cost(p_gap_s);
+	const std::optional<float> affine_gap_t = to_affine_gap_cost(p_gap_t);
+
+	if (affine_gap_s.has_value() && affine_gap_t.has_value()) {
+
+		return std::make_shared<SolverImpl<alignments::AffineGapCostSolver<
+			Locality, Alignment::Index>>>(
+				p_locality,
+				affine_gap_s.value(),
+				affine_gap_t.value(),
+				p_max_len_s,
+				p_max_len_t);
+
+	} else {
+
+		return std::make_shared<SolverImpl<alignments::GeneralGapCostSolver<
+			Locality, Alignment::Index>>>(
+				p_locality,
+				to_gap_tensor_factory(p_gap_s),
+				to_gap_tensor_factory(p_gap_t),
+				p_max_len_s,
+				p_max_len_t);
 	}
 }
 
@@ -189,16 +235,17 @@ SolverRef create_solver(
 	}
 
 	if (locality == "local") {
-		const auto locality = alignments::Local<float>(0);
+		const float zero = p_options.contains("zero") ?
+			p_options["zero"].cast<float>() : 0.0f;
 
-		return std::make_shared<SolverImpl<alignments::GeneralGapCostSolver<
-			alignments::Local<float>, Alignment::Index>>>(
-				locality,
-				to_gap_tensor_factory(gap_s),
-				to_gap_tensor_factory(gap_t),
-				p_max_len_s,
-				p_max_len_t);
+		const auto locality = alignments::Local<float>(zero);
 
+		return create_solver_instance(
+			locality,
+			gap_s,
+			gap_t,
+			p_max_len_s,
+			p_max_len_t);
 	} else {
 		throw std::invalid_argument(locality);
 	}
