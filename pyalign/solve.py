@@ -67,7 +67,9 @@ class Solution:
 		return self._solution.complexity
 
 	def _ipython_display_(self):
-		pass
+		from pyalign.plot import TracebackPlotter
+		plotter = TracebackPlotter(self)
+		plotter.plot()
 
 
 class Alignment:
@@ -92,8 +94,6 @@ class Alignment:
 		return self._alignment.t_to_s
 
 	def print(self):
-		print(self.s_to_t)
-
 		s = self._problem.s
 		t = self._problem.t
 
