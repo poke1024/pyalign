@@ -1,11 +1,12 @@
 import pyalign.algorithm
 
 from cached_property import cached_property
+from enum import Enum
 from .gaps import GapCost
 
 
 class Problem:
-	def __init__(self, matrix, s=None, t=None):
+	def __init__(self, matrix, s=None, t=None, mode="similarity"):
 		self._matrix = matrix
 		if s is not None and matrix.shape[0] != len(s):
 			raise ValueError(f"sequence s [{len(s)}] does not match matrix shape {matrix.shape}")
@@ -17,7 +18,7 @@ class Problem:
 	@property
 	def matrix(self):
 		"""
-		Returns a matrix M that describes a problem for two sequences \( s \) and \( t \).
+		Returns a matrix M that describes an alignment problem for two sequences \( s \) and \( t \).
 		\( M_{i, j} \) contains the similarity between \( s_i \) and \( t_j \).
 		"""
 
@@ -60,6 +61,13 @@ class Solution:
 	@property
 	def score(self):
 		return self._solution.score
+
+	@property
+	def complexity(self):
+		return self._solution.complexity
+
+	def _ipython_display_(self):
+		pass
 
 
 class Alignment:
@@ -116,6 +124,9 @@ class Alignment:
 		print("".join(edges))
 		print("".join(lower))
 
+	def _ipython_display_(self):
+		self.print()
+
 
 class Solver:
 	def __init__(self, gap_cost: GapCost = None, **kwargs):
@@ -132,7 +143,7 @@ class Solver:
 		self._last_solver = None
 		self._last_problem = None
 
-	def solve(self, problem):
+	def solve(self, problem, result="alignment"):
 		matrix = problem.matrix
 
 		solver = self._default_solver
@@ -140,27 +151,31 @@ class Solver:
 			solver = pyalign.algorithm.create_solver(
 				matrix.shape[0], matrix.shape[1], self._options)
 
-		solver.solve(matrix)
-
-		self._last_problem = problem
-		self._last_solver = solver
-
-		return Alignment(problem, solver.alignment)
-
-	@property
-	def solution(self):
-		"""
-		Returns solution details of the last solved problem by this Solver instance.
-		"""
-
-		if self._last_solver is None:
-			raise RuntimeError("need to solve a problem first to get solution details")
-		return Solution(self._last_problem, self._last_solver.solution)
-
-	def display_solution(self):
-		pass
+		if result == "score":
+			return solver.solve_for_score(matrix)
+		elif result == "alignment":
+			return Alignment(problem, solver.solve_for_alignment(matrix))
+		elif result == "solution":
+			return Solution(problem, solver.solve_for_solution(matrix))
+		else:
+			return ValueError(result)
 
 
-class LocalSolver:
-	pass
+class LocalSolver(Solver):
+	def __init__(self, gap_cost: GapCost = None, zero: float = 0, **kwargs):
+		super().__init__(solver="alignment", locality="local", gap_cost=gap_cost, zero=zero, **kwargs)
 
+
+class GlobalSolver(Solver):
+	def __init__(self, gap_cost: GapCost = None, **kwargs):
+		super().__init__(solver="alignment", locality="global", gap_cost=gap_cost, **kwargs)
+
+
+class SemiglobalSolver(Solver):
+	def __init__(self, gap_cost: GapCost = None, **kwargs):
+		super().__init__(solver="alignment", locality="semiglobal", gap_cost=gap_cost, **kwargs)
+
+
+class ElasticSolver(Solver):
+	def __init__(self, **kwargs):
+		super().__init__(solver="dtw", **kwargs)

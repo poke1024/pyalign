@@ -22,7 +22,7 @@ ext_modules = [
 
 setup(
 	name='pyalign',
-	version='0.9',
+	version='0.1',
 	packages=find_packages(include=['pyalign']),
 	license='GPLv2',
 	author='Bernhard Liebl',

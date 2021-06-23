@@ -48,6 +48,7 @@ class ConstantGapCost(GapCost):
 
 	def __init__(self, u):
 		self._cost = u
+		assert u >= 0
 
 	def to_special_case(self):
 		if self._cost == 0:
@@ -64,48 +65,73 @@ class ConstantGapCost(GapCost):
 		return c
 
 
-class AffineGapCost(GapCost):
+class LinearGapCost(GapCost):
 	"""
-	Models an affine gap cost \( w_k = u k \). \( w_k \) is the gap
+	Models a linear gap cost \( w_k = u k \). \( w_k \) is the gap
 	cost at length \( k \). \( u \) is a configurable parameter.
+
+	Setting \( u = 0 \) effectively eliminates any gap costs.
+
+	Stojmirović, A., & Yu, Y.-K. (2009). Geometric Aspects of Biological Sequence
+	Comparison. Journal of Computational Biology, 16(4), 579–610. https://doi.org/10.1089/cmb.2008.0100
 	"""
 
 	def __init__(self, u):
 		self._u = u
+		assert u >= 0
 
 	def to_special_case(self):
 		return {
-			'affine': self._u
+			'linear': self._u
 		}
 
 	def costs(self, n):
 		return np.linspace(0., (n - 1) * self._u, n, dtype=np.float32)
 
 
-class GotohGapCost(GapCost):
+class AffineGapCost(GapCost):
 	"""
-	Models a gap cost that is \( w_k = u k + v \) if \( k \le K_1 \),
-	and constant, i.e. \( w_k = w_{K_1} \), if \( k > K_1 \).
+	Models an affine gap cost \( w_k = u + v k \). \( w_k \) is the gap
+	cost at length \( k \). \( u \) and \( v /) are configurable parameters.
 
-	Gotoh, O. (1982). An improved algorithm for matching biological
-	sequences. Journal of Molecular Biology, 162(3), 705–708.
-	https://doi.org/10.1016/0022-2836(82)90398-9
+	Altschul, S. (1998). Generalized affine gap costs for protein sequence alignment.
+	Proteins: Structure, 32.
 	"""
 
-	def __init__(self, u, v, k1, wk1):
+	def __init__(self, u, v):
 		self._u = u
 		self._v = v
-		self._k1 = k1
-		self._wk1 = wk1
+		assert u >= 0
+		assert v >= 0
 
 	def to_special_case(self):
 		return {
-			'gotoh': (self._u, self._v, self._k1, self._wk1)
+			'affine': (self._u, self._v)
 		}
 
 	def costs(self, n):
-		w = np.linspace(0., (n - 1) * self._u, n, dtype=np.float32) + self._v
-		w[np.arange(self._k1 + 1, n)] = self._wk1
+		return self._u + np.linspace(0., (n - 1) * self._v, n, dtype=np.float32)
+
+
+class LogarithmicGapCost(GapCost):
+	""" Models a gap cost \( w_k =  u + v log(k) \). \( w_k \) is the gap
+	cost at length \( k \). \( u \) and \( v \) are configurable
+	parameters.
+
+	Waterman, M. S. (1984). Efficient sequence alignment algorithms. Journal
+	of Theoretical Biology, 108(3), 333–337. https://doi.org/10.1016/S0022-5193(84)80037-5
+	"""
+
+	def __init__(self, u, v):
+		self._u = u
+		self._v = v
+		assert u >= 0
+		assert v >= 0
+
+	def costs(self, n):
+		assert n > 0
+		w = self._u + self._w * np.log(np.arange(0, n), dtype=np.float32)
+		w[0] = 0
 		return w
 
 
@@ -119,6 +145,8 @@ class ExponentialGapCost(GapCost):
 	def __init__(self, u, v):
 		self._u = u  # base
 		self._v = v  # exp term
+		assert u >= 0
+		assert v >= 0
 
 	def costs(self, n):
 		c = np.empty((n,), dtype=np.float32)

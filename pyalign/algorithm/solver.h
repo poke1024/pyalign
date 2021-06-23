@@ -10,7 +10,7 @@
 #include <xtensor/xfixed.hpp>
 #include <xtensor/xsort.hpp>
 
-namespace alignments {
+namespace pyalign {
 
 class exceeded_length : public std::exception {
 	const size_t m_len;
@@ -70,6 +70,26 @@ public:
 	}
 };
 
+class Complexity {
+	const std::string m_runtime;
+	const std::string m_memory;
+
+public:
+	Complexity(const char *p_runtime, const char *p_memory) :
+		m_runtime(p_runtime), m_memory(p_memory) {
+	}
+
+	const std::string &runtime() const {
+		return m_runtime;
+	}
+
+	const std::string &memory() const {
+		return m_memory;
+	}
+};
+
+typedef std::shared_ptr<Complexity> ComplexityRef;
+
 template<typename Value>
 using GapTensorFactory = std::function<xt::xtensor<Value, 1>(size_t)>;
 
@@ -121,12 +141,12 @@ public:
 			m_max_len_t + 1
 		});
 		m_data->traceback.resize({
-			m_max_len_s,
-			m_max_len_t,
+			m_max_len_s + 1,
+			m_max_len_t + 1,
 			2
 		});
 		m_data->best_column.resize({
-			m_max_len_s
+			m_max_len_s + 1
 		});
 	}
 
@@ -145,6 +165,16 @@ public:
 		return m_data->values;
 	}
 };
+
+template<int i0, int j0, typename Index, typename Tensor>
+inline auto shifted_indices(Tensor &v) {
+	// a custom view based on xt::xtensor to make sure that negative indexes, e.g.
+	// m(-1, 2), are handled correctly. this is not guaranteed in xtensor.
+
+	return [&v] (const Index i, const Index j) -> typename Tensor::reference {
+		return v(i + i0, j + j0);
+	};
+}
 
 template<typename Index, typename Value>
 class Matrix {
@@ -171,28 +201,32 @@ public:
 		return m_len_t;
 	}
 
-	inline auto values() const {
-		// a custom view to make sure that negative indexes, e.g. m(-1, 2), are handled correctly.
-
-		auto &v = m_factory.m_data->values;
-
-		return [&v] (const Index i, const Index j) -> typename xt::xtensor<Value, 2>::reference {
-			return v(i + 1, j + 1);
-		};
+	template<int i0, int j0>
+	inline auto values_n() const {
+		return shifted_indices<i0, j0, Index>(
+			m_factory.m_data->values);
 	}
 
-	inline auto values_non_neg_ij() const {
+	template<int i0, int j0>
+	inline auto traceback_n() const {
+		return shifted_indices<i0, j0, Index>(
+			m_factory.m_data->traceback);
+	}
+
+	template<int i0, int j0>
+	inline auto values() const {
 		return xt::view(
 			m_factory.m_data->values,
-			xt::range(1, m_len_s + 1),
-			xt::range(1, m_len_t + 1));
+			xt::range(i0, m_len_s + 1),
+			xt::range(j0, m_len_t + 1));
 	}
 
+	template<int i0, int j0>
 	inline auto traceback() const {
 		return xt::view(
 			m_factory.m_data->traceback,
-			xt::range(0, m_len_s),
-			xt::range(0, m_len_t));
+			xt::range(i0, m_len_s + 1),
+			xt::range(j0, m_len_t + 1));
 	}
 
 	inline auto best_column() const {
@@ -326,18 +360,21 @@ public:
 	inline Local(const Value p_zero) : m_zero(p_zero) {
 	}
 
-	void init_border(
-		xt::xtensor<Value, 2> &p_values,
-		const xt::xtensor<Value, 1> &p_gap_cost_s,
-		const xt::xtensor<Value, 1> &p_gap_cost_t) const {
-
-		xt::view(p_values, xt::all(), 0).fill(0);
-		xt::view(p_values, 0, xt::all()).fill(0);
+	inline const char *name() const {
+		return "local";
 	}
 
-	template<typename Fold>
-	inline void update_best(Fold &fold) const {
-		fold.update(m_zero, -1, -1);
+	template<typename Vector>
+	void init_border_case(
+		Vector &&p_vector,
+		const xt::xtensor<Value, 1> &p_gap_cost) const {
+
+		p_vector.fill(0);
+	}
+
+	template<typename Accumulator>
+	inline void update_acc(Accumulator &acc) const {
+		acc.push(m_zero, -1, -1);
 	}
 
 	template<typename Path, typename Index>
@@ -348,13 +385,13 @@ public:
 		const auto len_s = matrix.len_s();
 		const auto len_t = matrix.len_t();
 
-		const auto values = matrix.values();
-		const auto traceback = matrix.traceback();
+		const auto values = matrix.template values_n<1, 1>();
+		const auto traceback = matrix.template traceback<1, 1>();
 		auto best_column = matrix.best_column();
 
 		const auto zero_similarity = m_zero;
 
-		best_column = xt::argmax(matrix.values_non_neg_ij(), 1);
+		best_column = xt::argmax(matrix.template values<1, 1>(), 1);
 
 		Value score = zero_similarity;
 		Index best_u = 0, best_v = 0;
@@ -403,19 +440,17 @@ class Global {
 public:
 	typedef Value ValueType;
 
-	void init_border(
-		xt::xtensor<Value, 2> &p_values,
-		const xt::xtensor<Value, 1> &p_gap_cost_s,
-		const xt::xtensor<Value, 1> &p_gap_cost_t) const {
+	template<typename Vector>
+	void init_border_case(
+		Vector &&p_vector,
+		const xt::xtensor<Value, 1> &p_gap_cost) const {
 
-		xt::view(p_values, xt::all(), 0) = -1 * xt::view(
-			p_gap_cost_s, xt::range(0, p_values.shape(0)));
-		xt::view(p_values, 0, xt::all()) = -1 * xt::view(
-			p_gap_cost_t, xt::range(0, p_values.shape(1)));
+		p_vector = -1 * xt::view(
+			p_gap_cost, xt::range(0, p_vector.size()));
 	}
 
-	template<typename Fold>
-	inline void update_best(Fold &fold) const {
+	template<typename Accumulator>
+	inline void update_acc(Accumulator &) const {
 	}
 
 	template<typename Path, typename Index>
@@ -426,8 +461,8 @@ public:
 		const auto len_s = matrix.len_s();
 		const auto len_t = matrix.len_t();
 
-		const auto values = matrix.values();
-		const auto traceback = matrix.traceback();
+		const auto values = matrix.template values_n<1, 1>();
+		const auto traceback = matrix.template traceback<1, 1>();
 
 		path.begin(len_s, len_t);
 
@@ -452,21 +487,20 @@ public:
 
 
 template<typename Value=float>
-class SemiGlobal {
+class Semiglobal {
 public:
 	typedef Value ValueType;
 
-	void init_border(
-		xt::xtensor<Value, 2> &p_values,
-		const xt::xtensor<Value, 1> &p_gap_cost_s,
-		const xt::xtensor<Value, 1> &p_gap_cost_t) const {
+	template<typename Vector>
+	void init_border_case(
+		Vector &&p_vector,
+		const xt::xtensor<Value, 1> &p_gap_cost) const {
 
-		xt::view(p_values, xt::all(), 0).fill(0);
-		xt::view(p_values, 0, xt::all()).fill(0);
+		p_vector.fill(0);
 	}
 
-	template<typename Fold>
-	inline void update_best(Fold &fold) const {
+	template<typename Accumulator>
+	inline void update_acc(Accumulator &) const {
 	}
 
 	template<typename Path, typename Index>
@@ -477,15 +511,15 @@ public:
 		const auto len_s = matrix.len_s();
 		const auto len_t = matrix.len_t();
 
-		const auto values = matrix.values();
-		const auto traceback = matrix.traceback();
+		const auto values = matrix.template values_n<1, 1>();
+		const auto traceback = matrix.template traceback<1, 1>();
 
 		path.begin(len_s, len_t);
 
 		const Index last_row = len_s - 1;
 		const Index last_col = len_t - 1;
 
-		const auto values_non_neg_ij = matrix.values_non_neg_ij();
+		const auto values_non_neg_ij = matrix.template values<1, 1>();
 		const Index best_col_in_last_row = argmax(xt::row(values_non_neg_ij, last_row));
 		const Index best_row_in_last_col = argmax(xt::col(values_non_neg_ij, last_col));
 
@@ -519,27 +553,47 @@ public:
 
 
 template<typename Index, typename Value>
-class MaxFold {
+class Accumulator {
+private:
+	Value m_score;
+
 public:
+	inline void set(
+		const Value score,
+		const Index u,
+		const Index v) {
+
+		m_score = score;
+	}
+
+	inline void push(
+		const Value score,
+		const Index u,
+		const Index v) {
+
+		if (score > m_score) {
+			m_score = score;
+		}
+	}
+
+	inline void add(const float score) {
+		m_score += score;
+	}
+
+	template<typename ScoreRef, typename TracebackRef>
+	inline void write(ScoreRef &&r_score, TracebackRef &&r_traceback) const {
+		r_score = m_score;
+	}
+};
+
+template<typename Index, typename Value>
+class TracingAccumulator {
 	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Coord;
 
-private:
 	Value m_score;
 	Coord m_traceback;
 
 public:
-	inline MaxFold() {
-	}
-
-	inline MaxFold(
-		const Value score,
-		const Coord &traceback) :
-
-		m_score(score),
-		m_traceback(traceback) {
-
-	}
-
 	inline void set(
 		const Value score,
 		const Index u,
@@ -550,7 +604,7 @@ public:
 		m_traceback[1] = v;
 	}
 
-	inline void update(
+	inline void push(
 		const Value score,
 		const Index u,
 		const Index v) {
@@ -562,12 +616,14 @@ public:
 		}
 	}
 
-	inline Value score() const {
-		return m_score;
+	inline void add(const float score) {
+		m_score += score;
 	}
 
-	inline const Coord &traceback() const {
-		return m_traceback;
+	template<typename ScoreRef, typename TracebackRef>
+	inline void write(ScoreRef &&r_score, TracebackRef &&r_traceback) const {
+		r_score = m_score;
+		r_traceback = m_traceback;
 	}
 };
 
@@ -578,6 +634,7 @@ public:
 	xt::xtensor<Index, 3> m_traceback;
 	xt::xtensor<Index, 2> m_path;
 	Value m_score;
+	ComplexityRef m_complexity;
 
 	const auto &values() const {
 		return m_values;
@@ -594,13 +651,17 @@ public:
 	const auto score() const {
 		return m_score;
 	}
+
+	const auto &complexity() const {
+		return m_complexity;
+	}
 };
 
 template<typename Index, typename Value>
 using SolutionRef = std::shared_ptr<Solution<Index, Value>>;
 
 template<typename Locality, typename Index=int16_t>
-class Solver {
+class AlignmentSolver {
 public:
 	typedef typename Locality::ValueType Value;
 
@@ -608,8 +669,10 @@ protected:
 	const Locality m_locality;
 	MatrixFactory<Index, Value> m_factory;
 
+	virtual ComplexityRef complexity() const = 0;
+
 public:
-	inline Solver(
+	inline AlignmentSolver(
 		const Locality &p_locality,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
@@ -657,46 +720,57 @@ public:
 		SolutionRef<Index, Value> solution = std::make_shared<Solution<Index, Value>>();
 
 		auto matrix = m_factory.make(len_s, len_t);
-		solution->m_values = matrix.values_non_neg_ij();
-		solution->m_traceback = matrix.traceback();
+		solution->m_values = matrix.template values<0, 0>();
+		solution->m_traceback = matrix.template traceback<0, 0>();
 
 		PathBuilder<Index> builder;
 		const auto score = m_locality.traceback(matrix, builder);
 		solution->m_path = builder.path();
 		solution->m_score = score;
 
+		solution->m_complexity = complexity();
+
 		return solution;
 	}
 };
 
 template<typename Locality, typename Index=int16_t>
-class AffineGapCostSolver : public Solver<Locality, Index> {
+class LinearGapCostSolver final : public AlignmentSolver<Locality, Index> {
 public:
-	typedef typename Solver<Locality, Index>::Value Value;
+	typedef typename AlignmentSolver<Locality, Index>::Value Value;
 
 private:
 	const Value m_gap_cost_s;
 	const Value m_gap_cost_t;
+
+protected:
+	virtual ComplexityRef complexity() const override {
+		return std::make_shared<Complexity>("n^2", "n^2");
+	}
 
 public:
 	typedef Locality LocalityType;
 	typedef Index IndexType;
 	typedef Value GapCostSpec;
 
-	inline AffineGapCostSolver(
+	inline LinearGapCostSolver(
 		const Locality &p_locality,
 		const Value p_gap_cost_s,
 		const Value p_gap_cost_t,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		Solver<Locality, Index>(p_locality, p_max_len_s, p_max_len_t),
+		AlignmentSolver<Locality, Index>(p_locality, p_max_len_s, p_max_len_t),
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
 
-		p_locality.init_border(
-			this->m_factory.values(),
-			xt::arange<Index>(0, p_max_len_s + 1) * p_gap_cost_s,
+		auto &values = this->m_factory.values();
+
+		p_locality.init_border_case(
+			xt::view(values, xt::all(), 0),
+			xt::arange<Index>(0, p_max_len_s + 1) * p_gap_cost_s);
+		p_locality.init_border_case(
+			xt::view(values, 0, xt::all()),
 			xt::arange<Index>(0, p_max_len_t + 1) * p_gap_cost_t);
 	}
 
@@ -708,7 +782,7 @@ public:
 		return m_gap_cost_t * len;
 	}
 
-	template<typename Similarity>
+	template<template<typename, typename> class Accumulator, typename Similarity>
 	void solve(
 		const Similarity &similarity,
 		const size_t len_s,
@@ -719,8 +793,6 @@ public:
 
 		// For local alignments, we modify the problem for local  by adding a fourth zero case and
 		// modifying the traceback (see Aluru or Hendrix).
-
-		// The original paper by Smith and Waterman seems to contain an error in formula (3).
 
 		// Needleman, S. B., & Wunsch, C. D. (1970). A general method applicable
 		// to the search for similarities in the amino acid sequence of two proteins.
@@ -743,31 +815,32 @@ public:
 
 		auto matrix = this->m_factory.make(len_s, len_t);
 
-		auto values = matrix.values();
-		auto traceback = matrix.traceback();
+		auto values = matrix.template values_n<1, 1>();
+		auto traceback = matrix.template traceback<1, 1>();
 
 		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				MaxFold<Index, Value> best;
+				Accumulator<Index, Value> acc;
 
-				best.set(
+				acc.set(
 					values(u - 1, v - 1) + similarity(u, v),
 					u - 1, v - 1);
 
-				best.update(
+				acc.push(
 					values(u - 1, v) - this->m_gap_cost_s,
 					u - 1, v);
 
-				best.update(
+				acc.push(
 					values(u, v - 1) - this->m_gap_cost_t,
 					u, v - 1);
 
-				this->m_locality.update_best(best);
+				this->m_locality.update_acc(acc);
 
-				values(u, v) = best.score();
-				xt::view(traceback, u, v, xt::all()) = best.traceback();
+				acc.write(
+					values(u, v),
+					xt::view(traceback, u, v, xt::all()));
 			}
 		}
 	}
@@ -783,13 +856,18 @@ inline void check_gap_tensor_shape(const xt::xtensor<Value, 1> &tensor, const si
 }
 
 template<typename Locality, typename Index=int16_t>
-class GeneralGapCostSolver : public Solver<Locality, Index> {
+class GeneralGapCostSolver final : public AlignmentSolver<Locality, Index> {
 public:
-	typedef typename Solver<Locality, Index>::Value Value;
+	typedef typename AlignmentSolver<Locality, Index>::Value Value;
 
 private:
 	const xt::xtensor<Value, 1> m_gap_cost_s;
 	const xt::xtensor<Value, 1> m_gap_cost_t;
+
+protected:
+	virtual ComplexityRef complexity() const override {
+		return std::make_shared<Complexity>("n^3", "n^2");
+	}
 
 public:
 	typedef Locality LocalityType;
@@ -803,16 +881,21 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		Solver<Locality, Index>(p_locality, p_max_len_s, p_max_len_t),
+		AlignmentSolver<Locality, Index>(p_locality, p_max_len_s, p_max_len_t),
 		m_gap_cost_s(p_gap_cost_s(p_max_len_s + 1)),
 		m_gap_cost_t(p_gap_cost_t(p_max_len_t + 1)) {
 
 		check_gap_tensor_shape(m_gap_cost_s, p_max_len_s + 1);
 		check_gap_tensor_shape(m_gap_cost_t, p_max_len_t + 1);
 
-		p_locality.init_border(
-			this->m_factory.values(),
-			m_gap_cost_s,
+		auto &values = this->m_factory.values();
+
+		p_locality.init_border_case(
+			xt::view(values, xt::all(), 0),
+			m_gap_cost_s);
+
+		p_locality.init_border_case(
+			xt::view(values, 0, xt::all()),
 			m_gap_cost_t);
 	}
 
@@ -826,16 +909,16 @@ public:
 		return m_gap_cost_t(len);
 	}
 
-	template<typename Similarity>
+	template<template<typename, typename> class Accumulator, typename Similarity>
 	void solve(
 		const Similarity &similarity,
 		const size_t len_s,
 		const size_t len_t) const {
 
-		// Our implementation follows what is commonly referred to as Waterman-Smith-Beyer, i.e.
+		// Our implementation follows what is sometimes referred to as Waterman-Smith-Beyer, i.e.
 		// an O(n^3) algorithm for generic gap costs. Waterman-Smith-Beyer generates a local alignment.
 
-		// We use the same implementation approach as in the "affine_gap" method to differentiate
+		// We use the same implementation approach as in LinearGapCostSolver to differentiate
 		// between local and global alignments.
 
 		// Waterman, M. S., Smith, T. F., & Beyer, W. A. (1976). Some biological sequence metrics.
@@ -848,40 +931,137 @@ public:
 
 		auto matrix = this->m_factory.make(len_s, len_t);
 
-		auto values = matrix.values();
-		auto traceback = matrix.traceback();
+		auto values = matrix.template values_n<1, 1>();
+		auto traceback = matrix.template traceback<1, 1>();
 
 		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				MaxFold<Index, Value> best;
+				Accumulator<Index, Value> acc;
 
-				best.set(
+				acc.set(
 					values(u - 1, v - 1) + similarity(u, v),
 					u - 1, v - 1);
 
 				for (Index k = -1; k < u; k++) {
-					best.update(
+					acc.push(
 						values(k, v) - this->m_gap_cost_s(u - k),
 						k, v);
 				}
 
 				for (Index k = -1; k < v; k++) {
-					best.update(
+					acc.push(
 						values(u, k) - this->m_gap_cost_t(v - k),
 						u, k);
 				}
 
-				this->m_locality.update_best(best);
+				this->m_locality.update_acc(acc);
 
-				values(u, v) = best.score();
-				xt::view(traceback, u, v, xt::all()) = best.traceback();
+				acc.write(
+					values(u, v),
+					xt::view(traceback, u, v, xt::all()));
 			}
 		}
 	}
 };
 
-} // namespace alignments
+template<typename Index=int16_t, typename Value=float>
+class DynamicTimeSolver final {
+protected:
+	virtual ComplexityRef complexity() const {
+		return std::make_shared<Complexity>("n^2", "n^2");
+	}
+
+private:
+	MatrixFactory<Index, Value> m_factory;
+
+public:
+	typedef Index IndexType;
+
+	inline DynamicTimeSolver(
+		const size_t p_max_len_s,
+		const size_t p_max_len_t) :
+		m_factory(p_max_len_s, p_max_len_t) {
+
+		auto &values = m_factory.values();
+
+		values.fill(-std::numeric_limits<Value>::infinity());
+		values.at(0, 0) = 0;
+	}
+
+	template<template<typename, typename> class Accumulator, typename Similarity>
+	void solve(
+		const Similarity &similarity,
+		const size_t len_s,
+		const size_t len_t) const {
+
+		// in contrast to the standard formulation of DTW, we use similarity
+		// instead of distance here. we therefore switch from min to max.
+		//
+		// Müller, M. (2007). Information Retrieval for Music and Motion. Springer
+		// Berlin Heidelberg. https://doi.org/10.1007/978-3-540-74048-3
+
+		auto matrix = this->m_factory.make(len_s, len_t);
+		auto values = matrix.template values_n<1, 1>();
+		auto traceback = matrix.template traceback<1, 1>();
+
+		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
+			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
+
+				Accumulator<Index, Value> acc;
+
+				acc.set(
+					values(u - 1, v - 1),
+					u - 1, v - 1);
+
+				acc.push(
+					values(u - 1, v),
+					u - 1, v);
+
+				acc.push(
+					values(u, v - 1),
+					u, v - 1);
+
+				acc.add(similarity(u, v));
+
+				acc.write(
+					values(u, v),
+					xt::view(traceback, u, v, xt::all()));
+			}
+		}
+	}
+
+	inline Value score(
+		const size_t len_s,
+		const size_t len_t) const {
+
+		auto matrix = m_factory.make(len_s, len_t);
+		auto values = matrix.template values_n<1, 1>();
+		return values(len_s, len_t);
+	}
+
+	template<typename Alignment>
+	inline Value alignment(
+		const size_t len_s,
+		const size_t len_t,
+		Alignment &alignment) const {
+
+		auto matrix = m_factory.make(len_s, len_t);
+		AlignmentBuilder<Alignment, Index> builder(alignment);
+		const Global global;
+		return global.traceback(matrix, builder);
+	}
+
+	SolutionRef<Index, Value> solution(
+		const size_t len_s,
+		const size_t len_t) const {
+
+		return SolutionRef<Index, Value>();
+	}
+};
+
+
+} // namespace pyalign
 
 #endif // __PYALIGN_SOLVER__
