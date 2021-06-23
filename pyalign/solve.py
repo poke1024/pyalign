@@ -1,7 +1,7 @@
 import pyalign.algorithm
+import numpy as np
 
 from cached_property import cached_property
-from enum import Enum
 from .gaps import GapCost
 
 
@@ -92,6 +92,12 @@ class Alignment:
 	@property
 	def t_to_s(self):
 		return self._alignment.t_to_s
+
+	@cached_property
+	def edges(self):
+		s_to_t = self.s_to_t
+		i = np.nonzero(s_to_t >= 0)[0]
+		return np.column_stack([i, s_to_t[i]])
 
 	def print(self):
 		s = self._problem.s
