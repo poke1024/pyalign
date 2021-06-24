@@ -6,7 +6,7 @@ from .gaps import GapCost
 
 
 class Problem:
-	def __init__(self, matrix, s=None, t=None, mode="similarity"):
+	def __init__(self, matrix, s=None, t=None, direction="maximize"):
 		self._matrix = matrix
 		if s is not None and matrix.shape[0] != len(s):
 			raise ValueError(f"sequence s [{len(s)}] does not match matrix shape {matrix.shape}")
@@ -14,6 +14,11 @@ class Problem:
 			raise ValueError(f"sequence t [{len(t)}] does not match matrix shape {matrix.shape}")
 		self._s = s
 		self._t = t
+		self._direction = direction
+
+	@property
+	def direction(self):
+		return self._direction
 
 	@property
 	def matrix(self):
@@ -152,28 +157,58 @@ class Alignment:
 		self.print()
 
 
+def next_power_of_2(x):
+	return 1 if x == 0 else 2 ** (x - 1).bit_length()
+
+
+class SolverCache:
+	def __init__(self, options):
+		self._options = options
+		self._max_lim_s = 0
+		self._max_lim_t = 0
+		self._solver = None
+
+	def get(self, len_s, len_t):
+		lim_s = max(self._max_lim_s, next_power_of_2(len_s))
+		lim_t = max(self._max_lim_t, next_power_of_2(len_t))
+
+		if lim_s > self._max_lim_s or lim_t > self._max_lim_t:
+			self._solver = pyalign.algorithm.create_solver(
+				lim_s, lim_t, self._options)
+
+			self._max_lim_s = lim_s
+			self._max_lim_t = lim_t
+
+		return self._solver
+
+
 class Solver:
-	def __init__(self, gap_cost: GapCost = None, **kwargs):
-		self._options = dict(gap_cost=gap_cost, **kwargs)
+	def __init__(self, gap_cost: GapCost = None, direction="maximize", **kwargs):
+		self._options = dict(gap_cost=gap_cost, direction=direction, **kwargs)
+		self._direction = direction
 
 		max_len_s = self._options.get("max_len_s")
 		max_len_t = self._options.get("max_len_t")
 
 		if max_len_s and max_len_t:
-			self._default_solver = pyalign.algorithm.create_solver(
+			self._prepared_solver = pyalign.algorithm.create_solver(
 				max_len_s, max_len_t, self._options)
 		else:
-			self._default_solver = None
-		self._last_solver = None
-		self._last_problem = None
+			self._prepared_solver = None
+
+		self._cache = SolverCache(self._options)
 
 	def solve(self, problem, result="alignment"):
+		if problem.direction != self._direction:
+			raise ValueError(
+				f"problem given is '{problem.direction}', "
+				f"but solver is configured to '{self._direction}'")
+
 		matrix = problem.matrix
 
-		solver = self._default_solver
+		solver = self._prepared_solver
 		if solver is None:
-			solver = pyalign.algorithm.create_solver(
-				matrix.shape[0], matrix.shape[1], self._options)
+			solver = self._cache.get(matrix.shape[0], matrix.shape[1])
 
 		if result == "score":
 			return solver.solve_for_score(matrix)

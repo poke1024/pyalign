@@ -226,7 +226,7 @@ SolverRef create_alignment_solver_instance(
 	if (x_gap_s.linear.has_value() && x_gap_t.linear.has_value()) {
 
 		return std::make_shared<SolverImpl<pyalign::LinearGapCostSolver<
-			Locality, Alignment::Index>>>(
+			pyalign::Direction::maximize, Locality, Alignment::Index>>>(
 				p_options,
 				p_locality,
 				x_gap_s.linear.value(),
@@ -237,7 +237,7 @@ SolverRef create_alignment_solver_instance(
 	} else {
 
 		return std::make_shared<SolverImpl<pyalign::GeneralGapCostSolver<
-			Locality, Alignment::Index>>>(
+			pyalign::Direction::maximize, Locality, Alignment::Index>>>(
 				p_options,
 				p_locality,
 				to_gap_tensor_factory(p_gap_s),
@@ -251,6 +251,10 @@ SolverRef create_alignment_solver(
 	const size_t p_max_len_s,
 	const size_t p_max_len_t,
 	const py::dict &p_options) {
+
+	if (p_options["direction"].cast<std::string>() != "maximize") {
+		throw std::runtime_error("alignment with minimize not implemented");
+	}
 
 	const std::string locality_name = p_options.contains("locality") ?
 		p_options["locality"].cast<std::string>() : "local";
@@ -324,11 +328,23 @@ SolverRef create_dtw_solver(
 	const size_t p_max_len_t,
 	const py::dict &p_options) {
 
-	return std::make_shared<SolverImpl<pyalign::DynamicTimeSolver<
-		Alignment::Index, float>>>(
-		p_options,
-		p_max_len_s,
-		p_max_len_t);
+	const std::string direction = p_options["direction"].cast<std::string>();
+
+	if (direction == "maximize") {
+		return std::make_shared<SolverImpl<pyalign::DynamicTimeSolver<
+			pyalign::Direction::maximize, Alignment::Index, float>>>(
+			p_options,
+			p_max_len_s,
+			p_max_len_t);
+	} else if (direction == "minimize") {
+		return std::make_shared<SolverImpl<pyalign::DynamicTimeSolver<
+			pyalign::Direction::minimize, Alignment::Index, float>>>(
+			p_options,
+			p_max_len_s,
+			p_max_len_t);
+	} else {
+		throw std::invalid_argument(direction);
+	}
 }
 
 SolverRef create_solver(

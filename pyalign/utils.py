@@ -81,7 +81,7 @@ class SimpleProblemFactory:
 		for i, x in enumerate(s):
 			for j, y in enumerate(t):
 				m[i, j] = self._sim.get(x, y)
-		return Problem(m, s, t)
+		return Problem(m, s, t, direction="maximize")
 
 
 class EncoderProblemFactory:
@@ -94,4 +94,20 @@ class EncoderProblemFactory:
 	def new_problem(self, s, t):
 		return Problem(self._sim[np.ix_(
 			self._encoder.encode(s),
-			self._encoder.encode(t))], s, t)
+			self._encoder.encode(t))], s, t, direction="maximize")
+
+
+class SpatialProblemFactory:
+	def __init__(self, distance=None):
+		if distance is None:
+			from scipy.spatial.distance import euclidean
+			distance = euclidean
+
+		self._distance = distance
+
+	def new_problem(self, s, t):
+		m = np.empty((len(s), len(t)), dtype=np.float32)
+		for i, x in enumerate(s):
+			for j, y in enumerate(t):
+				m[i, j] = self._distance(x, y)
+		return Problem(m, s, t, direction="minimize")

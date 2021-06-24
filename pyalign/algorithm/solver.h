@@ -15,7 +15,32 @@ namespace pyalign {
 struct ComputationGoal {
 	struct score { // compute only score
 	};
+
 	struct alignment { // compute full traceback
+	};
+};
+
+struct Direction {
+	struct maximize {
+		template<typename Value>
+		static inline bool is_improvement(Value a, Value b) {
+			return a > b;
+		}
+
+		static constexpr bool is_minimize() {
+			return false;
+		}
+	};
+
+	struct minimize {
+		template<typename Value>
+		static inline bool is_improvement(Value a, Value b) {
+			return a < b;
+		}
+
+		static constexpr bool is_minimize() {
+			return true;
+		}
 	};
 };
 
@@ -437,7 +462,7 @@ public:
 };
 
 
-template<typename Index, typename Value>
+template<typename Direction, typename Index, typename Value>
 class Accumulator {
 private:
 	Value m_score;
@@ -456,7 +481,7 @@ public:
 		const Index u,
 		const Index v) {
 
-		if (score > m_score) {
+		if (Direction::is_improvement(score, m_score)) {
 			m_score = score;
 		}
 	}
@@ -471,7 +496,7 @@ public:
 	}
 };
 
-template<typename Index, typename Value>
+template<typename Direction, typename Index, typename Value>
 class TracingAccumulator {
 	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Coord;
 
@@ -494,7 +519,7 @@ public:
 		const Index u,
 		const Index v) {
 
-		if (score > m_score) {
+		if (Direction::is_improvement(score, m_score)) {
 			m_score = score;
 			m_traceback[0] = u;
 			m_traceback[1] = v;
@@ -553,9 +578,9 @@ private:
 	};
 
 public:
-	template<typename Goal>
+	template<typename Direction, typename Goal>
 	struct AccumulatorFactory {
-		typedef TracingAccumulator<Index, Value> Accumulator;
+		typedef TracingAccumulator<Direction, Index, Value> Accumulator;
 	};
 
 	typedef Value ValueType;
@@ -668,18 +693,18 @@ class Global {
 	};
 
 public:
-	template<typename Goal>
+	template<typename Direction, typename Goal>
 	struct AccumulatorFactory {
 	};
 
-	template<>
-	struct AccumulatorFactory<ComputationGoal::score> {
-		typedef Accumulator<Index, Value> Accumulator;
+	template<typename Direction>
+	struct AccumulatorFactory<Direction, ComputationGoal::score> {
+		typedef Accumulator<Direction, Index, Value> Accumulator;
 	};
 
-	template<>
-	struct AccumulatorFactory<ComputationGoal::alignment> {
-		typedef TracingAccumulator<Index, Value> Accumulator;
+	template<typename Direction>
+	struct AccumulatorFactory<Direction, ComputationGoal::alignment> {
+		typedef TracingAccumulator<Direction, Index, Value> Accumulator;
 	};
 
 	typedef Value ValueType;
@@ -760,18 +785,18 @@ class Semiglobal {
 	};
 
 public:
-	template<typename Goal>
+	template<typename Direction, typename Goal>
 	struct AccumulatorFactory {
 	};
 
-	template<>
-	struct AccumulatorFactory<ComputationGoal::score> {
-		typedef Accumulator<Index, Value> Accumulator;
+	template<typename Direction>
+	struct AccumulatorFactory<Direction, ComputationGoal::score> {
+		typedef Accumulator<Direction, Index, Value> Accumulator;
 	};
 
-	template<>
-	struct AccumulatorFactory<ComputationGoal::alignment> {
-		typedef TracingAccumulator<Index, Value> Accumulator;
+	template<typename Direction>
+	struct AccumulatorFactory<Direction, ComputationGoal::alignment> {
+		typedef TracingAccumulator<Direction, Index, Value> Accumulator;
 	};
 
 	typedef Value ValueType;
@@ -940,7 +965,7 @@ public:
 template<typename Locality, typename Index=int16_t>
 using AlignmentSolver = Solver<Locality, Index>;
 
-template<typename Locality, typename Index=int16_t>
+template<typename Direction, typename Locality, typename Index=int16_t>
 class LinearGapCostSolver final : public AlignmentSolver<Locality, Index> {
 	// For global alignment, we pose the problem as a Needleman-Wunsch problem, but follow the
 	// implementation of Sankoff and Kruskal.
@@ -1027,7 +1052,8 @@ public:
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				typename Locality::template AccumulatorFactory<ComputationGoal>::Accumulator acc;
+				typename Locality::template AccumulatorFactory<
+					Direction, ComputationGoal>::Accumulator acc;
 
 				acc.set(
 					values(u - 1, v - 1) + similarity(u, v),
@@ -1060,7 +1086,7 @@ inline void check_gap_tensor_shape(const xt::xtensor<Value, 1> &tensor, const si
 	}
 }
 
-template<typename Locality, typename Index=int16_t>
+template<typename Direction, typename Locality, typename Index=int16_t>
 class GeneralGapCostSolver final : public AlignmentSolver<Locality, Index> {
 	// Our implementation follows what is sometimes referred to as Waterman-Smith-Beyer, i.e.
 	// an O(n^3) algorithm for generic gap costs. Waterman-Smith-Beyer generates a local alignment.
@@ -1142,7 +1168,8 @@ public:
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				typename Locality::template AccumulatorFactory<ComputationGoal>::Accumulator acc;
+				typename Locality::template AccumulatorFactory<Direction,
+					ComputationGoal>::Accumulator acc;
 
 				acc.set(
 					values(u - 1, v - 1) + similarity(u, v),
@@ -1170,7 +1197,7 @@ public:
 	}
 };
 
-template<typename Index=int16_t, typename Value=float>
+template<typename Direction, typename Index=int16_t, typename Value=float>
 class DynamicTimeSolver final : public Solver<Global<Index, Value>, Index> {
 public:
 	typedef Index IndexType;
@@ -1187,7 +1214,7 @@ public:
 
 		auto &values = this->m_factory.values();
 
-		values.fill(-std::numeric_limits<Value>::infinity());
+		values.fill(std::numeric_limits<Value>::infinity() * (Direction::is_minimize() ? 1 : -1));
 		values.at(0, 0) = 0;
 	}
 
@@ -1197,9 +1224,6 @@ public:
 		const size_t len_s,
 		const size_t len_t) const {
 
-		// in contrast to the standard formulation of DTW, we use similarity
-		// instead of distance here. we therefore switch from min to max.
-		//
 		// Müller, M. (2007). Information Retrieval for Music and Motion. Springer
 		// Berlin Heidelberg. https://doi.org/10.1007/978-3-540-74048-3
 
@@ -1210,7 +1234,8 @@ public:
 		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				typename Global<Index, Value>::template AccumulatorFactory<ComputationGoal>::Accumulator acc;
+				typename Global<Index, Value>::template AccumulatorFactory<
+					Direction, ComputationGoal>::Accumulator acc;
 
 				acc.set(
 					values(u - 1, v - 1),
