@@ -1,5 +1,6 @@
 import bokeh.plotting
 import bokeh.models
+import bokeh.io
 import numpy as np
 
 
@@ -24,9 +25,15 @@ def flat_ix(a):
 		np.arange(a.shape[0]))).reshape(-1, 2), axis=-1)
 
 
-class TracebackPlotter:
+class TracebackPlotFactory:
 	def __init__(self, solution):
 		self._solution = solution
+		self._p = None
+		self._len = None
+		self._path = None
+
+	def _create_plot(self):
+		solution = self._solution
 
 		values = solution.values[1:, 1:]
 
@@ -138,7 +145,7 @@ class TracebackPlotter:
 
 		self._p.add_layout(labels)
 
-	def _show(self):
+	def _configure(self):
 		p = self._p
 		len_s, len_t = self._len
 
@@ -151,12 +158,12 @@ class TracebackPlotter:
 
 		p.grid.grid_line_color = None
 
-		bokeh.io.show(p)
-
-	def plot(self):
+	def create(self):
+		self._create_plot()
 		self._plot_grid()
 		self._shade_optimal_path_cells()
 		self._plot_traceback_matrix_arrows()
 		self._plot_optimal_path_arrows()
 		self._plot_value_magnitudes()
-		self._show()
+		self._configure()
+		return self._p

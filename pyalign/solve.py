@@ -2,6 +2,7 @@ import pyalign.algorithm
 import numpy as np
 
 from cached_property import cached_property
+from pathlib import Path
 from .gaps import GapCost
 
 
@@ -77,9 +78,20 @@ class Solution:
 		return self._solution.complexity
 
 	def _ipython_display_(self):
-		from pyalign.plot import TracebackPlotter
-		plotter = TracebackPlotter(self)
-		plotter.plot()
+		import bokeh.io
+		from pyalign.plot import TracebackPlotFactory
+		f = TracebackPlotFactory(self._solution)
+		bokeh.io.show(f.create())
+
+	def export_image(self, path):
+		import bokeh.io
+		from pyalign.plot import TracebackPlotFactory
+		f = TracebackPlotFactory(self._solution)
+		path = Path(path)
+		if path.suffix == ".svg":
+			bokeh.io.export_svg(f.create(), filename=path)
+		else:
+			bokeh.io.export_png(f.create(), filename=path)
 
 
 class Alignment:

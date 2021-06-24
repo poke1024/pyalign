@@ -9,13 +9,12 @@ Features:
 * easy to install and easy to use
 * robust and efficient implementation of standard algorithms
 * computes local, global and semiglobal alignments on pairs of sequences
-* supports commonly used as well as custom gap costs
-* automatically chooses best suitable algorithm
+* supports different gap costs( commonly used ones as well as custom ones)
+* automatically selects best suitable algorithm
 * no assumptions on matched items, i.e. not limited to characters
 * supports any given similarity function
-* built-in visualization functionality for teaching purposes
 * reasonably fast for smaller problem sizes (see below for details)
-* only computes and stores what you ask it to compute (e.g. only scores)
+* built-in visualization functionality for teaching purposes
 
 What you will *not* find in pyalign:
 
@@ -40,6 +39,36 @@ If you need any of the above, you might want to take a look at:
 * does support multithreading
 * allows preallocation of data structures
 * uses an optimized C++ core that employs <a href="https://github.com/xtensor-stack/xtensor">xtensor</a>
+
+# Example
+
+```
+import pyalign.utils
+import pyalign.solve
+import pyalign.gaps
+
+pf = pyalign.utils.SimpleProblemFactory(pyalign.utils.BinarySimilarity(eq=1, ne=-1))
+solver = pyalign.solve.GlobalSolver(gap_cost=pyalign.gaps.LinearGapCost(0.2))
+problem = pf.new_problem("INDUSTRY", "INTEREST")
+solver.solve(problem)
+```
+
+gives
+
+```
+INDU    STRY
+||      ||  
+IN  TEREST  
+```
+
+It's also possible to extract the traceback matrix and path and generate
+visuals:
+
+```
+solver.solve(problem, "solution")
+```
+
+![traceback and path](docs/traceback.svg)
 
 # References
 
