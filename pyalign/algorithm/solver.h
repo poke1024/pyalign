@@ -125,17 +125,19 @@ typedef std::shared_ptr<Complexity> ComplexityRef;
 template<typename Value>
 using GapTensorFactory = std::function<xt::xtensor<Value, 1>(size_t)>;
 
-template<typename Index, typename Value>
+template<typename Index, typename Value, int LayerCount, int Layer>
 class Matrix;
 
-template<typename Index, typename Value>
+template<typename Index, typename Value, int LayerCount>
 class MatrixFactory {
 protected:
-	friend class Matrix<Index, Value>;
+	friend class Matrix<Index, Value, LayerCount, 0>;
+	friend class Matrix<Index, Value, LayerCount, 1>;
+	friend class Matrix<Index, Value, LayerCount, 2>;
 
 	struct Data {
-		xt::xtensor<Value, 2> values;
-		xt::xtensor<Index, 3> traceback;
+		xt::xtensor<Value, 3> values;
+		xt::xtensor<Index, 4> traceback;
 		xt::xtensor<Index, 1> best_column;
 	};
 
@@ -169,10 +171,12 @@ public:
 		check_size_against_implementation_limit(p_max_len_t);
 
 		m_data->values.resize({
+			LayerCount,
 			m_max_len_s + 1,
 			m_max_len_t + 1
 		});
 		m_data->traceback.resize({
+			LayerCount,
 			m_max_len_s + 1,
 			m_max_len_t + 1,
 			2
@@ -182,7 +186,8 @@ public:
 		});
 	}
 
-	inline Matrix<Index, Value> make(
+	template<int Layer>
+	inline Matrix<Index, Value, LayerCount, Layer> make(
 		const Index len_s, const Index len_t) const;
 
 	inline Index max_len_s() const {
@@ -193,30 +198,31 @@ public:
 		return m_max_len_t;
 	}
 
-	inline auto &values() const {
-		return m_data->values;
+	template<int Layer>
+	inline auto values() const {
+		return xt::view(m_data->values, Layer, xt::all(), xt::all());
 	}
 };
 
-template<int i0, int j0, typename Index, typename Tensor>
+template<int Layer, int i0, int j0, typename Index, typename Tensor>
 inline auto shifted_indices(Tensor &v) {
 	// a custom view based on xt::xtensor to make sure that negative indexes, e.g.
 	// m(-1, 2), are handled correctly. this is not guaranteed in xtensor.
 
 	return [&v] (const Index i, const Index j) -> typename Tensor::reference {
-		return v(i + i0, j + j0);
+		return v(Layer, i + i0, j + j0);
 	};
 }
 
-template<typename Index, typename Value>
+template<typename Index, typename Value, int LayerCount, int Layer>
 class Matrix {
-	const MatrixFactory<Index, Value> &m_factory;
+	const MatrixFactory<Index, Value, LayerCount> &m_factory;
 	const Index m_len_s;
 	const Index m_len_t;
 
 public:
 	inline Matrix(
-		const MatrixFactory<Index, Value> &factory,
+		const MatrixFactory<Index, Value, LayerCount> &factory,
 		const Index len_s,
 		const Index len_t) :
 
@@ -235,13 +241,13 @@ public:
 
 	template<int i0, int j0>
 	inline auto values_n() const {
-		return shifted_indices<i0, j0, Index>(
+		return shifted_indices<Layer, i0, j0, Index>(
 			m_factory.m_data->values);
 	}
 
 	template<int i0, int j0>
 	inline auto traceback_n() const {
-		return shifted_indices<i0, j0, Index>(
+		return shifted_indices<Layer, i0, j0, Index>(
 			m_factory.m_data->traceback);
 	}
 
@@ -249,6 +255,7 @@ public:
 	inline auto values() const {
 		return xt::view(
 			m_factory.m_data->values,
+			Layer,
 			xt::range(i0, m_len_s + 1),
 			xt::range(j0, m_len_t + 1));
 	}
@@ -257,6 +264,7 @@ public:
 	inline auto traceback() const {
 		return xt::view(
 			m_factory.m_data->traceback,
+			Layer,
 			xt::range(i0, m_len_s + 1),
 			xt::range(j0, m_len_t + 1));
 	}
@@ -268,13 +276,14 @@ public:
 	}
 };
 
-template<typename Index, typename Value>
-inline Matrix<Index, Value> MatrixFactory<Index, Value>::make(
+template<typename Index, typename Value, int LayerCount>
+template<int Layer>
+inline Matrix<Index, Value, LayerCount, Layer> MatrixFactory<Index, Value, LayerCount>::make(
 	const Index len_s, const Index len_t) const {
 
 	check_size_against_max(len_s, m_max_len_s);
 	check_size_against_max(len_t, m_max_len_t);
-	return Matrix(*this, len_s, len_t);
+	return Matrix<Index, Value, LayerCount, Layer>(*this, len_s, len_t);
 }
 
 template<typename V>
@@ -546,9 +555,10 @@ private:
 	template<typename Path>
 	class Backtracer {
 	public:
+		template<typename Matrix>
 		inline static std::pair<Index, Index> build(
 			Path &path,
-			const Matrix<Index, Value> &matrix,
+			const Matrix &matrix,
 			const float zero,
 			const Index u0, const Index v0) {
 
@@ -605,9 +615,9 @@ public:
 		acc.push(m_zero, -1, -1);
 	}
 
-	template<typename Path>
+	template<typename Matrix, typename Path>
 	inline Value traceback(
-		Matrix<Index, Value> &matrix,
+		Matrix &matrix,
 		Path &path) const {
 
 		const auto len_s = matrix.len_s();
@@ -655,9 +665,10 @@ class Global {
 	template<typename Path>
 	class Backtracer {
 	public:
+		template<typename Matrix>
 		inline static void build(
 			Path &path,
-			const Matrix<Index, Value> &matrix,
+			const Matrix &matrix,
 			const Index u0, const Index v0) {
 
 			const auto len_s = matrix.len_s();
@@ -685,9 +696,10 @@ class Global {
 	template<>
 	class Backtracer<build_nothing> {
 	public:
+		template<typename Matrix>
 		inline static void build(
 			build_nothing &path,
-			const Matrix<Index, Value> &matrix,
+			const Matrix &matrix,
 			const Index u0, const Index v0) {
 		}
 	};
@@ -722,9 +734,9 @@ public:
 	inline void update_acc(Accumulator &) const {
 	}
 
-	template<typename Path>
+	template<typename Matrix, typename Path>
 	inline Value traceback(
-		Matrix<Index, Value> &matrix,
+		Matrix &matrix,
 		Path &path) const {
 
 		const auto len_s = matrix.len_s();
@@ -747,9 +759,10 @@ class Semiglobal {
 	template<typename Path>
 	class Backtracer {
 	public:
+		template<typename Matrix>
 		inline static void build(
 			Path &path,
-			const Matrix<Index, Value> &matrix,
+			const Matrix &matrix,
 			const Index u0, const Index v0) {
 
 			const auto len_s = matrix.len_s();
@@ -777,9 +790,10 @@ class Semiglobal {
 	template<>
 	class Backtracer<build_nothing> {
 	public:
+		template<typename Matrix>
 		inline static void build(
 			build_nothing &path,
-			const Matrix<Index, Value> &matrix,
+			const Matrix &matrix,
 			const Index u0, const Index v0) {
 		}
 	};
@@ -813,9 +827,9 @@ public:
 	inline void update_acc(Accumulator &) const {
 	}
 
-	template<typename Path>
+	template<typename Matrix, typename Path>
 	inline Value traceback(
-		Matrix<Index, Value> &matrix,
+		Matrix &matrix,
 		Path &path) const {
 
 		const auto len_s = matrix.len_s();
@@ -881,14 +895,14 @@ template<typename Index, typename Value>
 using SolutionRef = std::shared_ptr<Solution<Index, Value>>;
 
 
-template<typename Locality, typename Index=int16_t>
+template<typename Locality, typename Index, int LayerCount>
 class Solver {
 public:
 	typedef typename Locality::ValueType Value;
 
 protected:
 	const Locality m_locality;
-	MatrixFactory<Index, Value> m_factory;
+	MatrixFactory<Index, Value, LayerCount> m_factory;
 	const ComplexityRef m_complexity;
 
 public:
@@ -911,15 +925,16 @@ public:
 		return m_factory.max_len_t();
 	}
 
+	template<int Layer>
 	inline auto matrix(const Index len_s, const Index len_t) {
-		return m_factory.make(len_s, len_t);
+		return m_factory.make<Layer>(len_s, len_t);
 	}
 
 	inline Value score(
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix = m_factory.make(len_s, len_t);
+		auto matrix = m_factory.template make<0>(len_s, len_t);
 		build_nothing nothing;
 		return m_locality.traceback(matrix, nothing);
 	}
@@ -930,7 +945,7 @@ public:
 		const size_t len_t,
 		Alignment &alignment) const {
 
-		auto matrix = m_factory.make(len_s, len_t);
+		auto matrix = m_factory.template make<0>(len_s, len_t);
 		build_alignment<Alignment> build(alignment);
 		return m_locality.traceback(matrix, build);
 	}
@@ -944,7 +959,7 @@ public:
 		const SolutionRef<Index, Value> solution =
 			std::make_shared<Solution<Index, Value>>();
 
-		auto matrix = m_factory.make(len_s, len_t);
+		auto matrix = m_factory.template make<0>(len_s, len_t);
 		solution->m_values = matrix.template values<0, 0>();
 		solution->m_traceback = matrix.template traceback<0, 0>();
 
@@ -962,11 +977,11 @@ public:
 	}
 };
 
-template<typename Locality, typename Index=int16_t>
-using AlignmentSolver = Solver<Locality, Index>;
+template<typename Locality, typename Index, int LayerCount>
+using AlignmentSolver = Solver<Locality, Index, LayerCount>;
 
 template<typename Direction, typename Locality, typename Index=int16_t>
-class LinearGapCostSolver final : public AlignmentSolver<Locality, Index> {
+class LinearGapCostSolver final : public AlignmentSolver<Locality, Index, 1> {
 	// For global alignment, we pose the problem as a Needleman-Wunsch problem, but follow the
 	// implementation of Sankoff and Kruskal.
 
@@ -993,7 +1008,7 @@ class LinearGapCostSolver final : public AlignmentSolver<Locality, Index> {
 	// Hendrix, D. A. Applied Bioinformatics. https://open.oregonstate.education/appliedbioinformatics/.
 
 public:
-	typedef typename AlignmentSolver<Locality, Index>::Value Value;
+	typedef typename AlignmentSolver<Locality, Index, 1>::Value Value;
 
 private:
 	const Value m_gap_cost_s;
@@ -1011,7 +1026,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Locality, Index>(
+		AlignmentSolver<Locality, Index, 1>(
 			p_locality,
 			p_max_len_s,
 			p_max_len_t,
@@ -1019,7 +1034,7 @@ public:
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
 
-		auto &values = this->m_factory.values();
+		auto values = this->m_factory.template values<0>();
 		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
 		p_locality.init_border_case(
@@ -1044,7 +1059,7 @@ public:
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix = this->m_factory.make(len_s, len_t);
+		auto matrix = this->m_factory.template make<0>(len_s, len_t);
 
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
@@ -1089,7 +1104,7 @@ inline void check_gap_tensor_shape(const xt::xtensor<Value, 1> &tensor, const si
 }
 
 template<typename Direction, typename Locality, typename Index=int16_t>
-class GeneralGapCostSolver final : public AlignmentSolver<Locality, Index> {
+class GeneralGapCostSolver final : public AlignmentSolver<Locality, Index, 1> {
 	// Our implementation follows what is sometimes referred to as Waterman-Smith-Beyer, i.e.
 	// an O(n^3) algorithm for generic gap costs. Waterman-Smith-Beyer generates a local alignment.
 
@@ -1105,7 +1120,7 @@ class GeneralGapCostSolver final : public AlignmentSolver<Locality, Index> {
 	// Hendrix, D. A. Applied Bioinformatics. https://open.oregonstate.education/appliedbioinformatics/.
 
 public:
-	typedef typename AlignmentSolver<Locality, Index>::Value Value;
+	typedef typename AlignmentSolver<Locality, Index, 1>::Value Value;
 
 private:
 	const xt::xtensor<Value, 1> m_gap_cost_s;
@@ -1123,7 +1138,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Locality, Index>(
+		AlignmentSolver<Locality, Index, 1>(
 			p_locality,
 			p_max_len_s,
 			p_max_len_t,
@@ -1134,7 +1149,7 @@ public:
 		check_gap_tensor_shape(m_gap_cost_s, p_max_len_s + 1);
 		check_gap_tensor_shape(m_gap_cost_t, p_max_len_t + 1);
 
-		auto &values = this->m_factory.values();
+		auto values = this->m_factory.template values<0>();
 		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
 		p_locality.init_border_case(
@@ -1162,7 +1177,7 @@ public:
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix = this->m_factory.make(len_s, len_t);
+		auto matrix = this->m_factory.template make<0>(len_s, len_t);
 
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
@@ -1202,7 +1217,7 @@ public:
 };
 
 template<typename Direction, typename Index=int16_t, typename Value=float>
-class DynamicTimeSolver final : public Solver<Global<Index, Value>, Index> {
+class DynamicTimeSolver final : public Solver<Global<Index, Value>, Index, 1> {
 public:
 	typedef Index IndexType;
 
@@ -1210,14 +1225,13 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		Solver<Global<Index, Value>, Index>(
+		Solver<Global<Index, Value>, Index, 1>(
 			Global<Index, Value>(),
 			p_max_len_s,
 			p_max_len_t,
 			std::make_shared<Complexity>("n^2", "n^2")) {
 
-		auto &values = this->m_factory.values();
-
+		auto values = this->m_factory.template values<0>();
 		values.fill(std::numeric_limits<Value>::infinity() * (Direction::is_minimize() ? 1 : -1));
 		values.at(0, 0) = 0;
 	}
@@ -1238,7 +1252,7 @@ public:
 		// than the Algorithm it Approximates. IEEE Transactions on Knowledge and Data
 		// Engineering, 1–1. https://doi.org/10.1109/TKDE.2020.3033752
 
-		auto matrix = this->m_factory.make(len_s, len_t);
+		auto matrix = this->m_factory.template make<0>(len_s, len_t);
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
 
