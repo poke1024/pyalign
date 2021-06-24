@@ -15,6 +15,7 @@ Features:
 * supports any given similarity function
 * built-in visualization functionality for teaching purposes
 * reasonably fast for smaller problem sizes (see below for details)
+* only computes and stores what you ask it to compute (e.g. only scores)
 
 What you will *not* find in pyalign:
 
@@ -37,9 +38,8 @@ If you need any of the above, you might want to take a look at:
 
 * does *not* support SIMD or GPUs
 * does support multithreading
-* is based on xtensor
 * allows preallocation of data structures
-* is an optimized C++ core
+* uses an optimized C++ core that employs <a href="https://github.com/xtensor-stack/xtensor">xtensor</a>
 
 # References
 

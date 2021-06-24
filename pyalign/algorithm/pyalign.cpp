@@ -126,9 +126,8 @@ public:
 		const auto len_s = p_similarity.shape(0);
 		const auto len_t = p_similarity.shape(1);
 
-		m_solver.template solve<pyalign::Accumulator>(
+		m_solver.template solve<pyalign::ComputationGoal::score>(
 			p_similarity, len_s, len_t);
-
 		return m_solver.score(len_s, len_t);
 	}
 
@@ -138,7 +137,7 @@ public:
 		const auto len_s = p_similarity.shape(0);
 		const auto len_t = p_similarity.shape(1);
 
-		m_solver.template solve<pyalign::TracingAccumulator>(
+		m_solver.template solve<pyalign::ComputationGoal::alignment>(
 			p_similarity, len_s, len_t);
 
 		const auto alignment = std::make_shared<Alignment>();
@@ -154,11 +153,12 @@ public:
 		const auto len_s = p_similarity.shape(0);
 		const auto len_t = p_similarity.shape(1);
 
-		m_solver.template solve<pyalign::TracingAccumulator>(
+		m_solver.template solve<pyalign::ComputationGoal::alignment>(
 			p_similarity, len_s, len_t);
 
+		const auto alignment = std::make_shared<Alignment>();
 		return std::make_shared<Solution>(
-			m_solver.solution(len_s, len_t));
+			m_solver.solution(len_s, len_t, alignment));
 	}
 };
 
@@ -257,7 +257,7 @@ SolverRef create_alignment_solver(
 		const float zero = p_options.contains("zero") ?
 			p_options["zero"].cast<float>() : 0.0f;
 
-		const auto locality = pyalign::Local<float>(zero);
+		const auto locality = pyalign::Local<Alignment::Index, float>(zero);
 
 		return create_alignment_solver_instance(
 			locality,
@@ -268,7 +268,7 @@ SolverRef create_alignment_solver(
 
 	} else if (locality == "global") {
 
-		const auto locality = pyalign::Global<float>();
+		const auto locality = pyalign::Global<Alignment::Index, float>();
 
 		return create_alignment_solver_instance(
 			locality,
@@ -279,7 +279,7 @@ SolverRef create_alignment_solver(
 
 	} else if (locality == "semiglobal") {
 
-		const auto locality = pyalign::Semiglobal<float>();
+		const auto locality = pyalign::Semiglobal<Alignment::Index, float>();
 
 		return create_alignment_solver_instance(
 			locality,
