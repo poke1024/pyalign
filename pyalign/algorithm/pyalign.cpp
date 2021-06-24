@@ -211,6 +211,26 @@ struct GapCostSpecialCases {
 	std::optional<float> linear;
 };
 
+template<template<typename, typename, typename> class InternalSolver, typename Locality, typename... Args>
+SolverRef create_alignment_solver_instance_for_direction(
+	const py::dict &p_options,
+	const Args&... args) {
+
+	const std::string direction = p_options["direction"].cast<std::string>();
+
+	if (direction == "maximize") {
+		return std::make_shared<SolverImpl<InternalSolver<
+			pyalign::Direction::maximize, Locality, Alignment::Index>>>(
+				p_options, args...);
+	} else if (direction == "minimize") {
+		return std::make_shared<SolverImpl<InternalSolver<
+			pyalign::Direction::minimize, Locality, Alignment::Index>>>(
+				p_options, args...);
+	} else {
+		throw std::invalid_argument(direction);
+	}
+}
+
 template<typename Locality>
 SolverRef create_alignment_solver_instance(
 	const py::dict &p_options,
@@ -224,26 +244,23 @@ SolverRef create_alignment_solver_instance(
 	const GapCostSpecialCases x_gap_t(p_gap_t);
 
 	if (x_gap_s.linear.has_value() && x_gap_t.linear.has_value()) {
-
-		return std::make_shared<SolverImpl<pyalign::LinearGapCostSolver<
-			pyalign::Direction::maximize, Locality, Alignment::Index>>>(
-				p_options,
-				p_locality,
-				x_gap_s.linear.value(),
-				x_gap_t.linear.value(),
-				p_max_len_s,
-				p_max_len_t);
-
+		return create_alignment_solver_instance_for_direction<pyalign::LinearGapCostSolver, Locality>(
+			p_options,
+			p_locality,
+			x_gap_s.linear.value(),
+			x_gap_t.linear.value(),
+			p_max_len_s,
+			p_max_len_t
+		);
 	} else {
-
-		return std::make_shared<SolverImpl<pyalign::GeneralGapCostSolver<
-			pyalign::Direction::maximize, Locality, Alignment::Index>>>(
-				p_options,
-				p_locality,
-				to_gap_tensor_factory(p_gap_s),
-				to_gap_tensor_factory(p_gap_t),
-				p_max_len_s,
-				p_max_len_t);
+		return create_alignment_solver_instance_for_direction<pyalign::GeneralGapCostSolver, Locality>(
+			p_options,
+			p_locality,
+			to_gap_tensor_factory(p_gap_s),
+			to_gap_tensor_factory(p_gap_t),
+			p_max_len_s,
+			p_max_len_t
+		);
 	}
 }
 
@@ -251,10 +268,6 @@ SolverRef create_alignment_solver(
 	const size_t p_max_len_s,
 	const size_t p_max_len_t,
 	const py::dict &p_options) {
-
-	if (p_options["direction"].cast<std::string>() != "maximize") {
-		throw std::runtime_error("alignment with minimize not implemented");
-	}
 
 	const std::string locality_name = p_options.contains("locality") ?
 		p_options["locality"].cast<std::string>() : "local";

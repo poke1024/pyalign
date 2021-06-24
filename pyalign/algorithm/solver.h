@@ -714,7 +714,7 @@ public:
 		Vector &&p_vector,
 		const xt::xtensor<Value, 1> &p_gap_cost) const {
 
-		p_vector = -1 * xt::view(
+		p_vector = xt::view(
 			p_gap_cost, xt::range(0, p_vector.size()));
 	}
 
@@ -1020,13 +1020,14 @@ public:
 		m_gap_cost_t(p_gap_cost_t) {
 
 		auto &values = this->m_factory.values();
+		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
 		p_locality.init_border_case(
 			xt::view(values, xt::all(), 0),
-			xt::arange<Index>(0, p_max_len_s + 1) * p_gap_cost_s);
+			xt::arange<Index>(0, p_max_len_s + 1) * p_gap_cost_s * gap_sgn);
 		p_locality.init_border_case(
 			xt::view(values, 0, xt::all()),
-			xt::arange<Index>(0, p_max_len_t + 1) * p_gap_cost_t);
+			xt::arange<Index>(0, p_max_len_t + 1) * p_gap_cost_t * gap_sgn);
 	}
 
 	inline Value gap_cost_s(const size_t len) const {
@@ -1037,9 +1038,9 @@ public:
 		return m_gap_cost_t * len;
 	}
 
-	template<typename ComputationGoal, typename Similarity>
+	template<typename ComputationGoal, typename Pairwise>
 	void solve(
-		const Similarity &similarity,
+		const Pairwise &pairwise,
 		const size_t len_s,
 		const size_t len_t) const {
 
@@ -1047,6 +1048,7 @@ public:
 
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
+		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
 		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
 
@@ -1056,15 +1058,15 @@ public:
 					Direction, ComputationGoal>::Accumulator acc;
 
 				acc.set(
-					values(u - 1, v - 1) + similarity(u, v),
+					values(u - 1, v - 1) + pairwise(u, v),
 					u - 1, v - 1);
 
 				acc.push(
-					values(u - 1, v) - this->m_gap_cost_s,
+					values(u - 1, v) + this->m_gap_cost_s * gap_sgn,
 					u - 1, v);
 
 				acc.push(
-					values(u, v - 1) - this->m_gap_cost_t,
+					values(u, v - 1) + this->m_gap_cost_t * gap_sgn,
 					u, v - 1);
 
 				this->m_locality.update_acc(acc);
@@ -1133,14 +1135,15 @@ public:
 		check_gap_tensor_shape(m_gap_cost_t, p_max_len_t + 1);
 
 		auto &values = this->m_factory.values();
+		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
 		p_locality.init_border_case(
 			xt::view(values, xt::all(), 0),
-			m_gap_cost_s);
+			m_gap_cost_s * gap_sgn);
 
 		p_locality.init_border_case(
 			xt::view(values, 0, xt::all()),
-			m_gap_cost_t);
+			m_gap_cost_t * gap_sgn);
 	}
 
 	inline Value gap_cost_s(const size_t len) const {
@@ -1153,9 +1156,9 @@ public:
 		return m_gap_cost_t(len);
 	}
 
-	template<typename ComputationGoal, typename Similarity>
+	template<typename ComputationGoal, typename Pairwise>
 	void solve(
-		const Similarity &similarity,
+		const Pairwise &pairwise,
 		const size_t len_s,
 		const size_t len_t) const {
 
@@ -1163,6 +1166,7 @@ public:
 
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
+		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
 		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
 
@@ -1172,18 +1176,18 @@ public:
 					ComputationGoal>::Accumulator acc;
 
 				acc.set(
-					values(u - 1, v - 1) + similarity(u, v),
+					values(u - 1, v - 1) + pairwise(u, v),
 					u - 1, v - 1);
 
 				for (Index k = -1; k < u; k++) {
 					acc.push(
-						values(k, v) - this->m_gap_cost_s(u - k),
+						values(k, v) + this->m_gap_cost_s(u - k) * gap_sgn,
 						k, v);
 				}
 
 				for (Index k = -1; k < v; k++) {
 					acc.push(
-						values(u, k) - this->m_gap_cost_t(v - k),
+						values(u, k) + this->m_gap_cost_t(v - k) * gap_sgn,
 						u, k);
 				}
 
@@ -1218,9 +1222,9 @@ public:
 		values.at(0, 0) = 0;
 	}
 
-	template<typename ComputationGoal, typename Similarity>
+	template<typename ComputationGoal, typename Pairwise>
 	void solve(
-		const Similarity &similarity,
+		const Pairwise &pairwise, // similarity or distance, depends on Direction
 		const size_t len_s,
 		const size_t len_t) const {
 
@@ -1249,7 +1253,7 @@ public:
 					values(u, v - 1),
 					u, v - 1);
 
-				acc.add(similarity(u, v));
+				acc.add(pairwise(u, v));
 
 				acc.write(
 					values(u, v),
