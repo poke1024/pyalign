@@ -1231,6 +1231,13 @@ public:
 		// Müller, M. (2007). Information Retrieval for Music and Motion. Springer
 		// Berlin Heidelberg. https://doi.org/10.1007/978-3-540-74048-3
 
+		// Ratanamahatana, C., & Keogh, E. (2004). Everything you know about dynamic
+		// time warping is wrong.
+
+		// Wu, R., & Keogh, E. J. (2020). FastDTW is approximate and Generally Slower
+		// than the Algorithm it Approximates. IEEE Transactions on Knowledge and Data
+		// Engineering, 1–1. https://doi.org/10.1109/TKDE.2020.3033752
+
 		auto matrix = this->m_factory.make(len_s, len_t);
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
