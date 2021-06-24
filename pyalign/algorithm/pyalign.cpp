@@ -71,11 +71,11 @@ public:
 		m_alignment(p_alignment) {
 	}
 
-	xt::pytensor<Value, 2> values() const {
+	xt::pytensor<Value, 3> values() const {
 		return m_solution->values();
 	}
 
-	xt::pytensor<Index, 3> traceback() const {
+	xt::pytensor<Index, 4> traceback() const {
 		return m_solution->traceback();
 	}
 

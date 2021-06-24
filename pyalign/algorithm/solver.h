@@ -202,6 +202,18 @@ public:
 	inline auto values() const {
 		return xt::view(m_data->values, Layer, xt::all(), xt::all());
 	}
+
+	inline auto values_all(const Index len_s, const Index len_t) const {
+		return xt::view(
+			m_data->values,
+			xt::all(), xt::range(0, len_s + 1), xt::range(0, len_t + 1));
+	}
+
+	inline auto traceback_all(const Index len_s, const Index len_t) const {
+		return xt::view(
+			m_data->traceback,
+			xt::all(), xt::range(0, len_s + 1), xt::range(0, len_t + 1), xt::all());
+	}
 };
 
 template<int Layer, int i0, int j0, typename Index, typename Tensor>
@@ -864,8 +876,8 @@ public:
 template<typename Index, typename Value>
 class Solution {
 public:
-	xt::xtensor<Value, 2> m_values;
-	xt::xtensor<Index, 3> m_traceback;
+	xt::xtensor<Value, 3> m_values;
+	xt::xtensor<Index, 4> m_traceback;
 	xt::xtensor<Index, 2> m_path;
 	Value m_score;
 	ComplexityRef m_complexity;
@@ -959,14 +971,14 @@ public:
 		const SolutionRef<Index, Value> solution =
 			std::make_shared<Solution<Index, Value>>();
 
-		auto matrix = m_factory.template make<0>(len_s, len_t);
-		solution->m_values = matrix.template values<0, 0>();
-		solution->m_traceback = matrix.template traceback<0, 0>();
+		solution->m_values = m_factory.values_all(len_s, len_t);
+		solution->m_traceback = m_factory.traceback_all(len_s, len_t);
 
 		auto build = build_multiple<build_path<Index>, build_alignment<Alignment>>(
 			build_path<Index>(), build_alignment<Alignment>(alignment)
 		);
 
+		auto matrix = m_factory.template make<0>(len_s, len_t);
 		const auto score = m_locality.traceback(matrix, build);
 		solution->m_path = build.template get<0>().path();
 		solution->m_score = score;

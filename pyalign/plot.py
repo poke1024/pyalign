@@ -26,16 +26,17 @@ def flat_ix(a):
 
 
 class TracebackPlotFactory:
-	def __init__(self, solution):
+	def __init__(self, solution, layer=0):
 		self._solution = solution
 		self._p = None
 		self._len = None
 		self._path = None
+		self._layer = layer
 
 	def _create_plot(self):
 		solution = self._solution
 
-		values = solution.values[1:, 1:]
+		values = solution.values[self._layer, 1:, 1:]
 
 		len_s = values.shape[0]
 		len_t = values.shape[1]
@@ -91,7 +92,7 @@ class TracebackPlotFactory:
 
 		arrow_color = 'blue'
 		arrow_alpha = 0.5
-		traceback = self._solution.traceback[1:, 1:]
+		traceback = self._solution.traceback[self._layer, 1:, 1:]
 
 		src = flat_ix(traceback) + 1
 		dst = traceback.reshape(-1, 2) + 1
@@ -129,7 +130,7 @@ class TracebackPlotFactory:
 		len_s, len_t = self._len
 		solution = self._solution
 
-		ix = flat_ix(solution.values) - 1
+		ix = flat_ix(solution.values[self._layer]) - 1
 
 		source = bokeh.models.ColumnDataSource(
 			data=dict(
