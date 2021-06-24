@@ -60,9 +60,15 @@ public:
 
 private:
 	const pyalign::SolutionRef<Index, Value> m_solution;
+	AlignmentRef m_alignment;
 
 public:
-	Solution(const pyalign::SolutionRef<Index, Value> p_solution) : m_solution(p_solution) {
+	inline Solution(
+		const pyalign::SolutionRef<Index, Value> p_solution,
+		const AlignmentRef &p_alignment) :
+
+		m_solution(p_solution),
+		m_alignment(p_alignment) {
 	}
 
 	xt::pytensor<Value, 2> values() const {
@@ -83,6 +89,10 @@ public:
 
 	const auto &complexity() const {
 		return m_solution->complexity();
+	}
+
+	AlignmentRef alignment() const {
+		return m_alignment;
 	}
 };
 
@@ -158,7 +168,8 @@ public:
 
 		const auto alignment = std::make_shared<Alignment>();
 		return std::make_shared<Solution>(
-			m_solver.solution(len_s, len_t, alignment));
+			m_solver.solution(len_s, len_t, *alignment.get()),
+			alignment);
 	}
 };
 
@@ -342,6 +353,7 @@ PYBIND11_MODULE(algorithm, m) {
 	solution.def_property_readonly("traceback", &Solution::traceback);
 	solution.def_property_readonly("path", &Solution::path);
 	solution.def_property_readonly("score", &Solution::score);
+	solution.def_property_readonly("alignment", &Solution::alignment);
 
 	py::class_<Complexity, ComplexityRef> complexity(m, "Complexity");
 	complexity.def_property_readonly("runtime", &Complexity::runtime);

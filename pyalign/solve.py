@@ -46,6 +46,14 @@ class Solution:
 	def problem(self):
 		return self._problem
 
+	@property
+	def score(self):
+		return self._solution.score
+
+	@property
+	def alignment(self):
+		return self._solution.alignment
+
 	@cached_property
 	def values(self):
 		return self._solution.values
@@ -57,10 +65,6 @@ class Solution:
 	@cached_property
 	def path(self):
 		return self._solution.path
-
-	@property
-	def score(self):
-		return self._solution.score
 
 	@property
 	def complexity(self):

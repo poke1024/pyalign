@@ -275,18 +275,24 @@ inline size_t argmax(const V &v) {
 }
 
 
-template<typename Alignment, typename Index>
-class AlignmentBuilder {
+template<typename Alignment>
+class build_alignment {
 	Alignment &m_alignment;
 
 public:
-	inline AlignmentBuilder(Alignment &p_alignment) : m_alignment(p_alignment) {
+	inline build_alignment(Alignment &p_alignment) :
+		m_alignment(p_alignment) {
 	}
 
-	inline void begin(const Index len_s, const Index len_t) {
+	template<typename Index>
+	inline void begin(
+		const Index len_s,
+		const Index len_t) {
+
 		m_alignment.resize(len_s, len_t);
 	}
 
+	template<typename Index>
 	inline void step(
 		const Index last_u,
 		const Index last_v,
@@ -300,13 +306,16 @@ public:
 };
 
 template<typename Index>
-class PathBuilder {
+class build_path {
 	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Coord;
 
 	std::vector<Coord> m_path;
 
 public:
-	inline void begin(const Index len_s, const Index len_t) {
+	inline void begin(
+		const Index len_s,
+		const Index len_t) {
+
 		m_path.reserve(len_s + len_t);
 	}
 
@@ -321,10 +330,12 @@ public:
 			m_path.push_back(Coord{u, v});
 		} else {
 			if (m_path.back()(0) != last_u) {
-				throw std::runtime_error("internal error in traceback generation");
+				throw std::runtime_error(
+					"internal error in traceback generation");
 			}
 			if (m_path.back()(1) != last_v) {
-				throw std::runtime_error("internal error in traceback generation");
+				throw std::runtime_error(
+					"internal error in traceback generation");
 			}
 			m_path.push_back(Coord{u, v});
 		}
@@ -340,12 +351,81 @@ public:
 	}
 };
 
+template<typename... BuildRest>
+class build_multiple {
+public:
+	inline build_multiple(const BuildRest&... args) {
+	}
 
-class NoPath {
+	template<typename Index>
+	inline void begin(
+		const Index len_s,
+		const Index len_t) {
+	}
+
+	template<typename Index>
+	inline void step(
+		const Index last_u,
+		const Index last_v,
+		const Index u,
+		const Index v) {
+	}
+
+	template<int i>
+	const auto &get() const {
+		throw std::invalid_argument(
+			"illegal index in build_multiple");
+	}
+};
+
+template<typename BuildHead, typename... BuildRest>
+class build_multiple<BuildHead, BuildRest...> {
+	BuildHead m_head;
+	build_multiple<BuildRest...> m_rest;
+
+public:
+	inline build_multiple(const BuildHead &arg1, const BuildRest&... args) :
+		m_head(arg1), m_rest(args...) {
+	}
+
+	template<typename Index>
+	inline void begin(
+		const Index len_s,
+		const Index len_t) {
+
+		m_head.begin(len_s, len_t);
+		m_rest.begin(len_s, len_t);
+	}
+
+	template<typename Index>
+	inline void step(
+		const Index last_u,
+		const Index last_v,
+		const Index u,
+		const Index v) {
+
+		m_head.step(last_u, last_v, u, v);
+		m_rest.step(last_u, last_v, u, v);
+	}
+
+	template<int i>
+	const auto &get() const {
+		return m_rest.template get<i-1>();
+	}
+
+	template<>
+	const auto &get<0>() const {
+		return m_head;
+	}
+};
+
+class build_nothing {
 public:
 	typedef ssize_t Index;
 
-	inline void begin(const Index len_s, const Index len_t) {
+	inline void begin(
+		const Index len_s,
+		const Index len_t) {
 	}
 
 	inline void step(
@@ -578,10 +658,10 @@ class Global {
 	};
 
 	template<>
-	class Backtracer<NoPath> {
+	class Backtracer<build_nothing> {
 	public:
 		inline static void build(
-			NoPath &path,
+			build_nothing &path,
 			const Matrix<Index, Value> &matrix,
 			const Index u0, const Index v0) {
 		}
@@ -670,10 +750,10 @@ class Semiglobal {
 	};
 
 	template<>
-	class Backtracer<NoPath> {
+	class Backtracer<build_nothing> {
 	public:
 		inline static void build(
-			NoPath &path,
+			build_nothing &path,
 			const Matrix<Index, Value> &matrix,
 			const Index u0, const Index v0) {
 		}
@@ -813,8 +893,8 @@ public:
 		const size_t len_t) const {
 
 		auto matrix = m_factory.make(len_s, len_t);
-		NoPath no_path;
-		return m_locality.traceback(matrix, no_path);
+		build_nothing nothing;
+		return m_locality.traceback(matrix, nothing);
 	}
 
 	template<typename Alignment>
@@ -824,8 +904,8 @@ public:
 		Alignment &alignment) const {
 
 		auto matrix = m_factory.make(len_s, len_t);
-		AlignmentBuilder<Alignment, Index> builder(alignment);
-		return m_locality.traceback(matrix, builder);
+		build_alignment<Alignment> build(alignment);
+		return m_locality.traceback(matrix, build);
 	}
 
 	template<typename Alignment>
@@ -841,9 +921,12 @@ public:
 		solution->m_values = matrix.template values<0, 0>();
 		solution->m_traceback = matrix.template traceback<0, 0>();
 
-		PathBuilder<Index> builder;
-		const auto score = m_locality.traceback(matrix, builder);
-		solution->m_path = builder.path();
+		auto build = build_multiple<build_path<Index>, build_alignment<Alignment>>(
+			build_path<Index>(), build_alignment<Alignment>(alignment)
+		);
+
+		const auto score = m_locality.traceback(matrix, build);
+		solution->m_path = build.template get<0>().path();
 		solution->m_score = score;
 
 		solution->m_complexity = complexity();
@@ -1166,7 +1249,7 @@ public:
 		Alignment &alignment) const {
 
 		auto matrix = m_factory.make(len_s, len_t);
-		AlignmentBuilder<Alignment, Index> builder(alignment);
+		build_alignment<Alignment> builder(alignment);
 		const Global<Index, Value> global;
 		return global.traceback(matrix, builder);
 	}
