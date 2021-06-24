@@ -855,25 +855,27 @@ public:
 template<typename Index, typename Value>
 using SolutionRef = std::shared_ptr<Solution<Index, Value>>;
 
+
 template<typename Locality, typename Index=int16_t>
-class AlignmentSolver {
+class Solver {
 public:
 	typedef typename Locality::ValueType Value;
 
 protected:
 	const Locality m_locality;
 	MatrixFactory<Index, Value> m_factory;
-
-	virtual ComplexityRef complexity() const = 0;
+	const ComplexityRef m_complexity;
 
 public:
-	inline AlignmentSolver(
+	inline Solver(
 		const Locality &p_locality,
 		const size_t p_max_len_s,
-		const size_t p_max_len_t) :
+		const size_t p_max_len_t,
+		const ComplexityRef &p_complexity) :
 
 		m_locality(p_locality),
-		m_factory(p_max_len_s, p_max_len_t) {
+		m_factory(p_max_len_s, p_max_len_t),
+		m_complexity(p_complexity) {
 	}
 
 	inline Index max_len_s() const {
@@ -929,11 +931,14 @@ public:
 		solution->m_path = build.template get<0>().path();
 		solution->m_score = score;
 
-		solution->m_complexity = complexity();
+		solution->m_complexity = m_complexity;
 
 		return solution;
 	}
 };
+
+template<typename Locality, typename Index=int16_t>
+using AlignmentSolver = Solver<Locality, Index>;
 
 template<typename Locality, typename Index=int16_t>
 class LinearGapCostSolver final : public AlignmentSolver<Locality, Index> {
@@ -969,11 +974,6 @@ private:
 	const Value m_gap_cost_s;
 	const Value m_gap_cost_t;
 
-protected:
-	virtual ComplexityRef complexity() const override {
-		return std::make_shared<Complexity>("n^2", "n^2");
-	}
-
 public:
 	typedef Locality LocalityType;
 	typedef Index IndexType;
@@ -986,7 +986,11 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Locality, Index>(p_locality, p_max_len_s, p_max_len_t),
+		AlignmentSolver<Locality, Index>(
+			p_locality,
+			p_max_len_s,
+			p_max_len_t,
+			std::make_shared<Complexity>("n^2", "n^2")),
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
 
@@ -1079,11 +1083,6 @@ private:
 	const xt::xtensor<Value, 1> m_gap_cost_s;
 	const xt::xtensor<Value, 1> m_gap_cost_t;
 
-protected:
-	virtual ComplexityRef complexity() const override {
-		return std::make_shared<Complexity>("n^3", "n^2");
-	}
-
 public:
 	typedef Locality LocalityType;
 	typedef Index IndexType;
@@ -1096,7 +1095,11 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Locality, Index>(p_locality, p_max_len_s, p_max_len_t),
+		AlignmentSolver<Locality, Index>(
+			p_locality,
+			p_max_len_s,
+			p_max_len_t,
+			std::make_shared<Complexity>("n^3", "n^2")),
 		m_gap_cost_s(p_gap_cost_s(p_max_len_s + 1)),
 		m_gap_cost_t(p_gap_cost_t(p_max_len_t + 1)) {
 
@@ -1168,24 +1171,21 @@ public:
 };
 
 template<typename Index=int16_t, typename Value=float>
-class DynamicTimeSolver final {
-protected:
-	virtual ComplexityRef complexity() const {
-		return std::make_shared<Complexity>("n^2", "n^2");
-	}
-
-private:
-	MatrixFactory<Index, Value> m_factory;
-
+class DynamicTimeSolver final : public Solver<Global<Index, Value>, Index> {
 public:
 	typedef Index IndexType;
 
 	inline DynamicTimeSolver(
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
-		m_factory(p_max_len_s, p_max_len_t) {
 
-		auto &values = m_factory.values();
+		Solver<Global<Index, Value>, Index>(
+			Global<Index, Value>(),
+			p_max_len_s,
+			p_max_len_t,
+			std::make_shared<Complexity>("n^2", "n^2")) {
+
+		auto &values = this->m_factory.values();
 
 		values.fill(-std::numeric_limits<Value>::infinity());
 		values.at(0, 0) = 0;
@@ -1232,38 +1232,7 @@ public:
 			}
 		}
 	}
-
-	inline Value score(
-		const size_t len_s,
-		const size_t len_t) const {
-
-		auto matrix = m_factory.make(len_s, len_t);
-		auto values = matrix.template values_n<1, 1>();
-		return values(len_s, len_t);
-	}
-
-	template<typename Alignment>
-	inline Value alignment(
-		const size_t len_s,
-		const size_t len_t,
-		Alignment &alignment) const {
-
-		auto matrix = m_factory.make(len_s, len_t);
-		build_alignment<Alignment> builder(alignment);
-		const Global<Index, Value> global;
-		return global.traceback(matrix, builder);
-	}
-
-	template<typename Alignment>
-	SolutionRef<Index, Value> solution(
-		const size_t len_s,
-		const size_t len_t,
-		Alignment &alignment) const {
-
-		return SolutionRef<Index, Value>();
-	}
 };
-
 
 } // namespace pyalign
 

@@ -106,6 +106,8 @@ public:
 	virtual inline ~Solver() {
 	}
 
+	virtual const py::dict &options() const = 0;
+
 	virtual float solve_for_score(
 		const xt::pytensor<float, 2> &p_similarity) const = 0;
 
@@ -122,12 +124,18 @@ typedef std::shared_ptr<Solver> SolverRef;
 template<typename S>
 class SolverImpl : public Solver {
 private:
+	const py::dict m_options;
 	S m_solver;
 
 public:
 	template<typename... Args>
-	inline SolverImpl(const Args&... args) :
+	inline SolverImpl(const py::dict &p_options, const Args&... args) :
+		m_options(p_options),
 		m_solver(args...) {
+	}
+
+	virtual const py::dict &options() const override {
+		return m_options;
 	}
 
 	virtual float solve_for_score(
@@ -205,6 +213,7 @@ struct GapCostSpecialCases {
 
 template<typename Locality>
 SolverRef create_alignment_solver_instance(
+	const py::dict &p_options,
 	const Locality &p_locality,
 	const py::object &p_gap_s,
 	const py::object &p_gap_t,
@@ -218,6 +227,7 @@ SolverRef create_alignment_solver_instance(
 
 		return std::make_shared<SolverImpl<pyalign::LinearGapCostSolver<
 			Locality, Alignment::Index>>>(
+				p_options,
 				p_locality,
 				x_gap_s.linear.value(),
 				x_gap_t.linear.value(),
@@ -228,6 +238,7 @@ SolverRef create_alignment_solver_instance(
 
 		return std::make_shared<SolverImpl<pyalign::GeneralGapCostSolver<
 			Locality, Alignment::Index>>>(
+				p_options,
 				p_locality,
 				to_gap_tensor_factory(p_gap_s),
 				to_gap_tensor_factory(p_gap_t),
@@ -241,7 +252,7 @@ SolverRef create_alignment_solver(
 	const size_t p_max_len_t,
 	const py::dict &p_options) {
 
-	const std::string locality = p_options.contains("locality") ?
+	const std::string locality_name = p_options.contains("locality") ?
 		p_options["locality"].cast<std::string>() : "local";
 
 	const py::object gap_cost = p_options.contains("gap_cost") ?
@@ -264,35 +275,38 @@ SolverRef create_alignment_solver(
 		gap_t = gap_cost;
 	}
 
-	if (locality == "local") {
+	if (locality_name == "local") {
 		const float zero = p_options.contains("zero") ?
 			p_options["zero"].cast<float>() : 0.0f;
 
 		const auto locality = pyalign::Local<Alignment::Index, float>(zero);
 
 		return create_alignment_solver_instance(
+			p_options,
 			locality,
 			gap_s,
 			gap_t,
 			p_max_len_s,
 			p_max_len_t);
 
-	} else if (locality == "global") {
+	} else if (locality_name == "global") {
 
 		const auto locality = pyalign::Global<Alignment::Index, float>();
 
 		return create_alignment_solver_instance(
+			p_options,
 			locality,
 			gap_s,
 			gap_t,
 			p_max_len_s,
 			p_max_len_t);
 
-	} else if (locality == "semiglobal") {
+	} else if (locality_name == "semiglobal") {
 
 		const auto locality = pyalign::Semiglobal<Alignment::Index, float>();
 
 		return create_alignment_solver_instance(
+			p_options,
 			locality,
 			gap_s,
 			gap_t,
@@ -301,7 +315,7 @@ SolverRef create_alignment_solver(
 
 	} else {
 
-		throw std::invalid_argument(locality);
+		throw std::invalid_argument(locality_name);
 	}
 }
 
@@ -312,6 +326,7 @@ SolverRef create_dtw_solver(
 
 	return std::make_shared<SolverImpl<pyalign::DynamicTimeSolver<
 		Alignment::Index, float>>>(
+		p_options,
 		p_max_len_s,
 		p_max_len_t);
 }
@@ -339,6 +354,7 @@ PYBIND11_MODULE(algorithm, m) {
 	m.def("create_solver", &create_solver);
 
 	py::class_<Solver, SolverRef> solver(m, "Solver");
+	solver.def_property_readonly("options", &Solver::options);
 	solver.def("solve_for_score", &Solver::solve_for_score);
 	solver.def("solve_for_alignment", &Solver::solve_for_alignment);
 	solver.def("solve_for_solution", &Solver::solve_for_solution);

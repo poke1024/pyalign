@@ -38,8 +38,9 @@ class Problem:
 
 
 class Solution:
-	def __init__(self, problem, solution):
+	def __init__(self, problem, solver, solution):
 		self._problem = problem
+		self._solver = solver
 		self._solution = solution
 
 	@property
@@ -77,8 +78,9 @@ class Solution:
 
 
 class Alignment:
-	def __init__(self, problem, alignment):
+	def __init__(self, problem, solver, alignment):
 		self._problem = problem
+		self._solver = solver
 		self._alignment = alignment
 
 	@property
@@ -115,16 +117,28 @@ class Alignment:
 		lower = []
 		last_x = -1
 
+		is_elastic = self._solver.options["solver"] == "dtw"
+
 		for i, x in enumerate(self.s_to_t):
 			if x < 0:
-				upper.append(s[i])
-				edges.append(" ")
-				lower.append(" ")
+				if not is_elastic:
+					upper.append(s[i])
+					edges.append(" ")
+					lower.append(" ")
+				else:
+					upper.append(s[i])
+					edges.append(" ")
+					lower.append(t[max(last_x, 0)])
 			else:
 				for j in range(last_x + 1, x):
-					upper.append(" ")
-					edges.append(" ")
-					lower.append(t[j])
+					if not is_elastic:
+						upper.append(" ")
+						edges.append(" ")
+						lower.append(t[j])
+					else:
+						upper.append(s[i])
+						edges.append(" ")
+						lower.append(t[j])
 				upper.append(s[i])
 				edges.append("|")
 				lower.append(t[x])
@@ -164,9 +178,9 @@ class Solver:
 		if result == "score":
 			return solver.solve_for_score(matrix)
 		elif result == "alignment":
-			return Alignment(problem, solver.solve_for_alignment(matrix))
+			return Alignment(problem, solver, solver.solve_for_alignment(matrix))
 		elif result == "solution":
-			return Solution(problem, solver.solve_for_solution(matrix))
+			return Solution(problem, solver, solver.solve_for_solution(matrix))
 		else:
 			return ValueError(result)
 
