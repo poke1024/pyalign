@@ -64,6 +64,10 @@ class Solution:
 			self._solver,
 			self._solution.alignment)
 
+	@property
+	def shape(self):
+		return self._solution.values.shape
+
 	@cached_property
 	def values(self):
 		return self._solution.values
@@ -201,10 +205,52 @@ class SolverCache:
 		return self._solver
 
 
+class Goal:
+	details = set(["score", "alignment", "solution"])
+
+	def __init__(self, detail, complete):
+		"""
+		Args:
+			detail (str): one of "score", "alignment", "solution"
+			complete (bool): compute all solutions?
+		"""
+
+		if detail not in Goal.details:
+			raise ValueError(detail)
+
+		self._detail = detail
+		self._complete = complete
+
+	@staticmethod
+	def from_str(s):
+		if s in Goal.details:
+			return Goal(s, False)
+		if s in [x + "s" for x in Goal.details]:
+			return Goal(s[:-1], True)
+		raise ValueError(s)
+
+	@property
+	def detail(self):
+		return self._detail
+
+	@property
+	def needs_multiple_tracebacks(self):
+		return self._detail != "score" and self._complete
+
+
 class Solver:
-	def __init__(self, gap_cost: GapCost = None, direction="maximize", **kwargs):
-		self._options = dict(gap_cost=gap_cost, direction=direction, **kwargs)
+	def __init__(self, gap_cost: GapCost = None, direction="maximize", generate="alignment", **kwargs):
+		if generate is None:
+			goal = Goal("alignment", False)
+		elif isinstance(generate, str):
+			goal = Goal.from_str(generate)
+		else:
+			raise ValueError(generate)
+
 		self._direction = direction
+		self._goal = goal
+
+		self._options = dict(gap_cost=gap_cost, direction=direction, goal=goal, **kwargs)
 
 		max_len_s = self._options.get("max_len_s")
 		max_len_t = self._options.get("max_len_t")
@@ -217,28 +263,27 @@ class Solver:
 
 		self._cache = SolverCache(self._options)
 
-	def solve(self, problem, result="alignment"):
+	def solve(self, problem):
 		if problem.direction != self._direction:
 			raise ValueError(
 				f"problem given is '{problem.direction}', "
 				f"but solver is configured to '{self._direction}'")
 
 		matrix = problem.matrix
+		detail = self._goal.detail
 
 		solver = self._prepared_solver
 		if solver is None:
 			solver = self._cache.get(matrix.shape[0], matrix.shape[1])
 
-		if result == "score":
+		if detail == "score":
 			return solver.solve_for_score(matrix)
-		elif result == "alignment":
+		elif detail == "alignment":
 			return Alignment(problem, solver, solver.solve_for_alignment(matrix))
-		elif result == "solution":
+		elif detail == "solution":
 			return Solution(problem, solver, solver.solve_for_solution(matrix))
-		elif result == "solutions":
-			raise NotImplementedError()  # like "solution", but all optimal solutions
 		else:
-			return ValueError(result)
+			return ValueError(detail)
 
 
 class LocalSolver(Solver):

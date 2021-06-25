@@ -11,7 +11,8 @@
 namespace py = pybind11;
 
 
-typedef pyalign::cell_type_1<float, int16_t> cell_type_1;
+typedef pyalign::cell_type<float, int16_t, pyalign::traceback_1> cell_type_1;
+typedef pyalign::cell_type<float, int16_t, pyalign::traceback_n> cell_type_n;
 
 class Alignment {
 public:
@@ -55,19 +56,39 @@ public:
 
 typedef std::shared_ptr<Alignment> AlignmentRef;
 
+typedef pyalign::AlgorithmMetaData Algorithm;
+typedef pyalign::AlgorithmMetaDataRef AlgorithmRef;
+
 class Solution {
 public:
-	typedef cell_type_1 CellType;
+	typedef float Value;
+	typedef int16_t Index;
 
-	typedef CellType::value_type Value;
-	typedef CellType::index_type Index;
+	virtual ~Solution() {
+	}
+
+	virtual xt::pytensor<Value, 3> values() const = 0;
+	virtual xt::pytensor<Index, 4> traceback() const = 0;
+	virtual xt::pytensor<Index, 2> path() const = 0;
+	virtual float score() const = 0;
+	virtual AlgorithmRef algorithm() const = 0;
+	virtual AlignmentRef alignment() const = 0;
+};
+
+typedef std::shared_ptr<Solution> SolutionRef;
+
+template<typename CellType>
+class SolutionImpl : public Solution {
+public:
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type Index;
 
 private:
 	const pyalign::SolutionRef<CellType> m_solution;
 	AlignmentRef m_alignment;
 
 public:
-	inline Solution(
+	inline SolutionImpl(
 		const pyalign::SolutionRef<CellType> p_solution,
 		const AlignmentRef &p_alignment) :
 
@@ -75,35 +96,30 @@ public:
 		m_alignment(p_alignment) {
 	}
 
-	xt::pytensor<Value, 3> values() const {
+	virtual xt::pytensor<Value, 3> values() const override {
 		return m_solution->values();
 	}
 
-	xt::pytensor<Index, 4> traceback() const {
+	virtual xt::pytensor<Index, 4> traceback() const override {
 		return m_solution->traceback();
 	}
 
-	xt::pytensor<Index, 2> path() const {
+	virtual xt::pytensor<Index, 2> path() const override {
 		return m_solution->path();
 	}
 
-	auto score() const {
+	virtual float score() const override {
 		return m_solution->score();
 	}
 
-	const auto &algorithm() const {
+	virtual AlgorithmRef algorithm() const override {
 		return m_solution->algorithm();
 	}
 
-	AlignmentRef alignment() const {
+	virtual AlignmentRef alignment() const override {
 		return m_alignment;
 	}
 };
-
-typedef std::shared_ptr<Solution> SolutionRef;
-
-typedef pyalign::AlgorithmMetaData Algorithm;
-typedef pyalign::AlgorithmMetaDataRef AlgorithmRef;
 
 class Solver {
 public:
@@ -125,7 +141,7 @@ public:
 typedef std::shared_ptr<Solver> SolverRef;
 
 
-template<typename S>
+template<typename CellType, typename S>
 class SolverImpl : public Solver {
 private:
 	const py::dict m_options;
@@ -148,7 +164,7 @@ public:
 		const auto len_s = p_similarity.shape(0);
 		const auto len_t = p_similarity.shape(1);
 
-		m_solver.template solve<pyalign::ComputationGoal::score>(
+		m_solver.template solve<pyalign::goal::score>(
 			p_similarity, len_s, len_t);
 		return m_solver.score(len_s, len_t);
 	}
@@ -159,7 +175,7 @@ public:
 		const auto len_s = p_similarity.shape(0);
 		const auto len_t = p_similarity.shape(1);
 
-		m_solver.template solve<pyalign::ComputationGoal::alignment>(
+		m_solver.template solve<pyalign::goal::one_alignment>(
 			p_similarity, len_s, len_t);
 
 		const auto alignment = std::make_shared<Alignment>();
@@ -175,11 +191,11 @@ public:
 		const auto len_s = p_similarity.shape(0);
 		const auto len_t = p_similarity.shape(1);
 
-		m_solver.template solve<pyalign::ComputationGoal::alignment>(
+		m_solver.template solve<pyalign::goal::one_alignment>(
 			p_similarity, len_s, len_t);
 
 		const auto alignment = std::make_shared<Alignment>();
-		return std::make_shared<Solution>(
+		return std::make_shared<SolutionImpl<CellType>>(
 			m_solver.solution(len_s, len_t, *alignment.get()),
 			alignment);
 	}
@@ -230,137 +246,146 @@ struct GapCostSpecialCases {
 	std::optional<pyalign::AffineCost<float>> affine;
 };
 
-template<template<typename, typename> class InternalSolver, typename Locality, typename... Args>
-SolverRef create_alignment_solver_instance_for_direction(
-	const py::dict &p_options,
-	const Args&... args) {
+struct AlignmentSolverFactory {
 
-	const std::string direction = p_options["direction"].cast<std::string>();
+	template<template<typename, typename, template<typename> class Locality> class AlignmentSolver,
+		typename CellType, template<typename> class Locality, typename... Args>
+	static SolverRef resolve_direction(
+		const py::dict &p_options,
+		const Args&... args) {
 
-	if (direction == "maximize") {
-		return std::make_shared<SolverImpl<InternalSolver<
-			pyalign::Direction::maximize, Locality>>>(
-				p_options, args...);
-	} else if (direction == "minimize") {
-		return std::make_shared<SolverImpl<InternalSolver<
-			pyalign::Direction::minimize, Locality>>>(
-				p_options, args...);
-	} else {
-		throw std::invalid_argument(direction);
+		const std::string direction = p_options["direction"].cast<std::string>();
+
+		if (direction == "maximize") {
+			return std::make_shared<SolverImpl<CellType, AlignmentSolver<
+				pyalign::direction::maximize, CellType, Locality>>>(
+					p_options, args...);
+		} else if (direction == "minimize") {
+			return std::make_shared<SolverImpl<CellType, AlignmentSolver<
+				pyalign::direction::minimize, CellType, Locality>>>(
+					p_options, args...);
+		} else {
+			throw std::invalid_argument(direction);
+		}
 	}
-}
 
-template<typename Locality>
-SolverRef create_alignment_solver_instance(
-	const py::dict &p_options,
-	const Locality &p_locality,
-	const py::object &p_gap_s,
-	const py::object &p_gap_t,
-	const size_t p_max_len_s,
-	const size_t p_max_len_t) {
+	template<typename CellType, template<typename> class Locality, typename LocalityInitializers>
+	static SolverRef resolve_gap_type(
+		const py::dict &p_options,
+		const LocalityInitializers &p_loc_initializers,
+		const size_t p_max_len_s,
+		const size_t p_max_len_t) {
 
-	const GapCostSpecialCases x_gap_s(p_gap_s);
-	const GapCostSpecialCases x_gap_t(p_gap_t);
+		const py::object gap_cost = p_options.contains("gap_cost") ?
+			p_options["gap_cost"] : py::none().cast<py::object>();
 
-	if (x_gap_s.linear.has_value() && x_gap_t.linear.has_value()) {
-		return create_alignment_solver_instance_for_direction<pyalign::LinearGapCostSolver, Locality>(
-			p_options,
-			p_locality,
-			x_gap_s.linear.value(),
-			x_gap_t.linear.value(),
-			p_max_len_s,
-			p_max_len_t
-		);
-	} else if (x_gap_s.affine.has_value() && x_gap_t.affine.has_value()) {
-		return create_alignment_solver_instance_for_direction<pyalign::AffineGapCostSolver, Locality>(
-			p_options,
-			p_locality,
-			x_gap_s.affine.value(),
-			x_gap_t.affine.value(),
-			p_max_len_s,
-			p_max_len_t
-		);
-	} else {
-		return create_alignment_solver_instance_for_direction<pyalign::GeneralGapCostSolver, Locality>(
-			p_options,
-			p_locality,
-			to_gap_tensor_factory(p_gap_s),
-			to_gap_tensor_factory(p_gap_t),
-			p_max_len_s,
-			p_max_len_t
-		);
+		py::object gap_s = py::none();
+		py::object gap_t = py::none();
+
+		if (py::isinstance<py::dict>(gap_cost)) {
+			const py::dict gap_cost_dict = gap_cost.cast<py::dict>();
+
+			if (gap_cost_dict.contains("s")) {
+				gap_s = gap_cost_dict["s"];
+			}
+			if (gap_cost_dict.contains("t")) {
+				gap_t = gap_cost_dict["t"];
+			}
+		} else {
+			gap_s = gap_cost;
+			gap_t = gap_cost;
+		}
+
+		const GapCostSpecialCases x_gap_s(gap_s);
+		const GapCostSpecialCases x_gap_t(gap_t);
+
+		if (x_gap_s.linear.has_value() && x_gap_t.linear.has_value()) {
+			return AlignmentSolverFactory::resolve_direction<pyalign::LinearGapCostSolver, CellType, Locality>(
+				p_options,
+				p_loc_initializers,
+				x_gap_s.linear.value(),
+				x_gap_t.linear.value(),
+				p_max_len_s,
+				p_max_len_t
+			);
+		} else if (x_gap_s.affine.has_value() && x_gap_t.affine.has_value()) {
+			return AlignmentSolverFactory::resolve_direction<pyalign::AffineGapCostSolver, CellType, Locality>(
+				p_options,
+				p_loc_initializers,
+				x_gap_s.affine.value(),
+				x_gap_t.affine.value(),
+				p_max_len_s,
+				p_max_len_t
+			);
+		} else {
+			return AlignmentSolverFactory::resolve_direction<pyalign::GeneralGapCostSolver, CellType, Locality>(
+				p_options,
+				p_loc_initializers,
+				to_gap_tensor_factory(gap_s),
+				to_gap_tensor_factory(gap_t),
+				p_max_len_s,
+				p_max_len_t
+			);
+		}
 	}
-}
+
+	template<typename CellType>
+	static SolverRef resolve_locality(
+		const py::dict &p_options,
+		const size_t p_max_len_s,
+		const size_t p_max_len_t) {
+
+		const std::string locality_name = p_options.contains("locality") ?
+			p_options["locality"].cast<std::string>() : "local";
+
+		if (locality_name == "local") {
+			const float zero = p_options.contains("zero") ?
+				p_options["zero"].cast<float>() : 0.0f;
+
+			return resolve_gap_type<CellType, pyalign::Local>(
+				p_options,
+				pyalign::LocalInitializers({zero}),
+				p_max_len_s,
+				p_max_len_t);
+
+		} else if (locality_name == "global") {
+
+			return resolve_gap_type<CellType, pyalign::Global>(
+				p_options,
+				pyalign::GlobalInitializers(),
+				p_max_len_s,
+				p_max_len_t);
+
+		} else if (locality_name == "semiglobal") {
+
+			return resolve_gap_type<CellType, pyalign::Semiglobal>(
+				p_options,
+				pyalign::SemiglobalInitializers(),
+				p_max_len_s,
+				p_max_len_t);
+
+		} else {
+
+			throw std::invalid_argument(locality_name);
+		}
+	}
+};
 
 SolverRef create_alignment_solver(
 	const size_t p_max_len_s,
 	const size_t p_max_len_t,
 	const py::dict &p_options) {
 
-	const std::string locality_name = p_options.contains("locality") ?
-		p_options["locality"].cast<std::string>() : "local";
-
-	const py::object gap_cost = p_options.contains("gap_cost") ?
-		p_options["gap_cost"] : py::none().cast<py::object>();
-
-	py::object gap_s = py::none();
-	py::object gap_t = py::none();
-
-	if (py::isinstance<py::dict>(gap_cost)) {
-		const py::dict gap_cost_dict = gap_cost.cast<py::dict>();
-
-		if (gap_cost_dict.contains("s")) {
-			gap_s = gap_cost_dict["s"];
-		}
-		if (gap_cost_dict.contains("t")) {
-			gap_t = gap_cost_dict["t"];
-		}
+	if (!p_options["goal"].attr("needs_multiple_tracebacks").cast<bool>()) {
+		return AlignmentSolverFactory::resolve_locality<cell_type_1>(
+			p_options,
+			p_max_len_s,
+			p_max_len_t);
 	} else {
-		gap_s = gap_cost;
-		gap_t = gap_cost;
-	}
-
-	if (locality_name == "local") {
-		const float zero = p_options.contains("zero") ?
-			p_options["zero"].cast<float>() : 0.0f;
-
-		const auto locality = pyalign::Local<cell_type_1>(zero);
-
-		return create_alignment_solver_instance(
+		return AlignmentSolverFactory::resolve_locality<cell_type_n>(
 			p_options,
-			locality,
-			gap_s,
-			gap_t,
 			p_max_len_s,
 			p_max_len_t);
-
-	} else if (locality_name == "global") {
-
-		const auto locality = pyalign::Global<cell_type_1>();
-
-		return create_alignment_solver_instance(
-			p_options,
-			locality,
-			gap_s,
-			gap_t,
-			p_max_len_s,
-			p_max_len_t);
-
-	} else if (locality_name == "semiglobal") {
-
-		const auto locality = pyalign::Semiglobal<cell_type_1>();
-
-		return create_alignment_solver_instance(
-			p_options,
-			locality,
-			gap_s,
-			gap_t,
-			p_max_len_s,
-			p_max_len_t);
-
-	} else {
-
-		throw std::invalid_argument(locality_name);
 	}
 }
 
@@ -371,15 +396,17 @@ SolverRef create_dtw_solver(
 
 	const std::string direction = p_options["direction"].cast<std::string>();
 
+	typedef cell_type_1 CellType;
+
 	if (direction == "maximize") {
-		return std::make_shared<SolverImpl<pyalign::DynamicTimeSolver<
-			pyalign::Direction::maximize, cell_type_1>>>(
+		return std::make_shared<SolverImpl<CellType, pyalign::DynamicTimeSolver<
+			pyalign::direction::maximize, CellType>>>(
 			p_options,
 			p_max_len_s,
 			p_max_len_t);
 	} else if (direction == "minimize") {
-		return std::make_shared<SolverImpl<pyalign::DynamicTimeSolver<
-			pyalign::Direction::minimize, cell_type_1>>>(
+		return std::make_shared<SolverImpl<CellType, pyalign::DynamicTimeSolver<
+			pyalign::direction::minimize, CellType>>>(
 			p_options,
 			p_max_len_s,
 			p_max_len_t);

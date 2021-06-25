@@ -12,15 +12,28 @@
 
 namespace pyalign {
 
-struct ComputationGoal {
+namespace goal {
 	struct score { // compute only score
 	};
 
+	template<typename PathGoal>
 	struct alignment { // compute full traceback
+		typedef PathGoal path_goal;
 	};
-};
 
-struct Direction {
+	namespace path {
+		struct one { // track one optimal path
+		};
+
+		struct all { // track all optimal paths
+		};
+	}
+
+	typedef alignment<path::one> one_alignment;
+	typedef alignment<path::all> all_alignments;
+}
+
+namespace direction {
 	struct maximize {
 		template<typename Value>
 		static inline bool is_improvement(Value a, Value b) {
@@ -42,7 +55,7 @@ struct Direction {
 			return true;
 		}
 	};
-};
+}
 
 class exceeded_length : public std::exception {
 	const size_t m_len;
@@ -130,18 +143,29 @@ typedef std::shared_ptr<AlgorithmMetaData> AlgorithmMetaDataRef;
 template<typename Value>
 using GapTensorFactory = std::function<xt::xtensor<Value, 1>(size_t)>;
 
+
 template<typename Index>
-struct traceback_cell_1 {
+struct traceback_1 {
+	static constexpr bool multiple = false;
+
 	xt::xtensor_fixed<Index, xt::xshape<2>> uv;
 
-	inline void init(Index u, Index v) {
+	inline void init(const Index u, const Index v) {
 		uv(0) = u;
 		uv(1) = v;
 	}
 
-	inline void push(Index u, Index v) {
+	inline void init(const traceback_1 &tb) {
+		uv = tb.uv;
+	}
+
+	inline void push(const Index u, const Index v) {
 		uv(0) = u;
 		uv(1) = v;
+	}
+
+	inline void push(const traceback_1 &tb) {
+		uv = tb.uv;
 	}
 
 	inline Index u() const {
@@ -153,15 +177,49 @@ struct traceback_cell_1 {
 	}
 };
 
-struct traceback_cell_n {
+template<typename Index>
+struct traceback_n {
+	static constexpr bool multiple = true;
+
+	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Pt;
+
+	std::vector<Pt> pts;
+
+	inline void init(const Index u, const Index v) {
+		pts.clear();
+		pts.emplace_back(Pt{u, v});
+	}
+
+	inline void init(const traceback_n &tb) {
+		pts = tb.pts;
+	}
+
+	inline void push(const Index u, const Index v) {
+		pts.emplace_back(Pt{u, v});
+	}
+
+	inline void push(const traceback_n &tb) {
+		for (const auto &pt : tb.pts) {
+			pts.push_back(pt);
+		}
+	}
+
+	inline Index u() const {
+		return pts.empty() ? -1 : pts[0](0);
+	}
+
+	inline Index v() const {
+		return pts.empty() ? -1 : pts[0](1);
+	}
 };
 
-template<typename Value, typename Index>
-struct cell_type_1 {
+template<typename Value, typename Index, template<typename> class Traceback>
+struct cell_type {
 	typedef Value value_type;
 	typedef Index index_type;
-	typedef traceback_cell_1<Index> traceback_type;
+	typedef Traceback<Index> traceback_type;
 };
+
 
 template<typename CellType, int LayerCount, int Layer>
 class Matrix;
@@ -643,6 +701,8 @@ public:
 
 		if (Direction::is_improvement(val, m_val)) {
 			m_val = val;
+			m_cell_tb.init(u, v);
+		} else if (Traceback::multiple && val == m_val) {
 			m_cell_tb.push(u, v);
 		}
 	}
@@ -653,7 +713,9 @@ public:
 
 		if (Direction::is_improvement(val, m_val)) {
 			m_val = val;
-			m_cell_tb.push(tb.u(), tb.v());
+			m_cell_tb.init(tb);
+		} else if (Traceback::multiple && val == m_val) {
+			m_cell_tb.push(tb);
 		}
 	}
 
@@ -666,6 +728,10 @@ public:
 	}
 };
 
+
+struct LocalInitializers {
+	float zero;
+};
 
 template<typename CellType>
 class Local {
@@ -722,7 +788,7 @@ public:
 		typedef TracingAccumulator<Direction, CellType> Accumulator;
 	};
 
-	inline Local(const Value p_zero) : m_zero(p_zero) {
+	inline Local(const LocalInitializers &p_init) : m_zero(p_init.zero) {
 	}
 
 	inline const char *name() const {
@@ -787,6 +853,9 @@ public:
 };
 
 
+struct GlobalInitializers {
+};
+
 template<typename CellType>
 class Global {
 public:
@@ -847,12 +916,12 @@ public:
 	};
 
 	template<typename Direction>
-	struct AccumulatorFactory<Direction, ComputationGoal::score> {
+	struct AccumulatorFactory<Direction, goal::score> {
 		typedef Accumulator<Direction, CellType> Accumulator;
 	};
 
-	template<typename Direction>
-	struct AccumulatorFactory<Direction, ComputationGoal::alignment> {
+	template<typename Direction, typename PathGoal>
+	struct AccumulatorFactory<Direction, goal::alignment<PathGoal>> {
 		typedef TracingAccumulator<Direction, CellType> Accumulator;
 	};
 
@@ -867,6 +936,9 @@ public:
 
 		p_vector = p_gap_cost;
 		//xt::view(p_gap_cost, xt::range(0, p_vector.size()));
+	}
+
+	inline Global(const GlobalInitializers&) {
 	}
 
 	template<typename Accumulator>
@@ -892,6 +964,9 @@ public:
 	}
 };
 
+
+struct SemiglobalInitializers {
+};
 
 template<typename CellType>
 class Semiglobal {
@@ -953,12 +1028,12 @@ public:
 	};
 
 	template<typename Direction>
-	struct AccumulatorFactory<Direction, ComputationGoal::score> {
+	struct AccumulatorFactory<Direction, goal::score> {
 		typedef Accumulator<Direction, CellType> Accumulator;
 	};
 
-	template<typename Direction>
-	struct AccumulatorFactory<Direction, ComputationGoal::alignment> {
+	template<typename Direction, typename PathGoal>
+	struct AccumulatorFactory<Direction, goal::alignment<PathGoal>> {
 		typedef TracingAccumulator<Direction, CellType> Accumulator;
 	};
 
@@ -968,6 +1043,9 @@ public:
 		const xt::xtensor<Value, 1> &p_gap_cost) const {
 
 		p_vector.fill(0);
+	}
+
+	inline Semiglobal(const SemiglobalInitializers&) {
 	}
 
 	template<typename Accumulator>
@@ -1046,27 +1124,26 @@ template<typename CellType>
 using SolutionRef = std::shared_ptr<Solution<CellType>>;
 
 
-template<typename Locality, int LayerCount>
+template<typename CellType, template<typename> class Locality, int LayerCount>
 class Solver {
 public:
-	typedef typename Locality::cell_type CellType;
-
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::index_type Index;
 
 protected:
-	const Locality m_locality;
+	const Locality<CellType> m_locality;
 	MatrixFactory<CellType, LayerCount> m_factory;
 	const AlgorithmMetaDataRef m_algorithm;
 
 public:
+	template<typename LocalityInitializers>
 	inline Solver(
-		const Locality &p_locality,
+		const LocalityInitializers &p_locality_init,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
 		const AlgorithmMetaDataRef &p_algorithm) :
 
-		m_locality(p_locality),
+		m_locality(p_locality_init),
 		m_factory(p_max_len_s, p_max_len_t),
 		m_algorithm(p_algorithm) {
 	}
@@ -1131,11 +1208,11 @@ public:
 	}
 };
 
-template<typename Locality, int LayerCount>
-using AlignmentSolver = Solver<Locality, LayerCount>;
+template<typename CellType, template<typename> class Locality, int LayerCount>
+using AlignmentSolver = Solver<CellType, Locality, LayerCount>;
 
-template<typename Direction, typename Locality>
-class LinearGapCostSolver final : public AlignmentSolver<Locality, 1> {
+template<typename Direction, typename CellType, template<typename> class Locality>
+class LinearGapCostSolver final : public AlignmentSolver<CellType, Locality, 1> {
 	// For global alignment, we pose the problem as a Needleman-Wunsch problem, but follow the
 	// implementation of Sankoff and Kruskal.
 
@@ -1162,7 +1239,6 @@ class LinearGapCostSolver final : public AlignmentSolver<Locality, 1> {
 	// Hendrix, D. A. Applied Bioinformatics. https://open.oregonstate.education/appliedbioinformatics/.
 
 public:
-	typedef typename Locality::cell_type CellType;
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
@@ -1171,22 +1247,22 @@ private:
 	const Value m_gap_cost_t;
 
 public:
-	typedef Locality LocalityType;
 	typedef Value GapCostSpec;
 
+	template<typename LocalityInitializers>
 	inline LinearGapCostSolver(
-		const Locality &p_locality,
+		const LocalityInitializers &p_locality_init,
 		const Value p_gap_cost_s,
 		const Value p_gap_cost_t,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Locality, 1>(
-			p_locality,
+		AlignmentSolver<CellType, Locality, 1>(
+			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
 			std::make_shared<AlgorithmMetaData>(
-				Locality::is_global() ? "Needleman-Wunsch": "Smith-Waterman",
+				Locality<CellType>::is_global() ? "Needleman-Wunsch": "Smith-Waterman",
 				"n^2", "n^2")),
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
@@ -1194,10 +1270,10 @@ public:
 		auto values = this->m_factory.template values<0>();
 		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
-		p_locality.init_border_case(
+		this->m_locality.init_border_case(
 			xt::view(values, xt::all(), 0),
 			xt::arange<Index>(0, p_max_len_s + 1) * p_gap_cost_s * gap_sgn);
-		p_locality.init_border_case(
+		this->m_locality.init_border_case(
 			xt::view(values, 0, xt::all()),
 			xt::arange<Index>(0, p_max_len_t + 1) * p_gap_cost_t * gap_sgn);
 	}
@@ -1226,7 +1302,7 @@ public:
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				typename Locality::template AccumulatorFactory<
+				typename Locality<CellType>::template AccumulatorFactory<
 					Direction, ComputationGoal>::Accumulator acc(
 						values(u, v), traceback(u, v));
 
@@ -1271,13 +1347,12 @@ struct AffineCost {
 	}
 };
 
-template<typename Direction, typename Locality>
-class AffineGapCostSolver final : public AlignmentSolver<Locality, 3> {
+template<typename Direction, typename CellType, template<typename> class Locality>
+class AffineGapCostSolver final : public AlignmentSolver<CellType, Locality, 3> {
 public:
 	// Gotoh, O. (1982). An improved algorithm for matching biological sequences.
 	// Journal of Molecular Biology, 162(3), 705–708. https://doi.org/10.1016/0022-2836(82)90398-9
 
-	typedef typename Locality::cell_type CellType;
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
@@ -1288,15 +1363,16 @@ private:
 	const Cost m_gap_cost_t;
 
 public:
+	template<typename LocalityInitializers>
 	inline AffineGapCostSolver(
-		const Locality &p_locality,
+		const LocalityInitializers &p_locality_init,
 		const Cost &p_gap_cost_s,
 		const Cost &p_gap_cost_t,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Locality, 3>(
-			p_locality,
+		AlignmentSolver<CellType, Locality, 3>(
+			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
 			std::make_shared<AlgorithmMetaData>("Gotoh", "n^2", "n^2")),
@@ -1317,18 +1393,18 @@ public:
 		xt::view(P, 0, xt::all()).fill(inf);
 
 		// setting D(m, 0) = P(m, 0) = w(m)
-		p_locality.init_border_case(
+		this->m_locality.init_border_case(
 			xt::view(D, xt::all(), 0),
 			m_gap_cost_s.vector(p_max_len_s + 1));
-		p_locality.init_border_case(
+		this->m_locality.init_border_case(
 			xt::view(P, xt::all(), 0),
 			m_gap_cost_s.vector(p_max_len_s + 1));
 
 		// setting D(0, n) = Q(0, n) = w(n)
-		p_locality.init_border_case(
+		this->m_locality.init_border_case(
 			xt::view(D, 0, xt::all()),
 			m_gap_cost_t.vector(p_max_len_t + 1));
-		p_locality.init_border_case(
+		this->m_locality.init_border_case(
 			xt::view(Q, 0, xt::all()),
 			m_gap_cost_t.vector(p_max_len_t + 1));
 
@@ -1374,7 +1450,7 @@ public:
 
 				// Gotoh formula (4)
 				{
-					typename Locality::template AccumulatorFactory<
+					typename Locality<CellType>::template AccumulatorFactory<
 						Direction, ComputationGoal>::Accumulator acc_P(
 							P(i, j), tb_P(i, j));
 
@@ -1385,7 +1461,7 @@ public:
 
 				// Gotoh formula (5)
 				{
-					typename Locality::template AccumulatorFactory<
+					typename Locality<CellType>::template AccumulatorFactory<
 						Direction, ComputationGoal>::Accumulator acc_Q(
 							Q(i, j), tb_Q(i, j));
 
@@ -1396,7 +1472,7 @@ public:
 
 				// Gotoh formula (1)
 				{
-					typename Locality::template AccumulatorFactory<
+					typename Locality<CellType>::template AccumulatorFactory<
 						Direction, ComputationGoal>::Accumulator acc_D(
 							D(i, j), tb_D(i, j));
 
@@ -1420,8 +1496,8 @@ inline void check_gap_tensor_shape(const xt::xtensor<Value, 1> &tensor, const si
 	}
 }
 
-template<typename Direction, typename Locality>
-class GeneralGapCostSolver final : public AlignmentSolver<Locality, 1> {
+template<typename Direction, typename CellType, template<typename> class Locality>
+class GeneralGapCostSolver final : public AlignmentSolver<CellType, Locality, 1> {
 	// Our implementation follows what is sometimes referred to as Waterman-Smith-Beyer, i.e.
 	// an O(n^3) algorithm for generic gap costs. Waterman-Smith-Beyer generates a local alignment.
 
@@ -1437,7 +1513,6 @@ class GeneralGapCostSolver final : public AlignmentSolver<Locality, 1> {
 	// Hendrix, D. A. Applied Bioinformatics. https://open.oregonstate.education/appliedbioinformatics/.
 
 public:
-	typedef typename Locality::cell_type CellType;
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
@@ -1448,15 +1523,16 @@ private:
 public:
 	typedef GapTensorFactory<Value> GapCostSpec;
 
+	template<typename LocalityInitializers>
 	inline GeneralGapCostSolver(
-		const Locality &p_locality,
+		const LocalityInitializers &p_locality_init,
 		const GapTensorFactory<Value> &p_gap_cost_s,
 		const GapTensorFactory<Value> &p_gap_cost_t,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Locality, 1>(
-			p_locality,
+		AlignmentSolver<CellType, Locality, 1>(
+			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
 			std::make_shared<AlgorithmMetaData>("Waterman-Smith-Beyer", "n^3", "n^2")),
@@ -1469,11 +1545,11 @@ public:
 		auto values = this->m_factory.template values<0>();
 		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
-		p_locality.init_border_case(
+		this->m_locality.init_border_case(
 			xt::view(values, xt::all(), 0),
 			m_gap_cost_s * gap_sgn);
 
-		p_locality.init_border_case(
+		this->m_locality.init_border_case(
 			xt::view(values, 0, xt::all()),
 			m_gap_cost_t * gap_sgn);
 	}
@@ -1504,7 +1580,7 @@ public:
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				typename Locality::template AccumulatorFactory<
+				typename Locality<CellType>::template AccumulatorFactory<
 					Direction, ComputationGoal>::Accumulator acc(
 						values(u, v), traceback(u, v));
 
@@ -1533,7 +1609,7 @@ public:
 };
 
 template<typename Direction, typename CellType>
-class DynamicTimeSolver final : public Solver<Global<CellType>, 1> {
+class DynamicTimeSolver final : public Solver<CellType, Global, 1> {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
@@ -1542,8 +1618,8 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		Solver<Global<CellType>, 1>(
-			Global<CellType>(),
+		Solver<CellType, Global, 1>(
+			GlobalInitializers(),
 			p_max_len_s,
 			p_max_len_t,
 			std::make_shared<AlgorithmMetaData>("DTW", "n^2", "n^2")) {
