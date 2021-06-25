@@ -68,15 +68,17 @@ solver.solve(problem, "solution")
 
 ![traceback and path](docs/traceback.svg)
 
-# Libraries similar to pyalign
+# Alignment Libraries
+
+Here is a short overview of other libraries.
+
+## similar to pyalign
 
 * https://edist.readthedocs.io/en/latest/
 * https://pypi.org/project/textdistance/
 * https://github.com/mbreese/swalign/
 
-# Libraries for large scale problems
-
-There are other libraries that implement similar tasks, e.g.
+## for large scale problems
 
 What you will *not* find in pyalign:
 
