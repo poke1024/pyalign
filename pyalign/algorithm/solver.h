@@ -132,8 +132,6 @@ using GapTensorFactory = std::function<xt::xtensor<Value, 1>(size_t)>;
 
 template<typename Index>
 struct traceback_cell_1 {
-	typedef Index IndexType;
-
 	xt::xtensor_fixed<Index, xt::xshape<2>> uv;
 
 	inline void init(Index u, Index v) {
@@ -724,8 +722,6 @@ public:
 		typedef TracingAccumulator<Direction, CellType> Accumulator;
 	};
 
-	typedef Value ValueType;
-
 	inline Local(const Value p_zero) : m_zero(p_zero) {
 	}
 
@@ -860,8 +856,6 @@ public:
 		typedef TracingAccumulator<Direction, CellType> Accumulator;
 	};
 
-	typedef Value ValueType;
-
 	template<typename Vector>
 	void init_border_case(
 		Vector &&p_vector,
@@ -967,8 +961,6 @@ public:
 	struct AccumulatorFactory<Direction, ComputationGoal::alignment> {
 		typedef TracingAccumulator<Direction, CellType> Accumulator;
 	};
-
-	typedef Value ValueType;
 
 	template<typename Vector>
 	void init_border_case(
@@ -1180,7 +1172,6 @@ private:
 
 public:
 	typedef Locality LocalityType;
-	typedef Index IndexType;
 	typedef Value GapCostSpec;
 
 	inline LinearGapCostSolver(
@@ -1455,8 +1446,6 @@ private:
 	const xt::xtensor<Value, 1> m_gap_cost_t;
 
 public:
-	typedef Locality LocalityType;
-	typedef Index IndexType;
 	typedef GapTensorFactory<Value> GapCostSpec;
 
 	inline GeneralGapCostSolver(
