@@ -26,12 +26,14 @@ def flat_ix(a):
 
 
 class TracebackPlotFactory:
-	def __init__(self, solution, layer=0):
+	def __init__(self, solution, problem, layer=0, cell_size=40):
 		self._solution = solution
+		self._problem = problem
 		self._p = None
 		self._len = None
 		self._path = None
 		self._layer = layer
+		self._cell_size = cell_size
 
 	def _create_plot(self):
 		solution = self._solution
@@ -40,10 +42,13 @@ class TracebackPlotFactory:
 
 		len_s = values.shape[0]
 		len_t = values.shape[1]
-		cell_size = 40
+		cell_size = self._cell_size
+		base_size = 50
 
 		self._p = bokeh.plotting.figure(
-			plot_width=len_t * cell_size, plot_height=len_s * cell_size,
+			plot_width=base_size + (len_t + 1) * cell_size,
+			plot_height=base_size + (len_s + 1) * cell_size,
+			x_axis_location='above',
 			title=None, toolbar_location=None)
 
 		self._len = (len_s, len_t)
@@ -136,7 +141,7 @@ class TracebackPlotFactory:
 			data=dict(
 				x=np.tile(np.arange(0, len_t + 1), len_s + 1),
 				y=np.repeat(np.arange(0, len_s + 1), len_t + 1),
-				value=[f'{x:.1f}' for x in solution.values.flatten()],
+				value=[f'{x:.1f}' for x in solution.values[self._layer].flatten()],
 				color=['gray' if x < 0 or y < 0 else 'black' for x, y in ix]))
 
 		labels = bokeh.models.LabelSet(
@@ -150,11 +155,14 @@ class TracebackPlotFactory:
 		p = self._p
 		len_s, len_t = self._len
 
-		# if solution.problem.s is not None:
-		# p.xaxis.ticker = bokeh.models.FixedTicker(ticks=solution.problem.s)
+		if self._problem and isinstance(self._problem.s, str):
+			p.yaxis.major_label_overrides = dict((i + 1, x) for i, x in enumerate(self._problem.s))
+		if self._problem and isinstance(self._problem.t, str):
+			p.xaxis.major_label_overrides = dict((i + 1, x) for i, x in enumerate(self._problem.t))
 
 		p.xaxis.ticker = bokeh.models.FixedTicker(ticks=np.arange(0, len_t) + 1)
 		p.yaxis.ticker = bokeh.models.FixedTicker(ticks=np.arange(0, len_s) + 1)
+
 		p.y_range.flipped = True
 
 		p.grid.grid_line_color = None

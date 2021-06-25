@@ -87,8 +87,8 @@ public:
 		return m_solution->score();
 	}
 
-	const auto &complexity() const {
-		return m_solution->complexity();
+	const auto &algorithm() const {
+		return m_solution->algorithm();
 	}
 
 	AlignmentRef alignment() const {
@@ -98,8 +98,8 @@ public:
 
 typedef std::shared_ptr<Solution> SolutionRef;
 
-typedef pyalign::Complexity Complexity;
-typedef pyalign::ComplexityRef ComplexityRef;
+typedef pyalign::AlgorithmMetaData Algorithm;
+typedef pyalign::AlgorithmMetaDataRef AlgorithmRef;
 
 class Solver {
 public:
@@ -202,13 +202,28 @@ struct GapCostSpecialCases {
 			linear = 0.0f;
 		} else {
 	        const py::dict cost = p_gap.attr("to_special_case")().cast<py::dict>();
-	        if (cost.contains("linear")) {
+
+	        if (cost.contains("affine")) {
+	            // we flip u and v here:
+				//
+	            // * we get (u, v) that specifies w(k) = u + v k, which is the formulation in
+	            // pyalign.gaps (in accordance with Stojmirović et al. and others)
+	            // * AffineCost takes (u, v) as w(k) = u k + v, which is Gotoh's formulation
+
+	            auto affine_tuple = cost["affine"].cast<py::tuple>();
+				affine = pyalign::AffineCost<float>(
+					affine_tuple[1].cast<float>(),
+					affine_tuple[0].cast<float>()
+				);
+
+	        } else if (cost.contains("linear")) {
 	            linear = cost["linear"].cast<float>();
 	        }
 	    }
 	}
 
 	std::optional<float> linear;
+	std::optional<pyalign::AffineCost<float>> affine;
 };
 
 template<template<typename, typename, typename> class InternalSolver, typename Locality, typename... Args>
@@ -249,6 +264,15 @@ SolverRef create_alignment_solver_instance(
 			p_locality,
 			x_gap_s.linear.value(),
 			x_gap_t.linear.value(),
+			p_max_len_s,
+			p_max_len_t
+		);
+	} else if (x_gap_s.affine.has_value() && x_gap_t.affine.has_value()) {
+		return create_alignment_solver_instance_for_direction<pyalign::AffineGapCostSolver, Locality>(
+			p_options,
+			p_locality,
+			x_gap_s.affine.value(),
+			x_gap_t.affine.value(),
 			p_max_len_s,
 			p_max_len_t
 		);
@@ -399,8 +423,10 @@ PYBIND11_MODULE(algorithm, m) {
 	solution.def_property_readonly("path", &Solution::path);
 	solution.def_property_readonly("score", &Solution::score);
 	solution.def_property_readonly("alignment", &Solution::alignment);
+	solution.def_property_readonly("algorithm", &Solution::algorithm);
 
-	py::class_<Complexity, ComplexityRef> complexity(m, "Complexity");
-	complexity.def_property_readonly("runtime", &Complexity::runtime);
-	complexity.def_property_readonly("memory", &Complexity::memory);
+	py::class_<Algorithm, AlgorithmRef> algorithm(m, "Algorithm");
+	algorithm.def_property_readonly("name", &Algorithm::name);
+	algorithm.def_property_readonly("runtime", &Algorithm::runtime);
+	algorithm.def_property_readonly("memory", &Algorithm::memory);
 }

@@ -1,5 +1,4 @@
 import pyalign.utils
-import pyalign.solve
 import pyalign.gaps
 
 pf = pyalign.utils.SimpleProblemFactory(pyalign.utils.BinarySimilarity(eq=1, ne=-1))

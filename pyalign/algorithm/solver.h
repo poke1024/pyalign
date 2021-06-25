@@ -102,13 +102,18 @@ public:
 	}
 };
 
-class Complexity {
+class AlgorithmMetaData {
+	const std::string m_name;
 	const std::string m_runtime;
 	const std::string m_memory;
 
 public:
-	Complexity(const char *p_runtime, const char *p_memory) :
-		m_runtime(p_runtime), m_memory(p_memory) {
+	AlgorithmMetaData(const char *p_name, const char *p_runtime, const char *p_memory) :
+		m_name(p_name), m_runtime(p_runtime), m_memory(p_memory) {
+	}
+
+	const std::string &name() const {
+		return m_name;
 	}
 
 	const std::string &runtime() const {
@@ -120,7 +125,7 @@ public:
 	}
 };
 
-typedef std::shared_ptr<Complexity> ComplexityRef;
+typedef std::shared_ptr<AlgorithmMetaData> AlgorithmMetaDataRef;
 
 template<typename Value>
 using GapTensorFactory = std::function<xt::xtensor<Value, 1>(size_t)>;
@@ -216,15 +221,25 @@ public:
 	}
 };
 
-template<int Layer, int i0, int j0, typename Index, typename Tensor>
-inline auto shifted_indices(Tensor &v) {
+template<int Layer, int i0, int j0, typename Index>
+struct shifted_indices {
 	// a custom view based on xt::xtensor to make sure that negative indexes, e.g.
 	// m(-1, 2), are handled correctly. this is not guaranteed in xtensor.
 
-	return [&v] (const Index i, const Index j) -> typename Tensor::reference {
-		return v(Layer, i + i0, j + j0);
-	};
-}
+	template<typename Tensor>
+	inline static auto scalar(Tensor &v) {
+		return [&v] (const Index i, const Index j) -> typename Tensor::reference {
+			return v(Layer, i + i0, j + j0);
+		};
+	}
+
+	template<typename Tensor>
+	inline static auto vector(Tensor &v) {
+		return [&v] (const Index i, const Index j) {
+			return xt::view(v, Layer, i + i0, j + j0, xt::all());
+		};
+	}
+};
 
 template<typename Index, typename Value, int LayerCount, int Layer>
 class Matrix {
@@ -253,13 +268,13 @@ public:
 
 	template<int i0, int j0>
 	inline auto values_n() const {
-		return shifted_indices<Layer, i0, j0, Index>(
+		return shifted_indices<Layer, i0, j0, Index>::scalar(
 			m_factory.m_data->values);
 	}
 
 	template<int i0, int j0>
 	inline auto traceback_n() const {
-		return shifted_indices<Layer, i0, j0, Index>(
+		return shifted_indices<Layer, i0, j0, Index>::vector(
 			m_factory.m_data->traceback);
 	}
 
@@ -293,6 +308,7 @@ template<int Layer>
 inline Matrix<Index, Value, LayerCount, Layer> MatrixFactory<Index, Value, LayerCount>::make(
 	const Index len_s, const Index len_t) const {
 
+	static_assert(Layer < LayerCount, "layer index exceeds layer count");
 	check_size_against_max(len_s, m_max_len_s);
 	check_size_against_max(len_t, m_max_len_t);
 	return Matrix<Index, Value, LayerCount, Layer>(*this, len_s, len_t);
@@ -489,7 +505,7 @@ private:
 	Value m_score;
 
 public:
-	inline void set(
+	inline void init(
 		const Value score,
 		const Index u,
 		const Index v) {
@@ -501,6 +517,16 @@ public:
 		const Value score,
 		const Index u,
 		const Index v) {
+
+		if (Direction::is_improvement(score, m_score)) {
+			m_score = score;
+		}
+	}
+
+	template<typename UV>
+	inline void push(
+		const Value score,
+		UV &&uv) {
 
 		if (Direction::is_improvement(score, m_score)) {
 			m_score = score;
@@ -525,7 +551,7 @@ class TracingAccumulator {
 	Coord m_traceback;
 
 public:
-	inline void set(
+	inline void init(
 		const Value score,
 		const Index u,
 		const Index v) {
@@ -547,6 +573,18 @@ public:
 		}
 	}
 
+	template<typename UV>
+	inline void push(
+		const Value score,
+		UV &&uv) {
+
+		if (Direction::is_improvement(score, m_score)) {
+			m_score = score;
+			m_traceback[0] = uv(0);
+			m_traceback[1] = uv(1);
+		}
+	}
+
 	inline void add(const float score) {
 		m_score += score;
 	}
@@ -561,6 +599,11 @@ public:
 
 template<typename Index, typename Value>
 class Local {
+public:
+	static constexpr bool is_global() {
+		return false;
+	}
+
 private:
 	const Value m_zero;
 
@@ -674,6 +717,12 @@ public:
 
 template<typename Index, typename Value>
 class Global {
+public:
+	static constexpr bool is_global() {
+		return true;
+	}
+
+private:
 	template<typename Path>
 	class Backtracer {
 	public:
@@ -738,8 +787,12 @@ public:
 		Vector &&p_vector,
 		const xt::xtensor<Value, 1> &p_gap_cost) const {
 
-		p_vector = xt::view(
-			p_gap_cost, xt::range(0, p_vector.size()));
+		if (p_vector.size() != p_gap_cost.size()) {
+			throw std::runtime_error("size mismatch in init_border_case");
+		}
+
+		p_vector = p_gap_cost;
+		//xt::view(p_gap_cost, xt::range(0, p_vector.size()));
 	}
 
 	template<typename Accumulator>
@@ -768,6 +821,12 @@ public:
 
 template<typename Index, typename Value>
 class Semiglobal {
+public:
+	static constexpr bool is_global() {
+		return false;
+	}
+
+private:
 	template<typename Path>
 	class Backtracer {
 	public:
@@ -880,7 +939,7 @@ public:
 	xt::xtensor<Index, 4> m_traceback;
 	xt::xtensor<Index, 2> m_path;
 	Value m_score;
-	ComplexityRef m_complexity;
+	AlgorithmMetaDataRef m_algorithm;
 
 	const auto &values() const {
 		return m_values;
@@ -898,8 +957,8 @@ public:
 		return m_score;
 	}
 
-	const auto &complexity() const {
-		return m_complexity;
+	const auto &algorithm() const {
+		return m_algorithm;
 	}
 };
 
@@ -915,18 +974,18 @@ public:
 protected:
 	const Locality m_locality;
 	MatrixFactory<Index, Value, LayerCount> m_factory;
-	const ComplexityRef m_complexity;
+	const AlgorithmMetaDataRef m_algorithm;
 
 public:
 	inline Solver(
 		const Locality &p_locality,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
-		const ComplexityRef &p_complexity) :
+		const AlgorithmMetaDataRef &p_algorithm) :
 
 		m_locality(p_locality),
 		m_factory(p_max_len_s, p_max_len_t),
-		m_complexity(p_complexity) {
+		m_algorithm(p_algorithm) {
 	}
 
 	inline Index max_len_s() const {
@@ -983,7 +1042,7 @@ public:
 		solution->m_path = build.template get<0>().path();
 		solution->m_score = score;
 
-		solution->m_complexity = m_complexity;
+		solution->m_algorithm = m_algorithm;
 
 		return solution;
 	}
@@ -1042,7 +1101,9 @@ public:
 			p_locality,
 			p_max_len_s,
 			p_max_len_t,
-			std::make_shared<Complexity>("n^2", "n^2")),
+			std::make_shared<AlgorithmMetaData>(
+				Locality::is_global() ? "Needleman-Wunsch": "Smith-Waterman",
+				"n^2", "n^2")),
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
 
@@ -1084,7 +1145,7 @@ public:
 				typename Locality::template AccumulatorFactory<
 					Direction, ComputationGoal>::Accumulator acc;
 
-				acc.set(
+				acc.init(
 					values(u - 1, v - 1) + pairwise(u, v),
 					u - 1, v - 1);
 
@@ -1101,6 +1162,153 @@ public:
 				acc.write(
 					values(u, v),
 					xt::view(traceback, u, v, xt::all()));
+			}
+		}
+	}
+};
+
+template<typename Value>
+struct AffineCost {
+	// w(k) = u k + v
+
+	Value u;
+	Value v;
+
+	inline AffineCost(Value p_u, Value p_v) : u(p_u), v(p_v) {
+	}
+
+	inline Value w1() const {
+		return u + v; // i.e. w(1)
+	}
+
+	inline auto vector(size_t n) const {
+		xt::xtensor<Value, 1> w = xt::linspace<Value>(0, (n - 1) * u, n) + v;
+		w.at(0) = 0;
+		return w;
+	}
+};
+
+template<typename Direction, typename Locality, typename Index=int16_t>
+class AffineGapCostSolver final : public AlignmentSolver<Locality, Index, 3> {
+public:
+	// Gotoh, O. (1982). An improved algorithm for matching biological sequences.
+	// Journal of Molecular Biology, 162(3), 705–708. https://doi.org/10.1016/0022-2836(82)90398-9
+
+	typedef typename Solver<Locality, Index, 3>::Value Value;
+	typedef AffineCost<Value> Cost;
+
+private:
+	const Cost m_gap_cost_s;
+	const Cost m_gap_cost_t;
+
+public:
+	inline AffineGapCostSolver(
+		const Locality &p_locality,
+		const Cost &p_gap_cost_s,
+		const Cost &p_gap_cost_t,
+		const size_t p_max_len_s,
+		const size_t p_max_len_t) :
+
+		AlignmentSolver<Locality, Index, 3>(
+			p_locality,
+			p_max_len_s,
+			p_max_len_t,
+			std::make_shared<AlgorithmMetaData>("Gotoh", "n^2", "n^2")),
+		m_gap_cost_s(p_gap_cost_s),
+		m_gap_cost_t(p_gap_cost_t) {
+
+		auto matrix_D = this->m_factory.template make<0>(p_max_len_s, p_max_len_t);
+		auto matrix_P = this->m_factory.template make<1>(p_max_len_s, p_max_len_t);
+		auto matrix_Q = this->m_factory.template make<2>(p_max_len_s, p_max_len_t);
+
+		auto D = matrix_D.template values<0, 0>();
+		auto P = matrix_P.template values<0, 0>();
+		auto Q = matrix_Q.template values<0, 0>();
+
+		const auto inf = std::numeric_limits<Value>::infinity() * (Direction::is_minimize() ? 1 : -1);
+
+		xt::view(Q, xt::all(), 0).fill(inf);
+		xt::view(P, 0, xt::all()).fill(inf);
+
+		// setting D(m, 0) = P(m, 0) = w(m)
+		p_locality.init_border_case(
+			xt::view(D, xt::all(), 0),
+			m_gap_cost_s.vector(p_max_len_s + 1));
+		p_locality.init_border_case(
+			xt::view(P, xt::all(), 0),
+			m_gap_cost_s.vector(p_max_len_s + 1));
+
+		// setting D(0, n) = Q(0, n) = w(n)
+		p_locality.init_border_case(
+			xt::view(D, 0, xt::all()),
+			m_gap_cost_t.vector(p_max_len_t + 1));
+		p_locality.init_border_case(
+			xt::view(Q, 0, xt::all()),
+			m_gap_cost_t.vector(p_max_len_t + 1));
+
+		auto tb_P = matrix_P.template traceback<0, 0>();
+		auto tb_Q = matrix_Q.template traceback<0, 0>();
+
+		xt::view(tb_P, 0, xt::all()).fill(-1);
+		xt::view(tb_P, xt::all(), 0).fill(-1);
+		xt::view(tb_Q, 0, xt::all()).fill(-1);
+		xt::view(tb_Q, xt::all(), 0).fill(-1);
+	}
+
+	template<typename ComputationGoal, typename Pairwise>
+	void solve(
+		const Pairwise &pairwise,
+		const size_t len_s,
+		const size_t len_t) const {
+
+		auto matrix_D = this->m_factory.template make<0>(len_s, len_t);
+		auto matrix_P = this->m_factory.template make<1>(len_s, len_t);
+		auto matrix_Q = this->m_factory.template make<2>(len_s, len_t);
+
+		auto D = matrix_D.template values_n<1, 1>();
+		auto tb_D = matrix_D.template traceback_n<1, 1>();
+		auto P = matrix_P.template values_n<1, 1>();
+		auto tb_P = matrix_P.template traceback_n<1, 1>();
+		auto Q = matrix_Q.template values_n<1, 1>();
+		auto tb_Q = matrix_Q.template traceback_n<1, 1>();
+
+		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
+
+		for (Index i = 0; static_cast<size_t>(i) < len_s; i++) {
+
+			for (Index j = 0; static_cast<size_t>(j) < len_t; j++) {
+
+				// Gotoh formula (4)
+				{
+					typename Locality::template AccumulatorFactory<Direction,
+						ComputationGoal>::Accumulator acc_P;
+
+					acc_P.init(D(i - 1, j) + m_gap_cost_s.w1() * gap_sgn, i - 1, j);
+					acc_P.push(P(i - 1, j) + m_gap_cost_s.u * gap_sgn, tb_P(i - 1, j));
+					acc_P.write(P(i, j), tb_P(i, j));
+				}
+
+				// Gotoh formula (5)
+				{
+					typename Locality::template AccumulatorFactory<Direction,
+						ComputationGoal>::Accumulator acc_Q;
+
+					acc_Q.init(D(i, j - 1) + m_gap_cost_t.w1() * gap_sgn, i, j - 1);
+					acc_Q.push(Q(i, j - 1) + m_gap_cost_t.u * gap_sgn, tb_Q(i, j - 1));
+					acc_Q.write(Q(i, j), tb_Q(i, j));
+				}
+
+				// Gotoh formula (1)
+				{
+					typename Locality::template AccumulatorFactory<Direction,
+						ComputationGoal>::Accumulator acc_D;
+
+					acc_D.init(D(i - 1, j - 1) + pairwise(i, j), i - 1, j - 1);
+					acc_D.push(P(i, j), tb_P(i, j));
+					acc_D.push(Q(i, j), tb_Q(i, j));
+					this->m_locality.update_acc(acc_D);
+					acc_D.write(D(i, j), tb_D(i, j));
+				}
 			}
 		}
 	}
@@ -1154,7 +1362,7 @@ public:
 			p_locality,
 			p_max_len_s,
 			p_max_len_t,
-			std::make_shared<Complexity>("n^3", "n^2")),
+			std::make_shared<AlgorithmMetaData>("Waterman-Smith-Beyer", "n^3", "n^2")),
 		m_gap_cost_s(p_gap_cost_s(p_max_len_s + 1)),
 		m_gap_cost_t(p_gap_cost_t(p_max_len_t + 1)) {
 
@@ -1202,7 +1410,7 @@ public:
 				typename Locality::template AccumulatorFactory<Direction,
 					ComputationGoal>::Accumulator acc;
 
-				acc.set(
+				acc.init(
 					values(u - 1, v - 1) + pairwise(u, v),
 					u - 1, v - 1);
 
@@ -1241,7 +1449,7 @@ public:
 			Global<Index, Value>(),
 			p_max_len_s,
 			p_max_len_t,
-			std::make_shared<Complexity>("n^2", "n^2")) {
+			std::make_shared<AlgorithmMetaData>("DTW", "n^2", "n^2")) {
 
 		auto values = this->m_factory.template values<0>();
 		values.fill(std::numeric_limits<Value>::infinity() * (Direction::is_minimize() ? 1 : -1));
@@ -1274,7 +1482,7 @@ public:
 				typename Global<Index, Value>::template AccumulatorFactory<
 					Direction, ComputationGoal>::Accumulator acc;
 
-				acc.set(
+				acc.init(
 					values(u - 1, v - 1),
 					u - 1, v - 1);
 

@@ -57,9 +57,12 @@ class Solution:
 	def score(self):
 		return self._solution.score
 
-	@property
+	@cached_property
 	def alignment(self):
-		return self._solution.alignment
+		return Alignment(
+			self._problem,
+			self._solver,
+			self._solution.alignment)
 
 	@cached_property
 	def values(self):
@@ -77,16 +80,20 @@ class Solution:
 	def complexity(self):
 		return self._solution.complexity
 
-	def _ipython_display_(self):
+	def display(self, layer=0):
 		import bokeh.io
-		from pyalign.plot import TracebackPlotFactory
-		f = TracebackPlotFactory(self._solution)
+		from .utils.plot import TracebackPlotFactory
+		f = TracebackPlotFactory(
+			self._solution, self._problem, layer=layer)
 		bokeh.io.show(f.create())
+
+	def _ipython_display_(self):
+		self.display()
 
 	def export_image(self, path):
 		import bokeh.io
-		from pyalign.plot import TracebackPlotFactory
-		f = TracebackPlotFactory(self._solution)
+		from .utils.plot import TracebackPlotFactory
+		f = TracebackPlotFactory(self._solution, self._problem)
 		path = Path(path)
 		if path.suffix == ".svg":
 			bokeh.io.export_svg(f.create(), filename=path)
@@ -228,6 +235,8 @@ class Solver:
 			return Alignment(problem, solver, solver.solve_for_alignment(matrix))
 		elif result == "solution":
 			return Solution(problem, solver, solver.solve_for_solution(matrix))
+		elif result == "solutions":
+			raise NotImplementedError()  # like "solution", but all optimal solutions
 		else:
 			return ValueError(result)
 

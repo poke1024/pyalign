@@ -110,7 +110,9 @@ class AffineGapCost(GapCost):
 		}
 
 	def costs(self, n):
-		return self._u + np.linspace(0., (n - 1) * self._v, n, dtype=np.float32)
+		w = self._u + np.linspace(0., (n - 1) * self._v, n, dtype=np.float32)
+		w[0] = 0
+		return w
 
 
 class LogarithmicGapCost(GapCost):
