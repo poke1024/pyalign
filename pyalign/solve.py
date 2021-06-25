@@ -235,7 +235,7 @@ class Goal:
 
 	@property
 	def needs_multiple_tracebacks(self):
-		return self._detail != "score" and self._complete
+		return self._complete
 
 
 class Solver:

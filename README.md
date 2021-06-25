@@ -77,6 +77,7 @@ Here is a short overview of other libraries.
 * https://edist.readthedocs.io/en/latest/
 * https://pypi.org/project/textdistance/
 * https://github.com/mbreese/swalign/
+* https://github.com/seqan/seqan3
 
 ## for large scale problems
 

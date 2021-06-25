@@ -303,51 +303,44 @@ public:
 		return xt::view(m_data->values, Layer, xt::all(), xt::all());
 	}
 
-	inline auto values_all(const Index len_s, const Index len_t) const {
-		return xt::view(
-			m_data->values,
-			xt::all(), xt::range(0, len_s + 1), xt::range(0, len_t + 1));
-	}
+	struct all_layers_accessor {
+		Data &m_data;
 
-	inline auto traceback_all(const Index len_s, const Index len_t) const {
-		xt::xtensor<Index, 4> traceback;
-		traceback.resize({
-			static_cast<size_t>(LayerCount),
-			static_cast<size_t>(len_s + 1),
-			static_cast<size_t>(len_t + 1),
-			static_cast<size_t>(2)
-		});
-		for (size_t k = 0; k < static_cast<size_t>(LayerCount); k++) {
-			for (size_t i = 0; i < static_cast<size_t>(len_s); i++) {
-				for (size_t j = 0; j < static_cast<size_t>(len_t); j++) {
-					traceback(k, i, j, 0) = m_data->traceback(k, i, j).u();
-					traceback(k, i, j, 1) = m_data->traceback(k, i, j).v();
-				}
-			}
+		inline auto values(const Index len_s, const Index len_t) const {
+			return xt::view(
+				m_data.values,
+				xt::all(), xt::range(0, len_s + 1), xt::range(0, len_t + 1));
 		}
-		return traceback;
+
+		inline auto traceback(const Index len_s, const Index len_t) const {
+			return xt::view(
+				m_data.traceback,
+				xt::all(), xt::range(0, len_s + 1), xt::range(0, len_t + 1));
+		}
+	};
+
+	all_layers_accessor all_layers() const {
+		return all_layers_accessor{*m_data.get()};
 	}
 };
 
-template<int Layer, int i0, int j0, typename Index>
-struct shifted_indices {
-	// a custom view based on xt::xtensor to make sure that negative indexes, e.g.
-	// m(-1, 2), are handled correctly. this is not guaranteed in xtensor.
+template<ssize_t i0, ssize_t j0, typename View>
+struct shifted_xview {
+	View v;
 
-	template<typename Tensor>
-	inline static auto element(Tensor &v) {
-		return [&v] (const Index i, const Index j) -> typename Tensor::reference {
-			return v(Layer, i + i0, j + j0);
-		};
+	typename View::value_type operator()(const ssize_t i, const ssize_t j) const {
+		return v(i + i0, j + j0);
 	}
 
-	template<typename Tensor>
-	inline static auto vector(Tensor &v) {
-		return [&v] (const Index i, const Index j) {
-			return xt::view(v, Layer, i + i0, j + j0, xt::all());
-		};
+	typename View::reference operator()(const ssize_t i, const ssize_t j) {
+		return v(i + i0, j + j0);
 	}
 };
+
+template<ssize_t i0, ssize_t j0, typename View>
+shifted_xview<i0, j0, View> shift_xview(View &&v) {
+	return shifted_xview<i0, j0, View>{v};
+}
 
 template<typename CellType, int LayerCount, int Layer>
 class Matrix {
@@ -381,14 +374,14 @@ public:
 
 	template<int i0, int j0>
 	inline auto values_n() const {
-		return shifted_indices<Layer, i0, j0, Index>::element(
-			m_factory.m_data->values);
+		return shift_xview<i0, j0>(xt::view(
+			m_factory.m_data->values, Layer, xt::all(), xt::all()));
 	}
 
 	template<int i0, int j0>
 	inline auto traceback_n() const {
-		return shifted_indices<Layer, i0, j0, Index>::element(
-			m_factory.m_data->traceback);
+		return shift_xview<i0, j0>(xt::view(
+			m_factory.m_data->traceback, Layer, xt::all(), xt::all()));
 	}
 
 	struct assume_non_negative_indices {
@@ -1091,10 +1084,11 @@ class Solution {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
+	typedef typename CellType::traceback_type Traceback;
 	typedef CellType cell_type;
 
 	xt::xtensor<Value, 3> m_values;
-	xt::xtensor<Index, 4> m_traceback;
+	xt::xtensor<Traceback, 3> m_traceback;
 	xt::xtensor<Index, 2> m_path;
 	Value m_score;
 	AlgorithmMetaDataRef m_algorithm;
@@ -1103,8 +1097,24 @@ public:
 		return m_values;
 	}
 
-	const auto &traceback() const {
-		return m_traceback;
+	const auto traceback() const {
+		const size_t len_k = m_traceback.shape(0);
+		const size_t len_s = m_traceback.shape(1);
+		const size_t len_t = m_traceback.shape(2);
+
+		xt::xtensor<Index, 4> traceback;
+		traceback.resize({
+			len_k, len_s, len_t, 2
+		});
+		for (size_t k = 0; k < len_k; k++) {
+			for (size_t i = 0; i < len_s; i++) {
+				for (size_t j = 0; j < len_t; j++) {
+					traceback(k, i, j, 0) = m_traceback(k, i, j).u();
+					traceback(k, i, j, 1) = m_traceback(k, i, j).v();
+				}
+			}
+		}
+		return traceback;
 	}
 
 	const auto &path() const {
@@ -1190,8 +1200,8 @@ public:
 		const SolutionRef<CellType> solution =
 			std::make_shared<Solution<CellType>>();
 
-		solution->m_values = m_factory.values_all(len_s, len_t);
-		solution->m_traceback = m_factory.traceback_all(len_s, len_t);
+		solution->m_values = m_factory.all_layers().values(len_s, len_t);
+		solution->m_traceback = m_factory.all_layers().traceback(len_s, len_t);
 
 		auto build = build_multiple<build_path<Index>, build_alignment<Alignment>>(
 			build_path<Index>(), build_alignment<Alignment>(alignment)
