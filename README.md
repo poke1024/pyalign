@@ -97,12 +97,9 @@ If you need any of the above, you might want to take a look at:
 
 # References
 
-## Algorithms
+## Original Works
 
 Altschul, S. (1998). Generalized affine gap costs for protein sequence alignment. Proteins: Structure, 32.
-
-Aluru, S. (Ed.). (2005). Handbook of Computational Molecular Biology.
-Chapman and Hall/CRC. https://doi.org/10.1201/9781420036275
 
 Gotoh, O. (1982). An improved algorithm for matching biological sequences. Journal of Molecular Biology, 162(3), 705–708. https://doi.org/10.1016/0022-2836(82)90398-9
 
@@ -112,13 +109,6 @@ the National Academy of Sciences, 69(1), 4–6. https://doi.org/10.1073/pnas.69.
 Smith, T. F., & Waterman, M. S. (1981). Identification of common
 molecular subsequences. Journal of Molecular Biology, 147(1), 195–197.
 https://doi.org/10.1016/0022-2836(81)90087-5
-
-Stojmirović, A., & Yu, Y.-K. (2009). Geometric Aspects of Biological Sequence Comparison. Journal of Computational Biology, 16(4), 579–610. https://doi.org/10.1089/cmb.2008.0100
-
-Kruskal, J. B. (1983). An Overview of Sequence Comparison: Time Warps,
-String Edits, and Macromolecules. SIAM Review, 25(2), 201–237. https://doi.org/10.1137/1025045
-
-Müller, M. (2007). Information Retrieval for Music and Motion. Springer Berlin Heidelberg. https://doi.org/10.1007/978-3-540-74048-3
 
 Miller, W., & Myers, E. W. (1988). Sequence comparison with concave weighting functions. Bulletin of Mathematical Biology, 50(2), 97–120. https://doi.org/10.1007/BF02459948
 
@@ -131,7 +121,19 @@ Advances in Mathematics, 20(3), 367–387. https://doi.org/10.1016/0001-8708(76)
 
 Waterman, M. S. (1984). Efficient sequence alignment algorithms. Journal of Theoretical Biology, 108(3), 333–337. https://doi.org/10.1016/S0022-5193(84)80037-5
 
-# Implementations
+## Surveys
+
+Aluru, S. (Ed.). (2005). Handbook of Computational Molecular Biology.
+Chapman and Hall/CRC. https://doi.org/10.1201/9781420036275
+
+Stojmirović, A., & Yu, Y.-K. (2009). Geometric Aspects of Biological Sequence Comparison. Journal of Computational Biology, 16(4), 579–610. https://doi.org/10.1089/cmb.2008.0100
+
+Kruskal, J. B. (1983). An Overview of Sequence Comparison: Time Warps,
+String Edits, and Macromolecules. SIAM Review, 25(2), 201–237. https://doi.org/10.1137/1025045
+
+Müller, M. (2007). Information Retrieval for Music and Motion. Springer Berlin Heidelberg. https://doi.org/10.1007/978-3-540-74048-3
+
+## Implementations
 
 Barnes, R. (2020). A Review of the Smith-Waterman GPU Landscape. https://www2.eecs.berkeley.edu/Pubs/TechRpts/2020/EECS-2020-152.html
 
