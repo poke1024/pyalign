@@ -16,7 +16,7 @@ ext_modules = [
 		'pyalign.algorithm',
 		[str(x) for x in sorted(sources)],
 		cxx_std=17,
-		extra_compile_args=["-O3"],
+		extra_compile_args=["-O3", "-ftemplate-backtrace-limit=0"],
 		include_dirs=[str(x) for x in include_dirs],
 	),
 ]

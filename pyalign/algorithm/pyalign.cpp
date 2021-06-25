@@ -11,9 +11,11 @@
 namespace py = pybind11;
 
 
+typedef pyalign::cell_type_1<float, int16_t> cell_type_1;
+
 class Alignment {
 public:
-	typedef int16_t Index;
+	typedef cell_type_1::index_type Index;
 
 private:
 	xt::pytensor<Index, 1> m_s_to_t;
@@ -55,16 +57,18 @@ typedef std::shared_ptr<Alignment> AlignmentRef;
 
 class Solution {
 public:
-	typedef float Value;
-	typedef Alignment::Index Index;
+	typedef cell_type_1 CellType;
+
+	typedef CellType::value_type Value;
+	typedef CellType::index_type Index;
 
 private:
-	const pyalign::SolutionRef<Index, Value> m_solution;
+	const pyalign::SolutionRef<CellType> m_solution;
 	AlignmentRef m_alignment;
 
 public:
 	inline Solution(
-		const pyalign::SolutionRef<Index, Value> p_solution,
+		const pyalign::SolutionRef<CellType> p_solution,
 		const AlignmentRef &p_alignment) :
 
 		m_solution(p_solution),
@@ -226,7 +230,7 @@ struct GapCostSpecialCases {
 	std::optional<pyalign::AffineCost<float>> affine;
 };
 
-template<template<typename, typename, typename> class InternalSolver, typename Locality, typename... Args>
+template<template<typename, typename> class InternalSolver, typename Locality, typename... Args>
 SolverRef create_alignment_solver_instance_for_direction(
 	const py::dict &p_options,
 	const Args&... args) {
@@ -235,11 +239,11 @@ SolverRef create_alignment_solver_instance_for_direction(
 
 	if (direction == "maximize") {
 		return std::make_shared<SolverImpl<InternalSolver<
-			pyalign::Direction::maximize, Locality, Alignment::Index>>>(
+			pyalign::Direction::maximize, Locality>>>(
 				p_options, args...);
 	} else if (direction == "minimize") {
 		return std::make_shared<SolverImpl<InternalSolver<
-			pyalign::Direction::minimize, Locality, Alignment::Index>>>(
+			pyalign::Direction::minimize, Locality>>>(
 				p_options, args...);
 	} else {
 		throw std::invalid_argument(direction);
@@ -320,7 +324,7 @@ SolverRef create_alignment_solver(
 		const float zero = p_options.contains("zero") ?
 			p_options["zero"].cast<float>() : 0.0f;
 
-		const auto locality = pyalign::Local<Alignment::Index, float>(zero);
+		const auto locality = pyalign::Local<cell_type_1>(zero);
 
 		return create_alignment_solver_instance(
 			p_options,
@@ -332,7 +336,7 @@ SolverRef create_alignment_solver(
 
 	} else if (locality_name == "global") {
 
-		const auto locality = pyalign::Global<Alignment::Index, float>();
+		const auto locality = pyalign::Global<cell_type_1>();
 
 		return create_alignment_solver_instance(
 			p_options,
@@ -344,7 +348,7 @@ SolverRef create_alignment_solver(
 
 	} else if (locality_name == "semiglobal") {
 
-		const auto locality = pyalign::Semiglobal<Alignment::Index, float>();
+		const auto locality = pyalign::Semiglobal<cell_type_1>();
 
 		return create_alignment_solver_instance(
 			p_options,
@@ -369,13 +373,13 @@ SolverRef create_dtw_solver(
 
 	if (direction == "maximize") {
 		return std::make_shared<SolverImpl<pyalign::DynamicTimeSolver<
-			pyalign::Direction::maximize, Alignment::Index, float>>>(
+			pyalign::Direction::maximize, cell_type_1>>>(
 			p_options,
 			p_max_len_s,
 			p_max_len_t);
 	} else if (direction == "minimize") {
 		return std::make_shared<SolverImpl<pyalign::DynamicTimeSolver<
-			pyalign::Direction::minimize, Alignment::Index, float>>>(
+			pyalign::Direction::minimize, cell_type_1>>>(
 			p_options,
 			p_max_len_s,
 			p_max_len_t);

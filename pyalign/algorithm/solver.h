@@ -130,19 +130,59 @@ typedef std::shared_ptr<AlgorithmMetaData> AlgorithmMetaDataRef;
 template<typename Value>
 using GapTensorFactory = std::function<xt::xtensor<Value, 1>(size_t)>;
 
-template<typename Index, typename Value, int LayerCount, int Layer>
+template<typename Index>
+struct traceback_cell_1 {
+	typedef Index IndexType;
+
+	xt::xtensor_fixed<Index, xt::xshape<2>> uv;
+
+	inline void init(Index u, Index v) {
+		uv(0) = u;
+		uv(1) = v;
+	}
+
+	inline void push(Index u, Index v) {
+		uv(0) = u;
+		uv(1) = v;
+	}
+
+	inline Index u() const {
+		return uv(0);
+	}
+
+	inline Index v() const {
+		return uv(1);
+	}
+};
+
+struct traceback_cell_n {
+};
+
+template<typename Value, typename Index>
+struct cell_type_1 {
+	typedef Value value_type;
+	typedef Index index_type;
+	typedef traceback_cell_1<Index> traceback_type;
+};
+
+template<typename CellType, int LayerCount, int Layer>
 class Matrix;
 
-template<typename Index, typename Value, int LayerCount>
+template<typename CellType, int LayerCount>
 class MatrixFactory {
+public:
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::traceback_type Traceback;
+
 protected:
-	friend class Matrix<Index, Value, LayerCount, 0>;
-	friend class Matrix<Index, Value, LayerCount, 1>;
-	friend class Matrix<Index, Value, LayerCount, 2>;
+	friend class Matrix<CellType, LayerCount, 0>;
+	friend class Matrix<CellType, LayerCount, 1>;
+	friend class Matrix<CellType, LayerCount, 2>;
 
 	struct Data {
 		xt::xtensor<Value, 3> values;
-		xt::xtensor<Index, 4> traceback;
+		xt::xtensor<Traceback, 3> traceback;
 		xt::xtensor<Index, 1> best_column;
 	};
 
@@ -183,8 +223,7 @@ public:
 		m_data->traceback.resize({
 			LayerCount,
 			m_max_len_s + 1,
-			m_max_len_t + 1,
-			2
+			m_max_len_t + 1
 		});
 		m_data->best_column.resize({
 			m_max_len_s + 1
@@ -192,7 +231,7 @@ public:
 	}
 
 	template<int Layer>
-	inline Matrix<Index, Value, LayerCount, Layer> make(
+	inline Matrix<CellType, LayerCount, Layer> make(
 		const Index len_s, const Index len_t) const;
 
 	inline Index max_len_s() const {
@@ -215,9 +254,22 @@ public:
 	}
 
 	inline auto traceback_all(const Index len_s, const Index len_t) const {
-		return xt::view(
-			m_data->traceback,
-			xt::all(), xt::range(0, len_s + 1), xt::range(0, len_t + 1), xt::all());
+		xt::xtensor<Index, 4> traceback;
+		traceback.resize({
+			static_cast<size_t>(LayerCount),
+			static_cast<size_t>(len_s + 1),
+			static_cast<size_t>(len_t + 1),
+			static_cast<size_t>(2)
+		});
+		for (size_t k = 0; k < static_cast<size_t>(LayerCount); k++) {
+			for (size_t i = 0; i < static_cast<size_t>(len_s); i++) {
+				for (size_t j = 0; j < static_cast<size_t>(len_t); j++) {
+					traceback(k, i, j, 0) = m_data->traceback(k, i, j).u();
+					traceback(k, i, j, 1) = m_data->traceback(k, i, j).v();
+				}
+			}
+		}
+		return traceback;
 	}
 };
 
@@ -227,7 +279,7 @@ struct shifted_indices {
 	// m(-1, 2), are handled correctly. this is not guaranteed in xtensor.
 
 	template<typename Tensor>
-	inline static auto scalar(Tensor &v) {
+	inline static auto element(Tensor &v) {
 		return [&v] (const Index i, const Index j) -> typename Tensor::reference {
 			return v(Layer, i + i0, j + j0);
 		};
@@ -241,15 +293,20 @@ struct shifted_indices {
 	}
 };
 
-template<typename Index, typename Value, int LayerCount, int Layer>
+template<typename CellType, int LayerCount, int Layer>
 class Matrix {
-	const MatrixFactory<Index, Value, LayerCount> &m_factory;
+public:
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type Index;
+
+private:
+	const MatrixFactory<CellType, LayerCount> &m_factory;
 	const Index m_len_s;
 	const Index m_len_t;
 
 public:
 	inline Matrix(
-		const MatrixFactory<Index, Value, LayerCount> &factory,
+		const MatrixFactory<CellType, LayerCount> &factory,
 		const Index len_s,
 		const Index len_t) :
 
@@ -268,15 +325,18 @@ public:
 
 	template<int i0, int j0>
 	inline auto values_n() const {
-		return shifted_indices<Layer, i0, j0, Index>::scalar(
+		return shifted_indices<Layer, i0, j0, Index>::element(
 			m_factory.m_data->values);
 	}
 
 	template<int i0, int j0>
 	inline auto traceback_n() const {
-		return shifted_indices<Layer, i0, j0, Index>::vector(
+		return shifted_indices<Layer, i0, j0, Index>::element(
 			m_factory.m_data->traceback);
 	}
+
+	struct assume_non_negative_indices {
+	};
 
 	template<int i0, int j0>
 	inline auto values() const {
@@ -303,15 +363,15 @@ public:
 	}
 };
 
-template<typename Index, typename Value, int LayerCount>
+template<typename CellType, int LayerCount>
 template<int Layer>
-inline Matrix<Index, Value, LayerCount, Layer> MatrixFactory<Index, Value, LayerCount>::make(
+inline Matrix<CellType, LayerCount, Layer> MatrixFactory<CellType, LayerCount>::make(
 	const Index len_s, const Index len_t) const {
 
 	static_assert(Layer < LayerCount, "layer index exceeds layer count");
 	check_size_against_max(len_s, m_max_len_s);
 	check_size_against_max(len_t, m_max_len_t);
-	return Matrix<Index, Value, LayerCount, Layer>(*this, len_s, len_t);
+	return Matrix<CellType, LayerCount, Layer>(*this, len_s, len_t);
 }
 
 template<typename V>
@@ -499,107 +559,123 @@ public:
 };
 
 
-template<typename Direction, typename Index, typename Value>
+template<typename Direction, typename CellType>
 class Accumulator {
+public:
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::traceback_type Traceback;
+
 private:
-	Value m_score;
+	Value m_val;
+
+	Value &m_cell_val;
 
 public:
+	inline Accumulator(Value &p_val, Traceback &p_tb) : m_cell_val(p_val) {
+	}
+
 	inline void init(
-		const Value score,
+		const Value val,
 		const Index u,
 		const Index v) {
 
-		m_score = score;
+		m_val = val;
 	}
 
 	inline void push(
-		const Value score,
+		const Value val,
 		const Index u,
 		const Index v) {
 
-		if (Direction::is_improvement(score, m_score)) {
-			m_score = score;
+		if (Direction::is_improvement(val, m_val)) {
+			m_val = val;
 		}
 	}
 
-	template<typename UV>
 	inline void push(
-		const Value score,
-		UV &&uv) {
+		const Value val,
+		const Traceback &tb) {
 
-		if (Direction::is_improvement(score, m_score)) {
-			m_score = score;
+		if (Direction::is_improvement(val, m_val)) {
+			m_val = val;
 		}
 	}
 
-	inline void add(const float score) {
-		m_score += score;
+	inline void add(const float val) {
+		m_val += val;
 	}
 
-	template<typename ScoreRef, typename TracebackRef>
-	inline void write(ScoreRef &&r_score, TracebackRef &&r_traceback) const {
-		r_score = m_score;
+	inline void done() const {
+		m_cell_val = m_val;
 	}
 };
 
-template<typename Direction, typename Index, typename Value>
+template<typename Direction, typename CellType>
 class TracingAccumulator {
-	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Coord;
+public:
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::traceback_type Traceback;
 
-	Value m_score;
-	Coord m_traceback;
+private:
+	Value m_val;
+
+	Value &m_cell_val;
+	Traceback &m_cell_tb;
 
 public:
+	inline TracingAccumulator(Value &p_val, Traceback &p_tb) :
+		m_cell_val(p_val), m_cell_tb(p_tb) {
+	}
+
 	inline void init(
-		const Value score,
+		const Value val,
 		const Index u,
 		const Index v) {
 
-		m_score = score;
-		m_traceback[0] = u;
-		m_traceback[1] = v;
+		m_val = val;
+		m_cell_tb.init(u, v);
 	}
 
 	inline void push(
-		const Value score,
+		const Value val,
 		const Index u,
 		const Index v) {
 
-		if (Direction::is_improvement(score, m_score)) {
-			m_score = score;
-			m_traceback[0] = u;
-			m_traceback[1] = v;
+		if (Direction::is_improvement(val, m_val)) {
+			m_val = val;
+			m_cell_tb.push(u, v);
 		}
 	}
 
-	template<typename UV>
 	inline void push(
-		const Value score,
-		UV &&uv) {
+		const Value val,
+		const Traceback &tb) {
 
-		if (Direction::is_improvement(score, m_score)) {
-			m_score = score;
-			m_traceback[0] = uv(0);
-			m_traceback[1] = uv(1);
+		if (Direction::is_improvement(val, m_val)) {
+			m_val = val;
+			m_cell_tb.push(tb.u(), tb.v());
 		}
 	}
 
-	inline void add(const float score) {
-		m_score += score;
+	inline void add(const float val) {
+		m_val += val;
 	}
 
-	template<typename ScoreRef, typename TracebackRef>
-	inline void write(ScoreRef &&r_score, TracebackRef &&r_traceback) const {
-		r_score = m_score;
-		r_traceback = m_traceback;
+	inline void done() const {
+		m_cell_val = m_val;
 	}
 };
 
 
-template<typename Index, typename Value>
+template<typename CellType>
 class Local {
 public:
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
+	typedef CellType cell_type;
+
 	static constexpr bool is_global() {
 		return false;
 	}
@@ -631,9 +707,9 @@ private:
 				const Index last_u = u;
 				const Index last_v = v;
 
-				const auto t = xt::view(traceback, u, v, xt::all());
-				u = t(0);
-				v = t(1);
+				const auto &t = traceback(u, v);
+				u = t.u();
+				v = t.v();
 
 				path.step(last_u, last_v, u, v);
 			}
@@ -645,7 +721,7 @@ private:
 public:
 	template<typename Direction, typename Goal>
 	struct AccumulatorFactory {
-		typedef TracingAccumulator<Direction, Index, Value> Accumulator;
+		typedef TracingAccumulator<Direction, CellType> Accumulator;
 	};
 
 	typedef Value ValueType;
@@ -715,9 +791,13 @@ public:
 };
 
 
-template<typename Index, typename Value>
+template<typename CellType>
 class Global {
 public:
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
+	typedef CellType cell_type;
+
 	static constexpr bool is_global() {
 		return true;
 	}
@@ -745,9 +825,9 @@ private:
 				const Index last_u = u;
 				const Index last_v = v;
 
-				const auto t = xt::view(traceback, u, v, xt::all());
-				u = t(0);
-				v = t(1);
+				const auto &t = traceback(u, v);
+				u = t.u();
+				v = t.v();
 
 				path.step(last_u, last_v, u, v);
 			}
@@ -772,12 +852,12 @@ public:
 
 	template<typename Direction>
 	struct AccumulatorFactory<Direction, ComputationGoal::score> {
-		typedef Accumulator<Direction, Index, Value> Accumulator;
+		typedef Accumulator<Direction, CellType> Accumulator;
 	};
 
 	template<typename Direction>
 	struct AccumulatorFactory<Direction, ComputationGoal::alignment> {
-		typedef TracingAccumulator<Direction, Index, Value> Accumulator;
+		typedef TracingAccumulator<Direction, CellType> Accumulator;
 	};
 
 	typedef Value ValueType;
@@ -819,9 +899,13 @@ public:
 };
 
 
-template<typename Index, typename Value>
+template<typename CellType>
 class Semiglobal {
 public:
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
+	typedef CellType cell_type;
+
 	static constexpr bool is_global() {
 		return false;
 	}
@@ -849,9 +933,9 @@ private:
 				const Index last_u = u;
 				const Index last_v = v;
 
-				const auto t = xt::view(traceback, u, v, xt::all());
-				u = t(0);
-				v = t(1);
+				const auto t = traceback(u, v);
+				u = t.u();
+				v = t.v();
 
 				path.step(last_u, last_v, u, v);
 			}
@@ -876,12 +960,12 @@ public:
 
 	template<typename Direction>
 	struct AccumulatorFactory<Direction, ComputationGoal::score> {
-		typedef Accumulator<Direction, Index, Value> Accumulator;
+		typedef Accumulator<Direction, CellType> Accumulator;
 	};
 
 	template<typename Direction>
 	struct AccumulatorFactory<Direction, ComputationGoal::alignment> {
-		typedef TracingAccumulator<Direction, Index, Value> Accumulator;
+		typedef TracingAccumulator<Direction, CellType> Accumulator;
 	};
 
 	typedef Value ValueType;
@@ -932,9 +1016,13 @@ public:
 	}
 };
 
-template<typename Index, typename Value>
+template<typename CellType>
 class Solution {
 public:
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
+	typedef CellType cell_type;
+
 	xt::xtensor<Value, 3> m_values;
 	xt::xtensor<Index, 4> m_traceback;
 	xt::xtensor<Index, 2> m_path;
@@ -962,18 +1050,21 @@ public:
 	}
 };
 
-template<typename Index, typename Value>
-using SolutionRef = std::shared_ptr<Solution<Index, Value>>;
+template<typename CellType>
+using SolutionRef = std::shared_ptr<Solution<CellType>>;
 
 
-template<typename Locality, typename Index, int LayerCount>
+template<typename Locality, int LayerCount>
 class Solver {
 public:
-	typedef typename Locality::ValueType Value;
+	typedef typename Locality::cell_type CellType;
+
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type Index;
 
 protected:
 	const Locality m_locality;
-	MatrixFactory<Index, Value, LayerCount> m_factory;
+	MatrixFactory<CellType, LayerCount> m_factory;
 	const AlgorithmMetaDataRef m_algorithm;
 
 public:
@@ -1022,13 +1113,13 @@ public:
 	}
 
 	template<typename Alignment>
-	SolutionRef<Index, Value> solution(
+	SolutionRef<CellType> solution(
 		const size_t len_s,
 		const size_t len_t,
 		Alignment &alignment) const {
 
-		const SolutionRef<Index, Value> solution =
-			std::make_shared<Solution<Index, Value>>();
+		const SolutionRef<CellType> solution =
+			std::make_shared<Solution<CellType>>();
 
 		solution->m_values = m_factory.values_all(len_s, len_t);
 		solution->m_traceback = m_factory.traceback_all(len_s, len_t);
@@ -1048,11 +1139,11 @@ public:
 	}
 };
 
-template<typename Locality, typename Index, int LayerCount>
-using AlignmentSolver = Solver<Locality, Index, LayerCount>;
+template<typename Locality, int LayerCount>
+using AlignmentSolver = Solver<Locality, LayerCount>;
 
-template<typename Direction, typename Locality, typename Index=int16_t>
-class LinearGapCostSolver final : public AlignmentSolver<Locality, Index, 1> {
+template<typename Direction, typename Locality>
+class LinearGapCostSolver final : public AlignmentSolver<Locality, 1> {
 	// For global alignment, we pose the problem as a Needleman-Wunsch problem, but follow the
 	// implementation of Sankoff and Kruskal.
 
@@ -1079,7 +1170,9 @@ class LinearGapCostSolver final : public AlignmentSolver<Locality, Index, 1> {
 	// Hendrix, D. A. Applied Bioinformatics. https://open.oregonstate.education/appliedbioinformatics/.
 
 public:
-	typedef typename AlignmentSolver<Locality, Index, 1>::Value Value;
+	typedef typename Locality::cell_type CellType;
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
 
 private:
 	const Value m_gap_cost_s;
@@ -1097,7 +1190,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Locality, Index, 1>(
+		AlignmentSolver<Locality, 1>(
 			p_locality,
 			p_max_len_s,
 			p_max_len_t,
@@ -1143,7 +1236,8 @@ public:
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
 				typename Locality::template AccumulatorFactory<
-					Direction, ComputationGoal>::Accumulator acc;
+					Direction, ComputationGoal>::Accumulator acc(
+						values(u, v), traceback(u, v));
 
 				acc.init(
 					values(u - 1, v - 1) + pairwise(u, v),
@@ -1159,9 +1253,7 @@ public:
 
 				this->m_locality.update_acc(acc);
 
-				acc.write(
-					values(u, v),
-					xt::view(traceback, u, v, xt::all()));
+				acc.done();
 			}
 		}
 	}
@@ -1188,13 +1280,16 @@ struct AffineCost {
 	}
 };
 
-template<typename Direction, typename Locality, typename Index=int16_t>
-class AffineGapCostSolver final : public AlignmentSolver<Locality, Index, 3> {
+template<typename Direction, typename Locality>
+class AffineGapCostSolver final : public AlignmentSolver<Locality, 3> {
 public:
 	// Gotoh, O. (1982). An improved algorithm for matching biological sequences.
 	// Journal of Molecular Biology, 162(3), 705–708. https://doi.org/10.1016/0022-2836(82)90398-9
 
-	typedef typename Solver<Locality, Index, 3>::Value Value;
+	typedef typename Locality::cell_type CellType;
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
+
 	typedef AffineCost<Value> Cost;
 
 private:
@@ -1209,7 +1304,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Locality, Index, 3>(
+		AlignmentSolver<Locality, 3>(
 			p_locality,
 			p_max_len_s,
 			p_max_len_t,
@@ -1249,10 +1344,18 @@ public:
 		auto tb_P = matrix_P.template traceback<0, 0>();
 		auto tb_Q = matrix_Q.template traceback<0, 0>();
 
-		xt::view(tb_P, 0, xt::all()).fill(-1);
-		xt::view(tb_P, xt::all(), 0).fill(-1);
-		xt::view(tb_Q, 0, xt::all()).fill(-1);
-		xt::view(tb_Q, xt::all(), 0).fill(-1);
+		for (auto &e : xt::view(tb_P, 0, xt::all())) {
+			e.init(-1, -1);
+		}
+		for (auto &e : xt::view(tb_P, xt::all(), 0)) {
+			e.init(-1, -1);
+		}
+		for (auto &e : xt::view(tb_Q, 0, xt::all())) {
+			e.init(-1, -1);
+		}
+		for (auto &e : xt::view(tb_Q, xt::all(), 0)) {
+			e.init(-1, -1);
+		}
 	}
 
 	template<typename ComputationGoal, typename Pairwise>
@@ -1280,34 +1383,37 @@ public:
 
 				// Gotoh formula (4)
 				{
-					typename Locality::template AccumulatorFactory<Direction,
-						ComputationGoal>::Accumulator acc_P;
+					typename Locality::template AccumulatorFactory<
+						Direction, ComputationGoal>::Accumulator acc_P(
+							P(i, j), tb_P(i, j));
 
 					acc_P.init(D(i - 1, j) + m_gap_cost_s.w1() * gap_sgn, i - 1, j);
 					acc_P.push(P(i - 1, j) + m_gap_cost_s.u * gap_sgn, tb_P(i - 1, j));
-					acc_P.write(P(i, j), tb_P(i, j));
+					acc_P.done();
 				}
 
 				// Gotoh formula (5)
 				{
-					typename Locality::template AccumulatorFactory<Direction,
-						ComputationGoal>::Accumulator acc_Q;
+					typename Locality::template AccumulatorFactory<
+						Direction, ComputationGoal>::Accumulator acc_Q(
+							Q(i, j), tb_Q(i, j));
 
 					acc_Q.init(D(i, j - 1) + m_gap_cost_t.w1() * gap_sgn, i, j - 1);
 					acc_Q.push(Q(i, j - 1) + m_gap_cost_t.u * gap_sgn, tb_Q(i, j - 1));
-					acc_Q.write(Q(i, j), tb_Q(i, j));
+					acc_Q.done();
 				}
 
 				// Gotoh formula (1)
 				{
-					typename Locality::template AccumulatorFactory<Direction,
-						ComputationGoal>::Accumulator acc_D;
+					typename Locality::template AccumulatorFactory<
+						Direction, ComputationGoal>::Accumulator acc_D(
+							D(i, j), tb_D(i, j));
 
 					acc_D.init(D(i - 1, j - 1) + pairwise(i, j), i - 1, j - 1);
 					acc_D.push(P(i, j), tb_P(i, j));
 					acc_D.push(Q(i, j), tb_Q(i, j));
 					this->m_locality.update_acc(acc_D);
-					acc_D.write(D(i, j), tb_D(i, j));
+					acc_D.done();
 				}
 			}
 		}
@@ -1323,8 +1429,8 @@ inline void check_gap_tensor_shape(const xt::xtensor<Value, 1> &tensor, const si
 	}
 }
 
-template<typename Direction, typename Locality, typename Index=int16_t>
-class GeneralGapCostSolver final : public AlignmentSolver<Locality, Index, 1> {
+template<typename Direction, typename Locality>
+class GeneralGapCostSolver final : public AlignmentSolver<Locality, 1> {
 	// Our implementation follows what is sometimes referred to as Waterman-Smith-Beyer, i.e.
 	// an O(n^3) algorithm for generic gap costs. Waterman-Smith-Beyer generates a local alignment.
 
@@ -1340,7 +1446,9 @@ class GeneralGapCostSolver final : public AlignmentSolver<Locality, Index, 1> {
 	// Hendrix, D. A. Applied Bioinformatics. https://open.oregonstate.education/appliedbioinformatics/.
 
 public:
-	typedef typename AlignmentSolver<Locality, Index, 1>::Value Value;
+	typedef typename Locality::cell_type CellType;
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
 
 private:
 	const xt::xtensor<Value, 1> m_gap_cost_s;
@@ -1358,7 +1466,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Locality, Index, 1>(
+		AlignmentSolver<Locality, 1>(
 			p_locality,
 			p_max_len_s,
 			p_max_len_t,
@@ -1407,8 +1515,9 @@ public:
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				typename Locality::template AccumulatorFactory<Direction,
-					ComputationGoal>::Accumulator acc;
+				typename Locality::template AccumulatorFactory<
+					Direction, ComputationGoal>::Accumulator acc(
+						values(u, v), traceback(u, v));
 
 				acc.init(
 					values(u - 1, v - 1) + pairwise(u, v),
@@ -1428,25 +1537,24 @@ public:
 
 				this->m_locality.update_acc(acc);
 
-				acc.write(
-					values(u, v),
-					xt::view(traceback, u, v, xt::all()));
+				acc.done();
 			}
 		}
 	}
 };
 
-template<typename Direction, typename Index=int16_t, typename Value=float>
-class DynamicTimeSolver final : public Solver<Global<Index, Value>, Index, 1> {
+template<typename Direction, typename CellType>
+class DynamicTimeSolver final : public Solver<Global<CellType>, 1> {
 public:
-	typedef Index IndexType;
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
 
 	inline DynamicTimeSolver(
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		Solver<Global<Index, Value>, Index, 1>(
-			Global<Index, Value>(),
+		Solver<Global<CellType>, 1>(
+			Global<CellType>(),
 			p_max_len_s,
 			p_max_len_t,
 			std::make_shared<AlgorithmMetaData>("DTW", "n^2", "n^2")) {
@@ -1479,8 +1587,9 @@ public:
 		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				typename Global<Index, Value>::template AccumulatorFactory<
-					Direction, ComputationGoal>::Accumulator acc;
+				typename Global<CellType>::template AccumulatorFactory<
+					Direction, ComputationGoal>::Accumulator acc(
+						values(u, v), traceback(u, v));
 
 				acc.init(
 					values(u - 1, v - 1),
@@ -1496,9 +1605,7 @@ public:
 
 				acc.add(pairwise(u, v));
 
-				acc.write(
-					values(u, v),
-					xt::view(traceback, u, v, xt::all()));
+				acc.done();
 			}
 		}
 	}
