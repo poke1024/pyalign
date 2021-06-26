@@ -722,6 +722,88 @@ public:
 };
 
 
+template<typename CellType, typename Strategy, typename Matrix, typename Path>
+class Traceback {
+public:
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
+
+private:
+	const Strategy m_strategy;
+	Matrix &m_matrix;
+	Path &m_path;
+	std::optional<std::pair<Index, Index>> m_seed;
+
+public:
+	inline Traceback(
+		Strategy &&p_strategy,
+		Matrix &p_matrix,
+		Path &p_path) :
+		m_strategy(p_strategy),
+		m_matrix(p_matrix),
+		m_path(p_path) {
+
+		m_seed = m_strategy.seed();
+	}
+
+	inline std::optional<Value> next() {
+		if (!m_seed.has_value()) {
+			return std::optional<Value>();
+		}
+
+		const auto values = m_matrix.template values<1, 1>();
+
+		const auto initial_uv = m_seed.value();
+		m_seed.reset();
+
+		Index u = std::get<0>(initial_uv);
+		Index v = std::get<1>(initial_uv);
+		const auto best_val = values(u, v);
+
+		if (typename Strategy::template trace_path<Path>()) {
+			const auto len_s = m_matrix.len_s();
+			const auto len_t = m_matrix.len_t();
+			m_path.begin(len_s, len_t);
+
+			const auto traceback = m_matrix.template traceback<1, 1>();
+
+			while (m_strategy.cont(u, v)) {
+				const Index last_u = u;
+				const Index last_v = v;
+
+				const auto &t = traceback(u, v);
+				u = t.u();
+				v = t.v();
+
+				m_path.step(last_u, last_v, u, v);
+			}
+		}
+
+		return m_strategy.path_val(best_val, u, v);
+	}
+};
+
+template<typename Locality, typename Matrix, typename Path>
+inline Traceback<
+	typename Locality::cell_type,
+	typename Locality::template TracebackStrategy<Matrix>,
+	Matrix, Path>
+	make_traceback(
+		const Locality &p_locality,
+		Matrix &p_matrix,
+		Path &p_path) {
+
+	return Traceback<
+		typename Locality::cell_type,
+		typename Locality::template TracebackStrategy<Matrix>,
+		Matrix, Path>(
+
+		typename Locality::template TracebackStrategy<Matrix>(p_locality, p_matrix),
+		p_matrix,
+		p_path
+	);
+}
+
 struct LocalInitializers {
 	float zero;
 };
@@ -739,41 +821,6 @@ public:
 
 private:
 	const Value m_zero;
-
-	template<typename Path>
-	class Backtracer {
-	public:
-		template<typename Matrix>
-		inline static std::pair<Index, Index> build(
-			Path &path,
-			const Matrix &matrix,
-			const float zero,
-			const Index u0, const Index v0) {
-
-			const auto len_s = matrix.len_s();
-			const auto len_t = matrix.len_t();
-			path.begin(len_s, len_t);
-
-			const auto values = matrix.template values_n<1, 1>();
-			const auto traceback = matrix.template traceback<1, 1>();
-
-			Index u = u0;
-			Index v = v0;
-
-			while (u >= 0 && v >= 0 && values(u, v) > zero) {
-				const Index last_u = u;
-				const Index last_v = v;
-
-				const auto &t = traceback(u, v);
-				u = t.u();
-				v = t.v();
-
-				path.step(last_u, last_v, u, v);
-			}
-
-			return std::make_pair(u, v);
-		}
-	};
 
 public:
 	template<typename Direction, typename Goal>
@@ -801,50 +848,74 @@ public:
 		acc.push(m_zero, -1, -1);
 	}
 
-	template<typename Matrix, typename Path>
-	inline Value traceback(
-		Matrix &matrix,
-		Path &path) const {
+	inline Value zero() const {
+		return m_zero;
+	}
 
-		const auto len_s = matrix.len_s();
-		//const auto len_t = matrix.len_t();
+	template<typename Matrix>
+	class TracebackStrategy {
+		const float m_zero;
+		Matrix &m_matrix;
 
-		const auto values = matrix.template values_n<1, 1>();
-		auto best_column = matrix.best_column();
+	public:
+		inline TracebackStrategy(const Local<CellType> &p_locality, Matrix &p_matrix) :
+			m_zero(p_locality.zero()),
+			m_matrix(p_matrix) {
+		}
 
-		const auto zero_similarity = m_zero;
+		template<typename Path>
+		struct trace_path {
+			constexpr operator bool() const {
+				return true;
+			}
+		};
 
-		best_column = xt::argmax(matrix.template values<1, 1>(), 1);
+		inline std::optional<std::pair<Index, Index>> seed() const {
+			const auto values = m_matrix.template values_n<1, 1>();
+			auto best_column = m_matrix.best_column();
 
-		Value score = zero_similarity;
-		Index best_u = 0, best_v = 0;
+			best_column = xt::argmax(m_matrix.template values<1, 1>(), 1);
 
-		for (Index u = 0; u < len_s; u++) {
-			const Index v = best_column(u);
-			const Value s = values(u, v);
-			if (s > score) {
-				score = s;
-				best_u = u;
-				best_v = v;
+			Value score = m_zero;
+			Index best_u = 0, best_v = 0;
+
+			const auto len_s = m_matrix.len_s();
+			for (Index u = 0; u < len_s; u++) {
+				const Index v = best_column(u);
+				const Value s = values(u, v);
+				if (s > score) {
+					score = s;
+					best_u = u;
+					best_v = v;
+				}
+			}
+
+			if (score > m_zero) {
+				return std::make_pair(best_u, best_v);
+			} else {
+				return std::optional<std::pair<Index, Index>>();
 			}
 		}
 
-		if (score <= zero_similarity) {
-			return 0;
+		inline bool cont(const Index u, const Index v) const {
+			const auto values = m_matrix.template values_n<1, 1>();
+			return u >= 0 && v >= 0 && values(u, v) > m_zero;
 		}
 
-		Index u, v;
-		std::tie(u, v) = Backtracer<Path>::build(
-			path, matrix, m_zero, best_u, best_v);
+		inline Value path_val(
+			const Value best_val,
+			const Index u,
+			const Index v) const {
 
-		if (u >= 0 && v >= 0) {
-			return score - values(u, v);
-		} else {
-			return score;
+			if (u >= 0 && v >= 0) {
+				const auto values = m_matrix.template values_n<1, 1>();
+				return best_val - values(u, v);
+			} else {
+				return best_val;
+			}
 		}
-	}
+	};
 };
-
 
 struct GlobalInitializers {
 };
@@ -859,49 +930,6 @@ public:
 	static constexpr bool is_global() {
 		return true;
 	}
-
-private:
-	template<typename Path>
-	class Backtracer {
-	public:
-		template<typename Matrix>
-		inline static void build(
-			Path &path,
-			const Matrix &matrix,
-			const Index u0, const Index v0) {
-
-			const auto len_s = matrix.len_s();
-			const auto len_t = matrix.len_t();
-			path.begin(len_s, len_t);
-
-			const auto traceback = matrix.template traceback<1, 1>();
-
-			Index u = u0;
-			Index v = v0;
-
-			while (u >= 0 && v >= 0) {
-				const Index last_u = u;
-				const Index last_v = v;
-
-				const auto &t = traceback(u, v);
-				u = t.u();
-				v = t.v();
-
-				path.step(last_u, last_v, u, v);
-			}
-		}
-	};
-
-	template<>
-	class Backtracer<build_nothing> {
-	public:
-		template<typename Matrix>
-		inline static void build(
-			build_nothing &path,
-			const Matrix &matrix,
-			const Index u0, const Index v0) {
-		}
-	};
 
 public:
 	template<typename Direction, typename Goal>
@@ -938,23 +966,50 @@ public:
 	inline void update_acc(Accumulator &) const {
 	}
 
-	template<typename Matrix, typename Path>
-	inline Value traceback(
-		Matrix &matrix,
-		Path &path) const {
+	template<typename Matrix>
+	class TracebackStrategy {
+		Matrix &m_matrix;
 
-		const auto len_s = matrix.len_s();
-		const auto len_t = matrix.len_t();
+	public:
+		inline TracebackStrategy(
+			const Global<CellType> &p_locality,
+			Matrix &p_matrix) :
+			m_matrix(p_matrix) {
+		}
 
-		const auto values = matrix.template values_n<1, 1>();
+		template<typename Path>
+		struct trace_path {
+			constexpr operator bool() const {
+				return true;
+			}
+		};
 
-		const Index u = len_s - 1;
-		const Index v = len_t - 1;
+		template<>
+		struct trace_path<build_nothing> {
+			constexpr operator bool() const {
+				return false;
+			}
+		};
 
-		Backtracer<Path>::build(path, matrix, u, v);
+		inline std::optional<std::pair<Index, Index>> seed() const {
+			const auto len_s = m_matrix.len_s();
+			const auto len_t = m_matrix.len_t();
+			return std::make_pair(len_s - 1, len_t - 1);
+		}
 
-		return values(u, v);
-	}
+		inline bool cont(const Index u, const Index v) const {
+			const auto values = m_matrix.template values_n<1, 1>();
+			return u >= 0 && v >= 0;
+		}
+
+		inline Value path_val(
+			const Value best_val,
+			const Index u,
+			const Index v) const {
+
+			return best_val;
+		}
+	};
 };
 
 
@@ -971,49 +1026,6 @@ public:
 	static constexpr bool is_global() {
 		return false;
 	}
-
-private:
-	template<typename Path>
-	class Backtracer {
-	public:
-		template<typename Matrix>
-		inline static void build(
-			Path &path,
-			const Matrix &matrix,
-			const Index u0, const Index v0) {
-
-			const auto len_s = matrix.len_s();
-			const auto len_t = matrix.len_t();
-			path.begin(len_s, len_t);
-
-			const auto traceback = matrix.template traceback<1, 1>();
-
-			Index u = u0;
-			Index v = v0;
-
-			while (u >= 0 && v >= 0) {
-				const Index last_u = u;
-				const Index last_v = v;
-
-				const auto t = traceback(u, v);
-				u = t.u();
-				v = t.v();
-
-				path.step(last_u, last_v, u, v);
-			}
-		}
-	};
-
-	template<>
-	class Backtracer<build_nothing> {
-	public:
-		template<typename Matrix>
-		inline static void build(
-			build_nothing &path,
-			const Matrix &matrix,
-			const Index u0, const Index v0) {
-		}
-	};
 
 public:
 	template<typename Direction, typename Goal>
@@ -1045,38 +1057,71 @@ public:
 	inline void update_acc(Accumulator &) const {
 	}
 
-	template<typename Matrix, typename Path>
-	inline Value traceback(
-		Matrix &matrix,
-		Path &path) const {
+	template<typename Matrix>
+	class TracebackStrategy {
+		Matrix &m_matrix;
 
-		const auto len_s = matrix.len_s();
-		const auto len_t = matrix.len_t();
-
-		const auto values = matrix.template values_n<1, 1>();
-
-		const Index last_row = len_s - 1;
-		const Index last_col = len_t - 1;
-
-		const auto values_non_neg_ij = matrix.template values<1, 1>();
-		const Index best_col_in_last_row = argmax(xt::row(values_non_neg_ij, last_row));
-		const Index best_row_in_last_col = argmax(xt::col(values_non_neg_ij, last_col));
-
-		Index u;
-		Index v;
-
-		if (values(best_row_in_last_col, last_col) > values(last_row, best_col_in_last_row)) {
-			u = best_row_in_last_col;
-			v = last_col;
-		} else {
-			u = last_row;
-			v = best_col_in_last_row;
+	public:
+		inline TracebackStrategy(
+			const Semiglobal<CellType> &p_locality,
+			Matrix &p_matrix) :
+			m_matrix(p_matrix) {
 		}
 
-		Backtracer<Path>::build(path, matrix, u, v);
+		template<typename Path>
+		struct trace_path {
+			constexpr operator bool() const {
+				return true;
+			}
+		};
 
-		return values(u, v);
-	}
+		template<>
+		struct trace_path<build_nothing> {
+			constexpr operator bool() const {
+				return false;
+			}
+		};
+
+		inline std::optional<std::pair<Index, Index>> seed() const {
+			const auto len_s = m_matrix.len_s();
+			const auto len_t = m_matrix.len_t();
+
+			const auto values = m_matrix.template values_n<1, 1>();
+
+			const Index last_row = len_s - 1;
+			const Index last_col = len_t - 1;
+
+			const auto values_non_neg_ij = m_matrix.template values<1, 1>();
+			const Index best_col_in_last_row = argmax(xt::row(values_non_neg_ij, last_row));
+			const Index best_row_in_last_col = argmax(xt::col(values_non_neg_ij, last_col));
+
+			Index u;
+			Index v;
+
+			if (values(best_row_in_last_col, last_col) > values(last_row, best_col_in_last_row)) {
+				u = best_row_in_last_col;
+				v = last_col;
+			} else {
+				u = last_row;
+				v = best_col_in_last_row;
+			}
+
+			return std::make_pair(u, v);
+		}
+
+		inline bool cont(const Index u, const Index v) const {
+			const auto values = m_matrix.template values_n<1, 1>();
+			return u >= 0 && v >= 0;
+		}
+
+		inline Value path_val(
+			const Value best_val,
+			const Index u,
+			const Index v) const {
+
+			return best_val;
+		}
+	};
 };
 
 template<typename CellType>
@@ -1171,13 +1216,20 @@ public:
 		return m_factory.make<Layer>(len_s, len_t);
 	}
 
+	inline Value worst_score() const {
+		// FIXME: use std::numerical_limits<Value>::infinity()?
+		return 0;
+	}
+
 	inline Value score(
 		const size_t len_s,
 		const size_t len_t) const {
 
 		auto matrix = m_factory.template make<0>(len_s, len_t);
 		build_nothing nothing;
-		return m_locality.traceback(matrix, nothing);
+		auto tb = make_traceback(m_locality, matrix, nothing);
+		const auto tb_val = tb.next();
+		return tb_val.value_or(worst_score());
 	}
 
 	template<typename Alignment>
@@ -1188,7 +1240,9 @@ public:
 
 		auto matrix = m_factory.template make<0>(len_s, len_t);
 		build_alignment<Alignment> build(alignment);
-		return m_locality.traceback(matrix, build);
+		auto tb = make_traceback(m_locality, matrix, build);
+		const auto tb_val = tb.next();
+		return tb_val.value_or(worst_score());
 	}
 
 	template<typename Alignment>
@@ -1208,9 +1262,10 @@ public:
 		);
 
 		auto matrix = m_factory.template make<0>(len_s, len_t);
-		const auto score = m_locality.traceback(matrix, build);
+		auto tb = make_traceback(m_locality, matrix, build);
+		const auto tb_val = tb.next();
 		solution->m_path = build.template get<0>().path();
-		solution->m_score = score;
+		solution->m_score = tb_val.value_or(worst_score());
 
 		solution->m_algorithm = m_algorithm;
 
