@@ -15,7 +15,9 @@
 namespace pyalign {
 
 namespace goal {
-	struct score { // compute only score
+	struct optimal_score { // compute only optimal score
+		struct path_goal {
+		};
 	};
 
 	template<typename PathGoal>
@@ -240,28 +242,53 @@ struct traceback_n {
 	}
 };
 
-template<typename Value, typename Index, template<typename> class Traceback>
+template<typename Value, typename Index>
 struct cell_type {
 	typedef Value value_type;
 	typedef Index index_type;
-	typedef Traceback<Index> traceback_type;
+};
+
+template<typename Goal, typename Direction>
+struct problem_type {
+	typedef Goal goal_type;
+	typedef Direction direction_type;
 };
 
 
-template<typename CellType, int LayerCount, int Layer>
+template<typename PathGoal, typename Index>
+struct traceback_cell_type_factory {
+};
+
+template<typename Index>
+struct traceback_cell_type_factory<goal::optimal_score::path_goal, Index> {
+	typedef traceback_1<Index> traceback_cell_type;
+};
+
+template<typename Index>
+struct traceback_cell_type_factory<goal::path::optimal::one, Index> {
+	typedef traceback_1<Index> traceback_cell_type;
+};
+
+template<typename CellType, typename ProblemType>
+using traceback_type = typename traceback_cell_type_factory<
+	typename ProblemType::goal_type::path_goal,
+	typename CellType::index_type>::traceback_cell_type;
+
+
+template<typename CellType, typename ProblemType, int LayerCount, int Layer>
 class Matrix;
 
-template<typename CellType, int LayerCount>
+template<typename CellType, typename ProblemType, int LayerCount>
 class MatrixFactory {
 public:
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::index_type Index;
-	typedef typename CellType::traceback_type Traceback;
+	typedef traceback_type<CellType, ProblemType> Traceback;
 
 protected:
-	friend class Matrix<CellType, LayerCount, 0>;
-	friend class Matrix<CellType, LayerCount, 1>;
-	friend class Matrix<CellType, LayerCount, 2>;
+	friend class Matrix<CellType, ProblemType, LayerCount, 0>;
+	friend class Matrix<CellType, ProblemType, LayerCount, 1>;
+	friend class Matrix<CellType, ProblemType, LayerCount, 2>;
 
 	struct Data {
 		xt::xtensor<Value, 3> values;
@@ -314,7 +341,7 @@ public:
 	}
 
 	template<int Layer>
-	inline Matrix<CellType, LayerCount, Layer> make(
+	inline Matrix<CellType, ProblemType, LayerCount, Layer> make(
 		const Index len_s, const Index len_t) const;
 
 	inline Index max_len_s() const {
@@ -369,20 +396,20 @@ shifted_xview<i0, j0, View> shift_xview(View &&v) {
 	return shifted_xview<i0, j0, View>{v};
 }
 
-template<typename CellType, int LayerCount, int Layer>
+template<typename CellType, typename ProblemType, int LayerCount, int Layer>
 class Matrix {
 public:
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::index_type Index;
 
 private:
-	const MatrixFactory<CellType, LayerCount> &m_factory;
+	const MatrixFactory<CellType, ProblemType, LayerCount> &m_factory;
 	const Index m_len_s;
 	const Index m_len_t;
 
 public:
 	inline Matrix(
-		const MatrixFactory<CellType, LayerCount> &factory,
+		const MatrixFactory<CellType, ProblemType, LayerCount> &factory,
 		const Index len_s,
 		const Index len_t) :
 
@@ -439,15 +466,16 @@ public:
 	}
 };
 
-template<typename CellType, int LayerCount>
+template<typename CellType, typename ProblemType, int LayerCount>
 template<int Layer>
-inline Matrix<CellType, LayerCount, Layer> MatrixFactory<CellType, LayerCount>::make(
+inline Matrix<CellType, ProblemType, LayerCount, Layer>
+MatrixFactory<CellType, ProblemType, LayerCount>::make(
 	const Index len_s, const Index len_t) const {
 
 	static_assert(Layer < LayerCount, "layer index exceeds layer count");
 	check_size_against_max(len_s, m_max_len_s);
 	check_size_against_max(len_t, m_max_len_t);
-	return Matrix<CellType, LayerCount, Layer>(*this, len_s, len_t);
+	return Matrix<CellType, ProblemType, LayerCount, Layer>(*this, len_s, len_t);
 }
 
 template<typename Alignment>
@@ -612,12 +640,13 @@ public:
 };
 
 
-template<typename Direction, typename CellType>
+template<typename CellType, typename ProblemType>
 class Accumulator {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
-	typedef typename CellType::traceback_type Traceback;
+	typedef typename ProblemType::direction_type Direction;
+	typedef traceback_type<CellType, ProblemType> Traceback;
 
 private:
 	Value m_val;
@@ -664,12 +693,13 @@ public:
 	}
 };
 
-template<typename Direction, typename CellType>
+template<typename CellType, typename ProblemType>
 class TracingAccumulator {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
-	typedef typename CellType::traceback_type Traceback;
+	typedef typename ProblemType::direction_type Direction;
+	typedef traceback_type<CellType, ProblemType> Traceback;
 
 private:
 	Value m_val;
@@ -725,11 +755,11 @@ public:
 	}
 };
 
-template<bool Multiple, typename CellType, typename Strategy, typename Matrix, typename Path>
+template<bool Multiple, typename CellType, typename ProblemType, typename Strategy, typename Matrix, typename Path>
 class SpecializedTraceback;
 
-template<typename CellType, typename Strategy, typename Matrix, typename Path>
-class SpecializedTraceback<false, CellType, Strategy, Matrix, Path> {
+template<typename CellType, typename ProblemType, typename Strategy, typename Matrix, typename Path>
+class SpecializedTraceback<false, CellType, ProblemType, Strategy, Matrix, Path> {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
@@ -789,8 +819,8 @@ public:
 	}
 };
 
-template<typename CellType, typename Strategy, typename Matrix, typename Path>
-class SpecializedTraceback<true, CellType, Strategy, Matrix, Path> {
+template<typename CellType, typename ProblemType, typename Strategy, typename Matrix, typename Path>
+class SpecializedTraceback<true, CellType, ProblemType, Strategy, Matrix, Path> {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
@@ -820,12 +850,14 @@ public:
 };
 
 
-template<typename CellType, typename Strategy, typename Matrix, typename Path>
-using Traceback = SpecializedTraceback<CellType::traceback_type::multiple, CellType, Strategy, Matrix, Path>;
+template<typename CellType, typename ProblemType, typename Strategy, typename Matrix, typename Path>
+using Traceback = SpecializedTraceback<
+	traceback_type<CellType, ProblemType>::multiple, CellType, ProblemType, Strategy, Matrix, Path>;
 
 template<typename Direction, typename Locality, typename Matrix, typename Path>
 inline Traceback<
 	typename Locality::cell_type,
+	typename Locality::problem_type,
 	typename Locality::template TracebackStrategy<Direction, Matrix>,
 	Matrix, Path>
 	make_traceback(
@@ -835,6 +867,7 @@ inline Traceback<
 
 	return Traceback<
 		typename Locality::cell_type,
+		typename Locality::problem_type,
 		typename Locality::template TracebackStrategy<Direction, Matrix>,
 		Matrix, Path>(
 
@@ -848,12 +881,14 @@ struct LocalInitializers {
 	float zero;
 };
 
-template<typename CellType>
+template<typename CellType, typename ProblemType>
 class Local {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
+
 	typedef CellType cell_type;
+	typedef ProblemType problem_type;
 
 	static constexpr bool is_global() {
 		return false;
@@ -863,10 +898,10 @@ private:
 	const Value m_zero;
 
 public:
-	template<typename Direction, typename Goal>
-	struct AccumulatorFactory {
-		typedef TracingAccumulator<Direction, CellType> Accumulator;
-	};
+	template<typename ValueCell, typename TracebackCell>
+	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
+		return TracingAccumulator<CellType, ProblemType>(val, tb);
+	}
 
 	inline Local(const LocalInitializers &p_init) : m_zero(p_init.zero) {
 	}
@@ -898,7 +933,8 @@ public:
 		Matrix &m_matrix;
 
 	public:
-		inline TracebackStrategy(const Local<CellType> &p_locality, Matrix &p_matrix) :
+		inline TracebackStrategy(
+			const Local<CellType, ProblemType> &p_locality, Matrix &p_matrix) :
 			m_zero(p_locality.zero()),
 			m_matrix(p_matrix) {
 		}
@@ -961,31 +997,40 @@ public:
 struct GlobalInitializers {
 };
 
-template<typename CellType>
+template<typename CellType, typename ProblemType>
 class Global {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
+
 	typedef CellType cell_type;
+	typedef ProblemType problem_type;
 
 	static constexpr bool is_global() {
 		return true;
 	}
 
 public:
-	template<typename Direction, typename Goal>
-	struct AccumulatorFactory {
+	template<typename Goal>
+	struct _AccumulatorFactory {
 	};
 
-	template<typename Direction>
-	struct AccumulatorFactory<Direction, goal::score> {
-		typedef Accumulator<Direction, CellType> Accumulator;
+	template<>
+	struct _AccumulatorFactory<goal::optimal_score> {
+		typedef Accumulator<CellType, ProblemType> Accumulator;
 	};
 
-	template<typename Direction, typename PathGoal>
-	struct AccumulatorFactory<Direction, goal::alignment<PathGoal>> {
-		typedef TracingAccumulator<Direction, CellType> Accumulator;
+	template<typename PathGoal>
+	struct _AccumulatorFactory<goal::alignment<PathGoal>> {
+		typedef TracingAccumulator<CellType, ProblemType> Accumulator;
 	};
+
+	typedef _AccumulatorFactory<typename ProblemType::goal_type> AccumulatorFactory;
+
+	template<typename ValueCell, typename TracebackCell>
+	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
+		return typename AccumulatorFactory::Accumulator(val, tb);
+	}
 
 	template<typename Vector>
 	void init_border_case(
@@ -997,7 +1042,6 @@ public:
 		}
 
 		p_vector = p_gap_cost;
-		//xt::view(p_gap_cost, xt::range(0, p_vector.size()));
 	}
 
 	inline Global(const GlobalInitializers&) {
@@ -1013,7 +1057,7 @@ public:
 
 	public:
 		inline TracebackStrategy(
-			const Global<CellType> &p_locality,
+			const Global<CellType, ProblemType> &p_locality,
 			Matrix &p_matrix) :
 			m_matrix(p_matrix) {
 		}
@@ -1057,31 +1101,40 @@ public:
 struct SemiglobalInitializers {
 };
 
-template<typename CellType>
+template<typename CellType, typename ProblemType>
 class Semiglobal {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
+
 	typedef CellType cell_type;
+	typedef ProblemType problem_type;
 
 	static constexpr bool is_global() {
 		return false;
 	}
 
 public:
-	template<typename Direction, typename Goal>
-	struct AccumulatorFactory {
+	template<typename PathGoal>
+	struct _AccumulatorFactory {
 	};
 
-	template<typename Direction>
-	struct AccumulatorFactory<Direction, goal::score> {
-		typedef Accumulator<Direction, CellType> Accumulator;
+	template<>
+	struct _AccumulatorFactory<goal::optimal_score> {
+		typedef Accumulator<CellType, ProblemType> Accumulator;
 	};
 
-	template<typename Direction, typename PathGoal>
-	struct AccumulatorFactory<Direction, goal::alignment<PathGoal>> {
-		typedef TracingAccumulator<Direction, CellType> Accumulator;
+	template<typename PathGoal>
+	struct _AccumulatorFactory<goal::alignment<PathGoal>> {
+		typedef TracingAccumulator<CellType, ProblemType> Accumulator;
 	};
+
+	typedef _AccumulatorFactory<typename ProblemType::goal_type> AccumulatorFactory;
+
+	template<typename ValueCell, typename TracebackCell>
+	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
+		return typename AccumulatorFactory::Accumulator(val, tb);
+	}
 
 	template<typename Vector>
 	void init_border_case(
@@ -1104,7 +1157,7 @@ public:
 
 	public:
 		inline TracebackStrategy(
-			const Semiglobal<CellType> &p_locality,
+			const Semiglobal<CellType, ProblemType> &p_locality,
 			Matrix &p_matrix) :
 			m_matrix(p_matrix) {
 		}
@@ -1171,13 +1224,12 @@ public:
 	};
 };
 
-template<typename CellType>
+template<typename CellType, typename ProblemType>
 class Solution {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
-	typedef typename CellType::traceback_type Traceback;
-	typedef CellType cell_type;
+	typedef traceback_type<CellType, ProblemType> Traceback;
 
 	xt::xtensor<Value, 3> m_values;
 	xt::xtensor<Traceback, 3> m_traceback;
@@ -1222,19 +1274,20 @@ public:
 	}
 };
 
-template<typename CellType>
-using SolutionRef = std::shared_ptr<Solution<CellType>>;
+template<typename CellType, typename ProblemType>
+using SolutionRef = std::shared_ptr<Solution<CellType, ProblemType>>;
 
 
-template<typename Direction, typename CellType, template<typename> class Locality, int LayerCount>
+template<typename CellType, typename ProblemType, template<typename, typename> class Locality, int LayerCount>
 class Solver {
 public:
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::index_type Index;
+	typedef typename ProblemType::direction_type Direction;
 
 protected:
-	const Locality<CellType> m_locality;
-	MatrixFactory<CellType, LayerCount> m_factory;
+	const Locality<CellType, ProblemType> m_locality;
+	MatrixFactory<CellType, ProblemType, LayerCount> m_factory;
 	const AlgorithmMetaDataRef m_algorithm;
 
 public:
@@ -1296,13 +1349,13 @@ public:
 	}
 
 	template<typename Alignment>
-	SolutionRef<CellType> solution(
+	SolutionRef<CellType, ProblemType> solution(
 		const size_t len_s,
 		const size_t len_t,
 		Alignment &alignment) const {
 
-		const SolutionRef<CellType> solution =
-			std::make_shared<Solution<CellType>>();
+		const SolutionRef<CellType, ProblemType> solution =
+			std::make_shared<Solution<CellType, ProblemType>>();
 
 		solution->m_values = m_factory.all_layers().values(len_s, len_t);
 		solution->m_traceback = m_factory.all_layers().traceback(len_s, len_t);
@@ -1323,11 +1376,11 @@ public:
 	}
 };
 
-template<typename Direction, typename CellType, template<typename> class Locality, int LayerCount>
-using AlignmentSolver = Solver<Direction, CellType, Locality, LayerCount>;
+template<typename CellType, typename ProblemType, template<typename, typename> class Locality, int LayerCount>
+using AlignmentSolver = Solver<CellType, ProblemType, Locality, LayerCount>;
 
-template<typename Direction, typename CellType, template<typename> class Locality>
-class LinearGapCostSolver final : public AlignmentSolver<Direction, CellType, Locality, 1> {
+template<typename CellType, typename ProblemType, template<typename, typename> class Locality>
+class LinearGapCostSolver final : public AlignmentSolver<CellType, ProblemType, Locality, 1> {
 	// For global alignment, we pose the problem as a Needleman-Wunsch problem, but follow the
 	// implementation of Sankoff and Kruskal.
 
@@ -1354,6 +1407,8 @@ class LinearGapCostSolver final : public AlignmentSolver<Direction, CellType, Lo
 	// Hendrix, D. A. Applied Bioinformatics. https://open.oregonstate.education/appliedbioinformatics/.
 
 public:
+	typedef typename ProblemType::goal_type Goal;
+	typedef typename ProblemType::direction_type Direction;
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
@@ -1372,12 +1427,13 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Direction, CellType, Locality, 1>(
+		AlignmentSolver<CellType, ProblemType, Locality, 1>(
 			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
 			std::make_shared<AlgorithmMetaData>(
-				Locality<CellType>::is_global() ? "Needleman-Wunsch": "Smith-Waterman",
+				Locality<CellType, ProblemType>::is_global() ?
+					"Needleman-Wunsch": "Smith-Waterman",
 				"n^2", "n^2")),
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
@@ -1401,7 +1457,7 @@ public:
 		return m_gap_cost_t * len;
 	}
 
-	template<typename ComputationGoal, typename Pairwise>
+	template<typename Pairwise>
 	void solve(
 		const Pairwise &pairwise,
 		const size_t len_s,
@@ -1417,9 +1473,8 @@ public:
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				typename Locality<CellType>::template AccumulatorFactory<
-					Direction, ComputationGoal>::Accumulator acc(
-						values(u, v), traceback(u, v));
+				auto acc = this->m_locality.accumulate_to(
+					values(u, v), traceback(u, v));
 
 				acc.init(
 					values(u - 1, v - 1) + pairwise(u, v),
@@ -1462,12 +1517,14 @@ struct AffineCost {
 	}
 };
 
-template<typename Direction, typename CellType, template<typename> class Locality>
-class AffineGapCostSolver final : public AlignmentSolver<Direction, CellType, Locality, 3> {
+template<typename CellType, typename ProblemType, template<typename, typename> class Locality>
+class AffineGapCostSolver final : public AlignmentSolver<CellType, ProblemType, Locality, 3> {
 public:
 	// Gotoh, O. (1982). An improved algorithm for matching biological sequences.
 	// Journal of Molecular Biology, 162(3), 705–708. https://doi.org/10.1016/0022-2836(82)90398-9
 
+	typedef typename ProblemType::goal_type Goal;
+	typedef typename ProblemType::direction_type Direction;
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
@@ -1486,7 +1543,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Direction, CellType, Locality, 3>(
+		AlignmentSolver<CellType, ProblemType, Locality, 3>(
 			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
@@ -1540,7 +1597,7 @@ public:
 		}
 	}
 
-	template<typename ComputationGoal, typename Pairwise>
+	template<typename Pairwise>
 	void solve(
 		const Pairwise &pairwise,
 		const size_t len_s,
@@ -1565,9 +1622,8 @@ public:
 
 				// Gotoh formula (4)
 				{
-					typename Locality<CellType>::template AccumulatorFactory<
-						Direction, ComputationGoal>::Accumulator acc_P(
-							P(i, j), tb_P(i, j));
+					auto acc_P = this->m_locality.accumulate_to(
+						P(i, j), tb_P(i, j));
 
 					acc_P.init(D(i - 1, j) + m_gap_cost_s.w1() * gap_sgn, i - 1, j);
 					acc_P.push(P(i - 1, j) + m_gap_cost_s.u * gap_sgn, tb_P(i - 1, j));
@@ -1576,9 +1632,8 @@ public:
 
 				// Gotoh formula (5)
 				{
-					typename Locality<CellType>::template AccumulatorFactory<
-						Direction, ComputationGoal>::Accumulator acc_Q(
-							Q(i, j), tb_Q(i, j));
+					auto acc_Q = this->m_locality.accumulate_to(
+						Q(i, j), tb_Q(i, j));
 
 					acc_Q.init(D(i, j - 1) + m_gap_cost_t.w1() * gap_sgn, i, j - 1);
 					acc_Q.push(Q(i, j - 1) + m_gap_cost_t.u * gap_sgn, tb_Q(i, j - 1));
@@ -1587,9 +1642,8 @@ public:
 
 				// Gotoh formula (1)
 				{
-					typename Locality<CellType>::template AccumulatorFactory<
-						Direction, ComputationGoal>::Accumulator acc_D(
-							D(i, j), tb_D(i, j));
+					auto acc_D = this->m_locality.accumulate_to(
+						D(i, j), tb_D(i, j));
 
 					acc_D.init(D(i - 1, j - 1) + pairwise(i, j), i - 1, j - 1);
 					acc_D.push(P(i, j), tb_P(i, j));
@@ -1611,8 +1665,8 @@ inline void check_gap_tensor_shape(const xt::xtensor<Value, 1> &tensor, const si
 	}
 }
 
-template<typename Direction, typename CellType, template<typename> class Locality>
-class GeneralGapCostSolver final : public AlignmentSolver<Direction, CellType, Locality, 1> {
+template<typename CellType, typename ProblemType, template<typename, typename> class Locality>
+class GeneralGapCostSolver final : public AlignmentSolver<CellType, ProblemType, Locality, 1> {
 	// Our implementation follows what is sometimes referred to as Waterman-Smith-Beyer, i.e.
 	// an O(n^3) algorithm for generic gap costs. Waterman-Smith-Beyer generates a local alignment.
 
@@ -1628,6 +1682,8 @@ class GeneralGapCostSolver final : public AlignmentSolver<Direction, CellType, L
 	// Hendrix, D. A. Applied Bioinformatics. https://open.oregonstate.education/appliedbioinformatics/.
 
 public:
+	typedef typename ProblemType::goal_type Goal;
+	typedef typename ProblemType::direction_type Direction;
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
@@ -1646,7 +1702,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<Direction, CellType, Locality, 1>(
+		AlignmentSolver<CellType, ProblemType, Locality, 1>(
 			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
@@ -1679,7 +1735,7 @@ public:
 		return m_gap_cost_t(len);
 	}
 
-	template<typename ComputationGoal, typename Pairwise>
+	template<typename Pairwise>
 	void solve(
 		const Pairwise &pairwise,
 		const size_t len_s,
@@ -1695,9 +1751,8 @@ public:
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				typename Locality<CellType>::template AccumulatorFactory<
-					Direction, ComputationGoal>::Accumulator acc(
-						values(u, v), traceback(u, v));
+				auto acc = this->m_locality.accumulate_to(
+					values(u, v), traceback(u, v));
 
 				acc.init(
 					values(u - 1, v - 1) + pairwise(u, v),
@@ -1723,9 +1778,11 @@ public:
 	}
 };
 
-template<typename Direction, typename CellType>
-class DynamicTimeSolver final : public Solver<Direction, CellType, Global, 1> {
+template<typename CellType, typename ProblemType>
+class DynamicTimeSolver final : public Solver<CellType, ProblemType, Global, 1> {
 public:
+	typedef typename ProblemType::goal_type Goal;
+	typedef typename ProblemType::direction_type Direction;
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
@@ -1733,7 +1790,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		Solver<Direction, CellType, Global, 1>(
+		Solver<CellType, ProblemType, Global, 1>(
 			GlobalInitializers(),
 			p_max_len_s,
 			p_max_len_t,
@@ -1744,7 +1801,7 @@ public:
 		values.at(0, 0) = 0;
 	}
 
-	template<typename ComputationGoal, typename Pairwise>
+	template<typename Pairwise>
 	void solve(
 		const Pairwise &pairwise, // similarity or distance, depends on Direction
 		const size_t len_s,
@@ -1767,9 +1824,8 @@ public:
 		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				typename Global<CellType>::template AccumulatorFactory<
-					Direction, ComputationGoal>::Accumulator acc(
-						values(u, v), traceback(u, v));
+				auto acc = this->m_locality.accumulate_to(
+					values(u, v), traceback(u, v));
 
 				acc.init(
 					values(u - 1, v - 1),
