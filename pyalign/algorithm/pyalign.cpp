@@ -175,7 +175,7 @@ public:
 		const auto len_s = p_similarity.shape(0);
 		const auto len_t = p_similarity.shape(1);
 
-		m_solver.template solve<pyalign::goal::one_alignment>(
+		m_solver.template solve<pyalign::goal::one_optimal_alignment>(
 			p_similarity, len_s, len_t);
 
 		const auto alignment = std::make_shared<Alignment>();
@@ -191,7 +191,7 @@ public:
 		const auto len_s = p_similarity.shape(0);
 		const auto len_t = p_similarity.shape(1);
 
-		m_solver.template solve<pyalign::goal::one_alignment>(
+		m_solver.template solve<pyalign::goal::one_optimal_alignment>(
 			p_similarity, len_s, len_t);
 
 		const auto alignment = std::make_shared<Alignment>();

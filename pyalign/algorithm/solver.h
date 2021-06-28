@@ -10,6 +10,8 @@
 #include <xtensor/xfixed.hpp>
 #include <xtensor/xsort.hpp>
 
+#include <stack>
+
 namespace pyalign {
 
 namespace goal {
@@ -22,37 +24,63 @@ namespace goal {
 	};
 
 	namespace path {
-		struct one { // track one optimal path
-		};
+		namespace optimal {
+			struct one { // generate one optimal path
+			};
 
-		struct all { // track all optimal paths
+			struct all { // generate all optimal paths
+			};
+		}
+
+		struct all { // generate all paths
 		};
 	}
 
-	typedef alignment<path::one> one_alignment;
+	typedef alignment<path::optimal::one> one_optimal_alignment;
+	typedef alignment<path::optimal::all> all_optimal_alignments;
 	typedef alignment<path::all> all_alignments;
 }
 
 namespace direction {
 	struct maximize {
 		template<typename Value>
-		static inline bool is_improvement(Value a, Value b) {
+		static inline bool is_gt(Value a, Value b) {
 			return a > b;
 		}
 
 		static constexpr bool is_minimize() {
 			return false;
 		}
+
+		template<typename T>
+		static auto arglim(const T &t) {
+			return xt::argmax(t);
+		}
+
+		template<typename T>
+		static auto arglim(const T &t, const int axis) {
+			return xt::argmax(t, axis);
+		}
 	};
 
 	struct minimize {
 		template<typename Value>
-		static inline bool is_improvement(Value a, Value b) {
+		static inline bool is_gt(Value a, Value b) {
 			return a < b;
 		}
 
 		static constexpr bool is_minimize() {
 			return true;
+		}
+
+		template<typename T>
+		static auto arglim(const T &t) {
+			return xt::argmin(t);
+		}
+
+		template<typename T>
+		static auto arglim(const T &t, const int axis) {
+			return xt::argmin(t, axis);
 		}
 	};
 }
@@ -142,7 +170,6 @@ typedef std::shared_ptr<AlgorithmMetaData> AlgorithmMetaDataRef;
 
 template<typename Value>
 using GapTensorFactory = std::function<xt::xtensor<Value, 1>(size_t)>;
-
 
 template<typename Index>
 struct traceback_1 {
@@ -423,29 +450,6 @@ inline Matrix<CellType, LayerCount, Layer> MatrixFactory<CellType, LayerCount>::
 	return Matrix<CellType, LayerCount, Layer>(*this, len_s, len_t);
 }
 
-template<typename V>
-inline size_t argmax(const V &v) {
-	// we do not use xt::argmax here,
-	// since we want a guaranteed behaviour
-	// (lowest index) on ties.
-
-	const size_t n = v.shape(0);
-
-	auto best = v(0);
-	size_t best_i = 0;
-
-	for (size_t i = 1; i < n; i++) {
-		const auto x = v(i);
-		if (x > best) {
-			best = x;
-			best_i = i;
-		}
-	}
-
-	return best_i;
-}
-
-
 template<typename Alignment>
 class build_alignment {
 	Alignment &m_alignment;
@@ -637,7 +641,7 @@ public:
 		const Index u,
 		const Index v) {
 
-		if (Direction::is_improvement(val, m_val)) {
+		if (Direction::is_gt(val, m_val)) {
 			m_val = val;
 		}
 	}
@@ -646,7 +650,7 @@ public:
 		const Value val,
 		const Traceback &tb) {
 
-		if (Direction::is_improvement(val, m_val)) {
+		if (Direction::is_gt(val, m_val)) {
 			m_val = val;
 		}
 	}
@@ -692,7 +696,7 @@ public:
 		const Index u,
 		const Index v) {
 
-		if (Direction::is_improvement(val, m_val)) {
+		if (Direction::is_gt(val, m_val)) {
 			m_val = val;
 			m_cell_tb.init(u, v);
 		} else if (Traceback::multiple && val == m_val) {
@@ -704,7 +708,7 @@ public:
 		const Value val,
 		const Traceback &tb) {
 
-		if (Direction::is_improvement(val, m_val)) {
+		if (Direction::is_gt(val, m_val)) {
 			m_val = val;
 			m_cell_tb.init(tb);
 		} else if (Traceback::multiple && val == m_val) {
@@ -721,9 +725,11 @@ public:
 	}
 };
 
+template<bool Multiple, typename CellType, typename Strategy, typename Matrix, typename Path>
+class SpecializedTraceback;
 
 template<typename CellType, typename Strategy, typename Matrix, typename Path>
-class Traceback {
+class SpecializedTraceback<false, CellType, Strategy, Matrix, Path> {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
@@ -735,7 +741,7 @@ private:
 	std::optional<std::pair<Index, Index>> m_seed;
 
 public:
-	inline Traceback(
+	inline SpecializedTraceback(
 		Strategy &&p_strategy,
 		Matrix &p_matrix,
 		Path &p_path) :
@@ -767,7 +773,7 @@ public:
 
 			const auto traceback = m_matrix.template traceback<1, 1>();
 
-			while (m_strategy.cont(u, v)) {
+			while (m_strategy.continue_traceback(u, v)) {
 				const Index last_u = u;
 				const Index last_v = v;
 
@@ -783,10 +789,44 @@ public:
 	}
 };
 
-template<typename Locality, typename Matrix, typename Path>
+template<typename CellType, typename Strategy, typename Matrix, typename Path>
+class SpecializedTraceback<true, CellType, Strategy, Matrix, Path> {
+public:
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
+
+private:
+	const Strategy m_strategy;
+	Matrix &m_matrix;
+	Path &m_path;
+	std::stack<std::pair<Index, Index>> m_uvs;
+
+public:
+	inline SpecializedTraceback(
+		Strategy &&p_strategy,
+		Matrix &p_matrix,
+		Path &p_path) :
+		m_strategy(p_strategy),
+		m_matrix(p_matrix),
+		m_path(p_path) {
+
+		// not yet implemented.
+	}
+
+	inline std::optional<Value> next() {
+		// not yet implemented.
+		return std::optional<Value>();
+	}
+};
+
+
+template<typename CellType, typename Strategy, typename Matrix, typename Path>
+using Traceback = SpecializedTraceback<CellType::traceback_type::multiple, CellType, Strategy, Matrix, Path>;
+
+template<typename Direction, typename Locality, typename Matrix, typename Path>
 inline Traceback<
 	typename Locality::cell_type,
-	typename Locality::template TracebackStrategy<Matrix>,
+	typename Locality::template TracebackStrategy<Direction, Matrix>,
 	Matrix, Path>
 	make_traceback(
 		const Locality &p_locality,
@@ -795,10 +835,10 @@ inline Traceback<
 
 	return Traceback<
 		typename Locality::cell_type,
-		typename Locality::template TracebackStrategy<Matrix>,
+		typename Locality::template TracebackStrategy<Direction, Matrix>,
 		Matrix, Path>(
 
-		typename Locality::template TracebackStrategy<Matrix>(p_locality, p_matrix),
+		typename Locality::template TracebackStrategy<Direction, Matrix>(p_locality, p_matrix),
 		p_matrix,
 		p_path
 	);
@@ -852,7 +892,7 @@ public:
 		return m_zero;
 	}
 
-	template<typename Matrix>
+	template<typename Direction, typename Matrix>
 	class TracebackStrategy {
 		const float m_zero;
 		Matrix &m_matrix;
@@ -874,7 +914,8 @@ public:
 			const auto values = m_matrix.template values_n<1, 1>();
 			auto best_column = m_matrix.best_column();
 
-			best_column = xt::argmax(m_matrix.template values<1, 1>(), 1);
+			best_column = Direction::arglim(
+				m_matrix.template values<1, 1>(), 1);
 
 			Value score = m_zero;
 			Index best_u = 0, best_v = 0;
@@ -883,23 +924,23 @@ public:
 			for (Index u = 0; u < len_s; u++) {
 				const Index v = best_column(u);
 				const Value s = values(u, v);
-				if (s > score) {
+				if (Direction::is_gt(s, score)) {
 					score = s;
 					best_u = u;
 					best_v = v;
 				}
 			}
 
-			if (score > m_zero) {
+			if (Direction::is_gt(score, m_zero)) {
 				return std::make_pair(best_u, best_v);
 			} else {
 				return std::optional<std::pair<Index, Index>>();
 			}
 		}
 
-		inline bool cont(const Index u, const Index v) const {
+		inline bool continue_traceback(const Index u, const Index v) const {
 			const auto values = m_matrix.template values_n<1, 1>();
-			return u >= 0 && v >= 0 && values(u, v) > m_zero;
+			return u >= 0 && v >= 0 && Direction::is_gt(values(u, v), m_zero);
 		}
 
 		inline Value path_val(
@@ -966,7 +1007,7 @@ public:
 	inline void update_acc(Accumulator &) const {
 	}
 
-	template<typename Matrix>
+	template<typename Direction, typename Matrix>
 	class TracebackStrategy {
 		Matrix &m_matrix;
 
@@ -997,7 +1038,7 @@ public:
 			return std::make_pair(len_s - 1, len_t - 1);
 		}
 
-		inline bool cont(const Index u, const Index v) const {
+		inline bool continue_traceback(const Index u, const Index v) const {
 			const auto values = m_matrix.template values_n<1, 1>();
 			return u >= 0 && v >= 0;
 		}
@@ -1057,7 +1098,7 @@ public:
 	inline void update_acc(Accumulator &) const {
 	}
 
-	template<typename Matrix>
+	template<typename Direction, typename Matrix>
 	class TracebackStrategy {
 		Matrix &m_matrix;
 
@@ -1092,16 +1133,22 @@ public:
 			const Index last_col = len_t - 1;
 
 			const auto values_non_neg_ij = m_matrix.template values<1, 1>();
-			const Index best_col_in_last_row = argmax(xt::row(values_non_neg_ij, last_row));
-			const Index best_row_in_last_col = argmax(xt::col(values_non_neg_ij, last_col));
+			const Index best_col_in_last_row = Direction::arglim(
+				xt::row(values_non_neg_ij, last_row))();
+			const Index best_row_in_last_col = Direction::arglim(
+				xt::col(values_non_neg_ij, last_col))();
 
 			Index u;
 			Index v;
 
-			if (values(best_row_in_last_col, last_col) > values(last_row, best_col_in_last_row)) {
+			if (Direction::is_gt(
+				values(best_row_in_last_col, last_col),
+				values(last_row, best_col_in_last_row))) {
+
 				u = best_row_in_last_col;
 				v = last_col;
 			} else {
+
 				u = last_row;
 				v = best_col_in_last_row;
 			}
@@ -1109,7 +1156,7 @@ public:
 			return std::make_pair(u, v);
 		}
 
-		inline bool cont(const Index u, const Index v) const {
+		inline bool continue_traceback(const Index u, const Index v) const {
 			const auto values = m_matrix.template values_n<1, 1>();
 			return u >= 0 && v >= 0;
 		}
@@ -1179,7 +1226,7 @@ template<typename CellType>
 using SolutionRef = std::shared_ptr<Solution<CellType>>;
 
 
-template<typename CellType, template<typename> class Locality, int LayerCount>
+template<typename Direction, typename CellType, template<typename> class Locality, int LayerCount>
 class Solver {
 public:
 	typedef typename CellType::value_type Value;
@@ -1217,8 +1264,11 @@ public:
 	}
 
 	inline Value worst_score() const {
-		// FIXME: use std::numerical_limits<Value>::infinity()?
-		return 0;
+		if (Direction::is_minimize()) {
+			return std::numeric_limits<Value>::infinity();
+		} else {
+			return -std::numeric_limits<Value>::infinity();
+		}
 	}
 
 	inline Value score(
@@ -1227,7 +1277,7 @@ public:
 
 		auto matrix = m_factory.template make<0>(len_s, len_t);
 		build_nothing nothing;
-		auto tb = make_traceback(m_locality, matrix, nothing);
+		auto tb = make_traceback<Direction>(m_locality, matrix, nothing);
 		const auto tb_val = tb.next();
 		return tb_val.value_or(worst_score());
 	}
@@ -1240,7 +1290,7 @@ public:
 
 		auto matrix = m_factory.template make<0>(len_s, len_t);
 		build_alignment<Alignment> build(alignment);
-		auto tb = make_traceback(m_locality, matrix, build);
+		auto tb = make_traceback<Direction>(m_locality, matrix, build);
 		const auto tb_val = tb.next();
 		return tb_val.value_or(worst_score());
 	}
@@ -1262,7 +1312,7 @@ public:
 		);
 
 		auto matrix = m_factory.template make<0>(len_s, len_t);
-		auto tb = make_traceback(m_locality, matrix, build);
+		auto tb = make_traceback<Direction>(m_locality, matrix, build);
 		const auto tb_val = tb.next();
 		solution->m_path = build.template get<0>().path();
 		solution->m_score = tb_val.value_or(worst_score());
@@ -1273,11 +1323,11 @@ public:
 	}
 };
 
-template<typename CellType, template<typename> class Locality, int LayerCount>
-using AlignmentSolver = Solver<CellType, Locality, LayerCount>;
+template<typename Direction, typename CellType, template<typename> class Locality, int LayerCount>
+using AlignmentSolver = Solver<Direction, CellType, Locality, LayerCount>;
 
 template<typename Direction, typename CellType, template<typename> class Locality>
-class LinearGapCostSolver final : public AlignmentSolver<CellType, Locality, 1> {
+class LinearGapCostSolver final : public AlignmentSolver<Direction, CellType, Locality, 1> {
 	// For global alignment, we pose the problem as a Needleman-Wunsch problem, but follow the
 	// implementation of Sankoff and Kruskal.
 
@@ -1322,7 +1372,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<CellType, Locality, 1>(
+		AlignmentSolver<Direction, CellType, Locality, 1>(
 			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
@@ -1413,7 +1463,7 @@ struct AffineCost {
 };
 
 template<typename Direction, typename CellType, template<typename> class Locality>
-class AffineGapCostSolver final : public AlignmentSolver<CellType, Locality, 3> {
+class AffineGapCostSolver final : public AlignmentSolver<Direction, CellType, Locality, 3> {
 public:
 	// Gotoh, O. (1982). An improved algorithm for matching biological sequences.
 	// Journal of Molecular Biology, 162(3), 705–708. https://doi.org/10.1016/0022-2836(82)90398-9
@@ -1436,7 +1486,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<CellType, Locality, 3>(
+		AlignmentSolver<Direction, CellType, Locality, 3>(
 			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
@@ -1562,7 +1612,7 @@ inline void check_gap_tensor_shape(const xt::xtensor<Value, 1> &tensor, const si
 }
 
 template<typename Direction, typename CellType, template<typename> class Locality>
-class GeneralGapCostSolver final : public AlignmentSolver<CellType, Locality, 1> {
+class GeneralGapCostSolver final : public AlignmentSolver<Direction, CellType, Locality, 1> {
 	// Our implementation follows what is sometimes referred to as Waterman-Smith-Beyer, i.e.
 	// an O(n^3) algorithm for generic gap costs. Waterman-Smith-Beyer generates a local alignment.
 
@@ -1596,7 +1646,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		AlignmentSolver<CellType, Locality, 1>(
+		AlignmentSolver<Direction, CellType, Locality, 1>(
 			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
@@ -1674,7 +1724,7 @@ public:
 };
 
 template<typename Direction, typename CellType>
-class DynamicTimeSolver final : public Solver<CellType, Global, 1> {
+class DynamicTimeSolver final : public Solver<Direction, CellType, Global, 1> {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
@@ -1683,7 +1733,7 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		Solver<CellType, Global, 1>(
+		Solver<Direction, CellType, Global, 1>(
 			GlobalInitializers(),
 			p_max_len_s,
 			p_max_len_t,
