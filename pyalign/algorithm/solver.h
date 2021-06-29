@@ -55,6 +55,11 @@ namespace direction {
 		}
 
 		template<typename T>
+		static auto lim(const T &t) {
+			return xt::amax(t);
+		}
+
+		template<typename T>
 		static auto arglim(const T &t) {
 			return xt::argmax(t);
 		}
@@ -73,6 +78,11 @@ namespace direction {
 
 		static constexpr bool is_minimize() {
 			return true;
+		}
+
+		template<typename T>
+		static auto lim(const T &t) {
+			return xt::amin(t);
 		}
 
 		template<typename T>
@@ -950,6 +960,10 @@ public:
 		return Accumulator(val, tb);
 	}
 
+	template<typename Accumulator>
+	inline void update_acc(Accumulator &acc) const {
+	}
+
 	inline Local(const LocalInitializers &p_init) {
 	}
 
@@ -965,11 +979,6 @@ public:
 		p_vector.fill(ZERO);
 	}
 
-	template<typename Accumulator>
-	inline void update_acc(Accumulator &acc) const {
-		acc.push(ZERO, -1, -1);
-	}
-
 	inline Value zero() const {
 		return ZERO;
 	}
@@ -978,7 +987,7 @@ public:
 	struct TracebackSeeds {
 		typedef typename ProblemType::direction_type Direction;
 
-		Matrix &m_matrix;
+		const Matrix &m_matrix;
 
 		template<typename Stack>
 		void generate(Stack &r_seeds) const {
@@ -1010,9 +1019,25 @@ public:
 
 	template<typename Matrix>
 	struct TracebackSeeds<Matrix, goal::path::optimal::all> {
+		typedef typename ProblemType::direction_type Direction;
+
+		const Matrix &m_matrix;
+
 		template<typename Stack>
 		void generate(Stack &r_seeds) const {
-			throw std::runtime_error("not implemented");
+			const auto len_s = m_matrix.len_s();
+			const auto len_t = m_matrix.len_t();
+
+			const Value best_val = Direction::lim(
+				m_matrix.template values<1, 1>())();
+
+			for (Index i = len_s - 1; i >= 0; i--) {
+				for (Index j = len_t - 1; j >= 0; j--) {
+					if (values(i, j) == best_val) {
+						r_seeds.push(std::make_pair(i, j));
+					}
+				}
+			}
 		}
 	};
 
@@ -1078,6 +1103,10 @@ public:
 		return Accumulator(val, tb);
 	}
 
+	template<typename Accumulator>
+	inline void update_acc(Accumulator &) const {
+	}
+
 	template<typename Vector>
 	void init_border_case(
 		Vector &&p_vector,
@@ -1093,13 +1122,9 @@ public:
 	inline Global(const GlobalInitializers&) {
 	}
 
-	template<typename Accumulator>
-	inline void update_acc(Accumulator &) const {
-	}
-
 	template<typename Matrix, typename PathGoal>
 	struct TracebackSeeds {
-		Matrix &m_matrix;
+		const Matrix &m_matrix;
 
 		template<typename Stack>
 		void generate(Stack &r_seeds) const {
@@ -1172,6 +1197,10 @@ public:
 		return Accumulator(val, tb);
 	}
 
+	template<typename Accumulator>
+	inline void update_acc(Accumulator &) const {
+	}
+
 	template<typename Vector>
 	void init_border_case(
 		Vector &&p_vector,
@@ -1183,15 +1212,11 @@ public:
 	inline Semiglobal(const SemiglobalInitializers&) {
 	}
 
-	template<typename Accumulator>
-	inline void update_acc(Accumulator &) const {
-	}
-
 	template<typename Matrix, typename PathGoal>
 	struct TracebackSeeds {
 		typedef typename ProblemType::direction_type Direction;
 
-		Matrix &m_matrix;
+		const Matrix &m_matrix;
 
 		template<typename Stack>
 		void generate(Stack &r_seeds) const {
