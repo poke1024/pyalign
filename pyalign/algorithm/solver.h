@@ -755,11 +755,33 @@ public:
 	}
 };
 
+template<typename T>
+class Stack1 {
+	std::optional<T> m_data;
+
+public:
+	inline void push(T &&v) {
+		m_data = v;
+	}
+
+	inline bool empty() const {
+		return !m_data.has_value();
+	}
+
+	inline const T& top() const {
+		return m_data.value();
+	}
+
+	inline void pop() {
+		m_data.reset();
+	}
+};
+
 template<bool Multiple, typename CellType, typename ProblemType, typename Strategy, typename Matrix, typename Path>
-class SpecializedTraceback;
+class TracebackIterator;
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix, typename Path>
-class SpecializedTraceback<false, CellType, ProblemType, Strategy, Matrix, Path> {
+class TracebackIterator<false, CellType, ProblemType, Strategy, Matrix, Path> {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
@@ -768,10 +790,10 @@ private:
 	const Strategy m_strategy;
 	Matrix &m_matrix;
 	Path &m_path;
-	std::optional<std::pair<Index, Index>> m_seed;
+	Stack1<std::pair<Index, Index>> m_seed;
 
 public:
-	inline SpecializedTraceback(
+	inline TracebackIterator(
 		Strategy &&p_strategy,
 		Matrix &p_matrix,
 		Path &p_path) :
@@ -779,24 +801,26 @@ public:
 		m_matrix(p_matrix),
 		m_path(p_path) {
 
-		m_seed = m_strategy.seed();
+		if (m_strategy.has_trace()) {
+			m_strategy.seeds().generate(m_seed);
+		}
 	}
 
 	inline std::optional<Value> next() {
-		if (!m_seed.has_value()) {
+		if (m_seed.empty()) {
 			return std::optional<Value>();
 		}
 
 		const auto values = m_matrix.template values<1, 1>();
 
-		const auto initial_uv = m_seed.value();
-		m_seed.reset();
+		const auto initial_uv = m_seed.top();
+		m_seed.pop();
 
 		Index u = std::get<0>(initial_uv);
 		Index v = std::get<1>(initial_uv);
 		const auto best_val = values(u, v);
 
-		if (typename Strategy::template trace_path<Path>()) {
+		if (m_strategy.has_trace()) { // && m_path.wants_path()
 			const auto len_s = m_matrix.len_s();
 			const auto len_t = m_matrix.len_t();
 			m_path.begin(len_s, len_t);
@@ -815,12 +839,12 @@ public:
 			}
 		}
 
-		return m_strategy.path_val(best_val, u, v);
+		return best_val;
 	}
 };
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix, typename Path>
-class SpecializedTraceback<true, CellType, ProblemType, Strategy, Matrix, Path> {
+class TracebackIterator<true, CellType, ProblemType, Strategy, Matrix, Path> {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
@@ -832,7 +856,7 @@ private:
 	std::stack<std::pair<Index, Index>> m_uvs;
 
 public:
-	inline SpecializedTraceback(
+	inline TracebackIterator(
 		Strategy &&p_strategy,
 		Matrix &p_matrix,
 		Path &p_path) :
@@ -840,7 +864,9 @@ public:
 		m_matrix(p_matrix),
 		m_path(p_path) {
 
-		// not yet implemented.
+		if (m_strategy.has_trace()) {
+			m_strategy.seeds().generate(m_uvs);
+		}
 	}
 
 	inline std::optional<Value> next() {
@@ -851,34 +877,53 @@ public:
 
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix, typename Path>
-using Traceback = SpecializedTraceback<
+using TracebackIterator2 = TracebackIterator<
 	traceback_type<CellType, ProblemType>::multiple, CellType, ProblemType, Strategy, Matrix, Path>;
 
-template<typename Direction, typename Locality, typename Matrix, typename Path>
-inline Traceback<
+template<typename Locality, typename Matrix, typename Path>
+inline TracebackIterator2<
 	typename Locality::cell_type,
 	typename Locality::problem_type,
-	typename Locality::template TracebackStrategy<Direction, Matrix>,
+	typename Locality::template TracebackStrategy<Matrix>,
 	Matrix, Path>
-	make_traceback(
+	make_traceback_iterator(
 		const Locality &p_locality,
 		Matrix &p_matrix,
 		Path &p_path) {
 
-	return Traceback<
+	return TracebackIterator2<
 		typename Locality::cell_type,
 		typename Locality::problem_type,
-		typename Locality::template TracebackStrategy<Direction, Matrix>,
+		typename Locality::template TracebackStrategy<Matrix>,
 		Matrix, Path>(
 
-		typename Locality::template TracebackStrategy<Direction, Matrix>(p_locality, p_matrix),
+		typename Locality::template TracebackStrategy<Matrix>(p_locality, p_matrix),
 		p_matrix,
 		p_path
 	);
 }
 
+template<typename Goal>
+struct TracebackSupport {
+};
+
+template<>
+struct TracebackSupport<goal::optimal_score> {
+	template<typename CellType, typename ProblemType>
+	using Accumulator = Accumulator<CellType, ProblemType>;
+
+	static constexpr bool has_trace = false;
+};
+
+template<typename PathGoal>
+struct TracebackSupport<goal::alignment<PathGoal>> {
+	template<typename CellType, typename ProblemType>
+	using Accumulator = TracingAccumulator<CellType, ProblemType>;
+
+	static constexpr bool has_trace = true;
+};
+
 struct LocalInitializers {
-	float zero;
 };
 
 template<typename CellType, typename ProblemType>
@@ -894,16 +939,18 @@ public:
 		return false;
 	}
 
-private:
-	const Value m_zero;
+	static constexpr Value ZERO = 0;
 
 public:
+	typedef TracebackSupport<typename ProblemType::goal_type> TBS;
+	typedef typename TBS::template Accumulator<CellType, ProblemType> Accumulator;
+
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
-		return TracingAccumulator<CellType, ProblemType>(val, tb);
+		return Accumulator(val, tb);
 	}
 
-	inline Local(const LocalInitializers &p_init) : m_zero(p_init.zero) {
+	inline Local(const LocalInitializers &p_init) {
 	}
 
 	inline const char *name() const {
@@ -915,45 +962,33 @@ public:
 		Vector &&p_vector,
 		const xt::xtensor<Value, 1> &p_gap_cost) const {
 
-		p_vector.fill(0);
+		p_vector.fill(ZERO);
 	}
 
 	template<typename Accumulator>
 	inline void update_acc(Accumulator &acc) const {
-		acc.push(m_zero, -1, -1);
+		acc.push(ZERO, -1, -1);
 	}
 
 	inline Value zero() const {
-		return m_zero;
+		return ZERO;
 	}
 
-	template<typename Direction, typename Matrix>
-	class TracebackStrategy {
-		const float m_zero;
+	template<typename Matrix, typename PathGoal>
+	struct TracebackSeeds {
+		typedef typename ProblemType::direction_type Direction;
+
 		Matrix &m_matrix;
 
-	public:
-		inline TracebackStrategy(
-			const Local<CellType, ProblemType> &p_locality, Matrix &p_matrix) :
-			m_zero(p_locality.zero()),
-			m_matrix(p_matrix) {
-		}
-
-		template<typename Path>
-		struct trace_path {
-			constexpr operator bool() const {
-				return true;
-			}
-		};
-
-		inline std::optional<std::pair<Index, Index>> seed() const {
+		template<typename Stack>
+		void generate(Stack &r_seeds) const {
 			const auto values = m_matrix.template values_n<1, 1>();
 			auto best_column = m_matrix.best_column();
 
 			best_column = Direction::arglim(
 				m_matrix.template values<1, 1>(), 1);
 
-			Value score = m_zero;
+			Value score = ZERO;
 			Index best_u = 0, best_v = 0;
 
 			const auto len_s = m_matrix.len_s();
@@ -967,29 +1002,53 @@ public:
 				}
 			}
 
-			if (Direction::is_gt(score, m_zero)) {
-				return std::make_pair(best_u, best_v);
-			} else {
-				return std::optional<std::pair<Index, Index>>();
+			if (Direction::is_gt(score, ZERO)) {
+				r_seeds.push(std::make_pair(best_u, best_v));
 			}
+		}
+	};
+
+	template<typename Matrix>
+	struct TracebackSeeds<Matrix, goal::path::optimal::all> {
+		template<typename Stack>
+		void generate(Stack &r_seeds) const {
+			throw std::runtime_error("not implemented");
+		}
+	};
+
+	template<typename Matrix>
+	struct TracebackSeeds<Matrix, goal::path::all> {
+		template<typename Stack>
+		void generate(Stack &r_seeds) const {
+			throw std::runtime_error("not implemented");
+		}
+	};
+
+	template<typename Matrix>
+	class TracebackStrategy {
+		typedef typename ProblemType::direction_type Direction;
+
+		Matrix &m_matrix;
+
+	public:
+		inline TracebackStrategy(
+			const Local<CellType, ProblemType> &p_locality,
+			Matrix &p_matrix) :
+			m_matrix(p_matrix) {
+		}
+
+		inline constexpr bool has_trace() const {
+			return TBS::has_trace;
+		}
+
+		inline auto seeds() const {
+			return TracebackSeeds<
+				Matrix, typename ProblemType::goal_type::path_goal>{m_matrix};
 		}
 
 		inline bool continue_traceback(const Index u, const Index v) const {
 			const auto values = m_matrix.template values_n<1, 1>();
-			return u >= 0 && v >= 0 && Direction::is_gt(values(u, v), m_zero);
-		}
-
-		inline Value path_val(
-			const Value best_val,
-			const Index u,
-			const Index v) const {
-
-			if (u >= 0 && v >= 0) {
-				const auto values = m_matrix.template values_n<1, 1>();
-				return best_val - values(u, v);
-			} else {
-				return best_val;
-			}
+			return u >= 0 && v >= 0 && Direction::is_gt(values(u, v), Local::ZERO);
 		}
 	};
 };
@@ -1011,25 +1070,12 @@ public:
 	}
 
 public:
-	template<typename Goal>
-	struct _AccumulatorFactory {
-	};
-
-	template<>
-	struct _AccumulatorFactory<goal::optimal_score> {
-		typedef Accumulator<CellType, ProblemType> Accumulator;
-	};
-
-	template<typename PathGoal>
-	struct _AccumulatorFactory<goal::alignment<PathGoal>> {
-		typedef TracingAccumulator<CellType, ProblemType> Accumulator;
-	};
-
-	typedef _AccumulatorFactory<typename ProblemType::goal_type> AccumulatorFactory;
+	typedef TracebackSupport<typename ProblemType::goal_type> TBS;
+	typedef typename TBS::template Accumulator<CellType, ProblemType> Accumulator;
 
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
-		return typename AccumulatorFactory::Accumulator(val, tb);
+		return Accumulator(val, tb);
 	}
 
 	template<typename Vector>
@@ -1051,8 +1097,22 @@ public:
 	inline void update_acc(Accumulator &) const {
 	}
 
-	template<typename Direction, typename Matrix>
+	template<typename Matrix, typename PathGoal>
+	struct TracebackSeeds {
+		Matrix &m_matrix;
+
+		template<typename Stack>
+		void generate(Stack &r_seeds) const {
+			const auto len_s = m_matrix.len_s();
+			const auto len_t = m_matrix.len_t();
+			r_seeds.push(std::make_pair(len_s - 1, len_t - 1));
+		}
+	};
+
+	template<typename Matrix>
 	class TracebackStrategy {
+		typedef typename ProblemType::direction_type Direction;
+
 		Matrix &m_matrix;
 
 	public:
@@ -1062,24 +1122,13 @@ public:
 			m_matrix(p_matrix) {
 		}
 
-		template<typename Path>
-		struct trace_path {
-			constexpr operator bool() const {
-				return true;
-			}
-		};
+		inline constexpr bool has_trace() const {
+			return TBS::has_trace;
+		}
 
-		template<>
-		struct trace_path<build_nothing> {
-			constexpr operator bool() const {
-				return false;
-			}
-		};
-
-		inline std::optional<std::pair<Index, Index>> seed() const {
-			const auto len_s = m_matrix.len_s();
-			const auto len_t = m_matrix.len_t();
-			return std::make_pair(len_s - 1, len_t - 1);
+		inline auto seeds() const {
+			return TracebackSeeds<
+				Matrix, typename ProblemType::goal_type::path_goal>{m_matrix};
 		}
 
 		inline bool continue_traceback(const Index u, const Index v) const {
@@ -1115,25 +1164,12 @@ public:
 	}
 
 public:
-	template<typename PathGoal>
-	struct _AccumulatorFactory {
-	};
-
-	template<>
-	struct _AccumulatorFactory<goal::optimal_score> {
-		typedef Accumulator<CellType, ProblemType> Accumulator;
-	};
-
-	template<typename PathGoal>
-	struct _AccumulatorFactory<goal::alignment<PathGoal>> {
-		typedef TracingAccumulator<CellType, ProblemType> Accumulator;
-	};
-
-	typedef _AccumulatorFactory<typename ProblemType::goal_type> AccumulatorFactory;
+	typedef TracebackSupport<typename ProblemType::goal_type> TBS;
+	typedef typename TBS::template Accumulator<CellType, ProblemType> Accumulator;
 
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
-		return typename AccumulatorFactory::Accumulator(val, tb);
+		return Accumulator(val, tb);
 	}
 
 	template<typename Vector>
@@ -1151,32 +1187,14 @@ public:
 	inline void update_acc(Accumulator &) const {
 	}
 
-	template<typename Direction, typename Matrix>
-	class TracebackStrategy {
+	template<typename Matrix, typename PathGoal>
+	struct TracebackSeeds {
+		typedef typename ProblemType::direction_type Direction;
+
 		Matrix &m_matrix;
 
-	public:
-		inline TracebackStrategy(
-			const Semiglobal<CellType, ProblemType> &p_locality,
-			Matrix &p_matrix) :
-			m_matrix(p_matrix) {
-		}
-
-		template<typename Path>
-		struct trace_path {
-			constexpr operator bool() const {
-				return true;
-			}
-		};
-
-		template<>
-		struct trace_path<build_nothing> {
-			constexpr operator bool() const {
-				return false;
-			}
-		};
-
-		inline std::optional<std::pair<Index, Index>> seed() const {
+		template<typename Stack>
+		void generate(Stack &r_seeds) const {
 			const auto len_s = m_matrix.len_s();
 			const auto len_t = m_matrix.len_t();
 
@@ -1206,7 +1224,30 @@ public:
 				v = best_col_in_last_row;
 			}
 
-			return std::make_pair(u, v);
+			r_seeds.push(std::make_pair(u, v));
+		}
+	};
+
+	template<typename Matrix>
+	class TracebackStrategy {
+		typedef typename ProblemType::direction_type Direction;
+
+		Matrix &m_matrix;
+
+	public:
+		inline TracebackStrategy(
+			const Semiglobal<CellType, ProblemType> &p_locality,
+			Matrix &p_matrix) :
+			m_matrix(p_matrix) {
+		}
+
+		inline constexpr bool has_trace() const {
+			return TBS::has_trace;
+		}
+
+		inline auto seeds() const {
+			return TracebackSeeds<
+				Matrix, typename ProblemType::goal_type::path_goal>{m_matrix};
 		}
 
 		inline bool continue_traceback(const Index u, const Index v) const {
@@ -1330,7 +1371,7 @@ public:
 
 		auto matrix = m_factory.template make<0>(len_s, len_t);
 		build_nothing nothing;
-		auto tb = make_traceback<Direction>(m_locality, matrix, nothing);
+		auto tb = make_traceback_iterator(m_locality, matrix, nothing);
 		const auto tb_val = tb.next();
 		return tb_val.value_or(worst_score());
 	}
@@ -1343,7 +1384,7 @@ public:
 
 		auto matrix = m_factory.template make<0>(len_s, len_t);
 		build_alignment<Alignment> build(alignment);
-		auto tb = make_traceback<Direction>(m_locality, matrix, build);
+		auto tb = make_traceback_iterator(m_locality, matrix, build);
 		const auto tb_val = tb.next();
 		return tb_val.value_or(worst_score());
 	}
@@ -1365,7 +1406,7 @@ public:
 		);
 
 		auto matrix = m_factory.template make<0>(len_s, len_t);
-		auto tb = make_traceback<Direction>(m_locality, matrix, build);
+		auto tb = make_traceback_iterator(m_locality, matrix, build);
 		const auto tb_val = tb.next();
 		solution->m_path = build.template get<0>().path();
 		solution->m_score = tb_val.value_or(worst_score());

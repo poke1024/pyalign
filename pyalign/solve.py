@@ -287,8 +287,8 @@ class Solver:
 
 
 class LocalSolver(Solver):
-	def __init__(self, gap_cost: GapCost = None, zero: float = 0, **kwargs):
-		super().__init__(solver="alignment", locality="local", gap_cost=gap_cost, zero=zero, **kwargs)
+	def __init__(self, gap_cost: GapCost = None, **kwargs):
+		super().__init__(solver="alignment", locality="local", gap_cost=gap_cost, **kwargs)
 
 
 class GlobalSolver(Solver):

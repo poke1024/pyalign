@@ -337,12 +337,9 @@ struct AlignmentSolverFactory {
 			p_options["locality"].cast<std::string>() : "local";
 
 		if (locality_name == "local") {
-			const float zero = p_options.contains("zero") ?
-				p_options["zero"].cast<float>() : 0.0f;
-
 			return resolve_gap_type<Goal, pyalign::Local>(
 				p_options,
-				pyalign::LocalInitializers({zero}),
+				pyalign::LocalInitializers(),
 				p_max_len_s,
 				p_max_len_t);
 
