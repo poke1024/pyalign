@@ -694,48 +694,81 @@ public:
 	typedef typename ProblemType::direction_type Direction;
 	typedef traceback_type<CellType, ProblemType> Traceback;
 
-private:
-	Value m_val;
-
-	Value &m_cell_val;
-
 public:
-	inline Accumulator(Value &p_val, Traceback &p_tb) : m_cell_val(p_val) {
-	}
+	struct cont {
+		Value &m_val;
 
-	inline void init(
-		const Value val,
-		const Index u,
-		const Index v) {
+		inline auto push(
+			const Value val,
+			const Index u,
+			const Index v) {
 
-		m_val = val;
-	}
+			if (Direction::is_gt(val, m_val)) {
+				m_val = val;
+			}
 
-	inline void push(
-		const Value val,
-		const Index u,
-		const Index v) {
-
-		if (Direction::is_gt(val, m_val)) {
-			m_val = val;
+			return cont{m_val};
 		}
-	}
 
-	inline void push(
-		const Value val,
-		const Traceback &tb) {
+		inline auto push(
+			const Value val,
+			const Traceback &tb) {
 
-		if (Direction::is_gt(val, m_val)) {
-			m_val = val;
+			if (Direction::is_gt(val, m_val)) {
+				m_val = val;
+			}
+
+			return cont{m_val};
 		}
-	}
 
-	inline void add(const float val) {
-		m_val += val;
-	}
+		template<typename F>
+		inline auto push_many(const F &f) {
+			f(cont{m_val});
+			return cont{m_val};
+		}
 
-	inline void done() const {
-		m_cell_val = m_val;
+		inline auto add(const float val) {
+			m_val += val;
+			return cont{m_val};
+		}
+
+		inline void done() const {
+		}
+	};
+
+	struct init {
+	protected:
+		friend class Accumulator;
+
+		inline explicit init(Value &p_val) : m_val(p_val) {
+		}
+
+		init(const init&) = delete;
+		init& operator=(init const&) = delete;
+
+	public:
+		Value &m_val;
+
+		inline auto push(
+			const Value val,
+			const Index u,
+			const Index v) {
+
+			m_val = val;
+			return cont{m_val};
+		}
+
+		inline auto push(
+			const Value val,
+			const Traceback &tb) {
+
+			m_val = val;
+			return cont{m_val};
+		}
+	};
+
+	static inline auto create(Value &p_val, Traceback &p_tb) {
+		return init{p_val};
 	}
 };
 
@@ -747,57 +780,91 @@ public:
 	typedef typename ProblemType::direction_type Direction;
 	typedef traceback_type<CellType, ProblemType> Traceback;
 
-private:
-	Value m_val;
+	struct cont {
+		Value &m_val;
+		Traceback &m_tb;
 
-	Value &m_cell_val;
-	Traceback &m_cell_tb;
+		inline auto push(
+			const Value val,
+			const Index u,
+			const Index v) {
 
-public:
-	inline TracingAccumulator(Value &p_val, Traceback &p_tb) :
-		m_cell_val(p_val), m_cell_tb(p_tb) {
-	}
+			if (Direction::is_gt(val, m_val)) {
+				m_val = val;
+				m_tb.init(u, v);
+			} else if (!Traceback::max_degree_1 && val == m_val) {
+				m_tb.push(u, v);
+			}
 
-	inline void init(
-		const Value val,
-		const Index u,
-		const Index v) {
-
-		m_val = val;
-		m_cell_tb.init(u, v);
-	}
-
-	inline void push(
-		const Value val,
-		const Index u,
-		const Index v) {
-
-		if (Direction::is_gt(val, m_val)) {
-			m_val = val;
-			m_cell_tb.init(u, v);
-		} else if (!Traceback::max_degree_1 && val == m_val) {
-			m_cell_tb.push(u, v);
+			return cont{m_val, m_tb};
 		}
-	}
 
-	inline void push(
-		const Value val,
-		const Traceback &tb) {
+		inline auto push(
+			const Value val,
+			const Traceback &tb) {
 
-		if (Direction::is_gt(val, m_val)) {
-			m_val = val;
-			m_cell_tb.init(tb);
-		} else if (!Traceback::max_degree_1 && val == m_val) {
-			m_cell_tb.push(tb);
+			if (Direction::is_gt(val, m_val)) {
+				m_val = val;
+				m_tb.init(tb);
+			} else if (!Traceback::max_degree_1 && val == m_val) {
+				m_tb.push(tb);
+			}
+
+			return cont{m_val, m_tb};
 		}
-	}
 
-	inline void add(const float val) {
-		m_val += val;
-	}
+		template<typename F>
+		inline auto push_many(const F &f) {
+			f(cont{m_val, m_tb});
+			return cont{m_val, m_tb};
+		}
 
-	inline void done() const {
-		m_cell_val = m_val;
+		inline auto add(const float val) {
+			m_val += val;
+			return cont{m_val, m_tb};
+		}
+
+		inline void done() const {
+		}
+	};
+
+	struct init {
+	protected:
+		friend class TracingAccumulator;
+
+		inline explicit init(Value &p_val, Traceback &p_tb) :
+			m_val(p_val), m_tb(p_tb) {
+		}
+
+		init(const init&) = delete;
+		init& operator=(init const&) = delete;
+
+	public:
+		Value &m_val;
+		Traceback &m_tb;
+
+		inline auto push(
+			const Value val,
+			const Index u,
+			const Index v) {
+
+			m_val = val;
+			m_tb.init(u, v);
+			return cont{m_val, m_tb};
+		}
+
+		inline auto push(
+			const Value val,
+			const Traceback &tb) {
+
+			m_val = val;
+			m_tb.init(tb);
+			return cont{m_val, m_tb};
+		}
+	};
+
+	static inline auto create(Value &p_val, Traceback &p_tb) {
+		return init{p_val, p_tb};
 	}
 };
 
@@ -847,9 +914,7 @@ public:
 		m_matrix(p_matrix),
 		m_path(p_path) {
 
-		if (m_strategy.has_trace()) {
-			m_strategy.seeds().generate(m_seed);
-		}
+		m_strategy.seeds().generate(m_seed);
 	}
 
 	inline std::optional<Value> next() {
@@ -910,9 +975,7 @@ public:
 		m_matrix(p_matrix),
 		m_path(p_path) {
 
-		if (m_strategy.has_trace()) {
-			m_strategy.seeds().generate(m_uvs);
-		}
+		m_strategy.seeds().generate(m_uvs);
 	}
 
 	inline std::optional<Value> next() {
@@ -1026,11 +1089,8 @@ public:
 
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
-		return Accumulator(val, tb);
-	}
-
-	template<typename Accumulator>
-	inline void update_acc(Accumulator &acc) const {
+		auto acc = Accumulator::create(val, tb);
+		return acc.push(ZERO, -1, -1);
 	}
 
 	inline Local(const LocalInitializers &p_init) {
@@ -1168,11 +1228,7 @@ public:
 
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
-		return Accumulator(val, tb);
-	}
-
-	template<typename Accumulator>
-	inline void update_acc(Accumulator &) const {
+		return Accumulator::create(val, tb);
 	}
 
 	template<typename Vector>
@@ -1254,11 +1310,7 @@ public:
 
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
-		return Accumulator(val, tb);
-	}
-
-	template<typename Accumulator>
-	inline void update_acc(Accumulator &) const {
+		return Accumulator::create(val, tb);
 	}
 
 	template<typename Vector>
@@ -1467,6 +1519,14 @@ protected:
 	MatrixFactory<CellType, ProblemType, LayerCount> m_factory;
 	const AlgorithmMetaDataRef m_algorithm;
 
+	typedef TracebackSupport<typename ProblemType::goal_type> TBS;
+	typedef typename TBS::template Accumulator<CellType, ProblemType> Accumulator;
+
+	template<typename ValueCell, typename TracebackCell>
+	inline auto accumulate_to_nolocal(ValueCell &val, TracebackCell &tb) const {
+		return Accumulator::create(val, tb);
+	}
+
 public:
 	template<typename LocalityInitializers>
 	inline Solver(
@@ -1650,24 +1710,18 @@ public:
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				auto acc = this->m_locality.accumulate_to(
-					values(u, v), traceback(u, v));
-
-				acc.init(
+				this->m_locality.accumulate_to(
+					values(u, v), traceback(u, v))
+				.push(
 					values(u - 1, v - 1) + pairwise(u, v),
-					u - 1, v - 1);
-
-				acc.push(
+					u - 1, v - 1)
+				.push(
 					values(u - 1, v) + this->m_gap_cost_s * gap_sgn,
-					u - 1, v);
-
-				acc.push(
+					u - 1, v)
+				.push(
 					values(u, v - 1) + this->m_gap_cost_t * gap_sgn,
-					u, v - 1);
-
-				this->m_locality.update_acc(acc);
-
-				acc.done();
+					u, v - 1)
+				.done();
 			}
 		}
 	}
@@ -1799,34 +1853,44 @@ public:
 
 				// Gotoh formula (4)
 				{
-					auto acc_P = this->m_locality.accumulate_to(
-						P(i, j), tb_P(i, j));
-
-					acc_P.init(D(i - 1, j) + m_gap_cost_s.w1() * gap_sgn, i - 1, j);
-					acc_P.push(P(i - 1, j) + m_gap_cost_s.u * gap_sgn, tb_P(i - 1, j));
-					acc_P.done();
+					this->accumulate_to_nolocal(
+						P(i, j), tb_P(i, j))
+					.push(
+						D(i - 1, j) + m_gap_cost_s.w1() * gap_sgn,
+						i - 1, j)
+					.push(
+						P(i - 1, j) + m_gap_cost_s.u * gap_sgn,
+						tb_P(i - 1, j))
+					.done();
 				}
 
 				// Gotoh formula (5)
 				{
-					auto acc_Q = this->m_locality.accumulate_to(
-						Q(i, j), tb_Q(i, j));
-
-					acc_Q.init(D(i, j - 1) + m_gap_cost_t.w1() * gap_sgn, i, j - 1);
-					acc_Q.push(Q(i, j - 1) + m_gap_cost_t.u * gap_sgn, tb_Q(i, j - 1));
-					acc_Q.done();
+					this->accumulate_to_nolocal(
+						Q(i, j), tb_Q(i, j))
+					.push(
+						D(i, j - 1) + m_gap_cost_t.w1() * gap_sgn,
+						i, j - 1)
+					.push(
+						Q(i, j - 1) + m_gap_cost_t.u * gap_sgn,
+						tb_Q(i, j - 1))
+					.done();
 				}
 
 				// Gotoh formula (1)
 				{
-					auto acc_D = this->m_locality.accumulate_to(
-						D(i, j), tb_D(i, j));
-
-					acc_D.init(D(i - 1, j - 1) + pairwise(i, j), i - 1, j - 1);
-					acc_D.push(P(i, j), tb_P(i, j));
-					acc_D.push(Q(i, j), tb_Q(i, j));
-					this->m_locality.update_acc(acc_D);
-					acc_D.done();
+					this->m_locality.accumulate_to(
+						D(i, j), tb_D(i, j))
+					.push(
+						D(i - 1, j - 1) + pairwise(i, j),
+						i - 1, j - 1)
+					.push(
+						P(i, j),
+						tb_P(i, j))
+					.push(
+						Q(i, j),
+						tb_Q(i, j))
+					.done();
 				}
 			}
 		}
@@ -1928,28 +1992,30 @@ public:
 
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				auto acc = this->m_locality.accumulate_to(
-					values(u, v), traceback(u, v));
+				this->m_locality.accumulate_to(
+					values(u, v), traceback(u, v))
 
-				acc.init(
+				.push(
 					values(u - 1, v - 1) + pairwise(u, v),
-					u - 1, v - 1);
+					u - 1, v - 1)
 
-				for (Index k = -1; k < u; k++) {
-					acc.push(
-						values(k, v) + this->m_gap_cost_s(u - k) * gap_sgn,
-						k, v);
-				}
+				.push_many([this, u, v, gap_sgn, &values] (auto acc) {
+					for (Index k = -1; k < u; k++) {
+						acc.push(
+							values(k, v) + this->m_gap_cost_s(u - k) * gap_sgn,
+							k, v);
+					}
+				})
 
-				for (Index k = -1; k < v; k++) {
-					acc.push(
-						values(u, k) + this->m_gap_cost_t(v - k) * gap_sgn,
-						u, k);
-				}
+				.push_many([this, u, v, gap_sgn, &values] (auto acc) {
+					for (Index k = -1; k < v; k++) {
+						acc.push(
+							values(u, k) + this->m_gap_cost_t(v - k) * gap_sgn,
+							u, k);
+					}
+				})
 
-				this->m_locality.update_acc(acc);
-
-				acc.done();
+				.done();
 			}
 		}
 	}
@@ -2001,24 +2067,19 @@ public:
 		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
 			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
 
-				auto acc = this->m_locality.accumulate_to(
-					values(u, v), traceback(u, v));
-
-				acc.init(
+				this->m_locality.accumulate_to(
+					values(u, v), traceback(u, v))
+				.push(
 					values(u - 1, v - 1),
-					u - 1, v - 1);
-
-				acc.push(
+					u - 1, v - 1)
+				.push(
 					values(u - 1, v),
-					u - 1, v);
-
-				acc.push(
+					u - 1, v)
+				.push(
 					values(u, v - 1),
-					u, v - 1);
-
-				acc.add(pairwise(u, v));
-
-				acc.done();
+					u, v - 1)
+				.add(pairwise(u, v))
+				.done();
 			}
 		}
 	}
