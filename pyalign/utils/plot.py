@@ -7,16 +7,21 @@ import numpy as np
 def inset_arrows(data, d0=0.2):
 	dx = data['x_end'] - data['x_start']
 	dy = data['y_end'] - data['y_start']
+
 	mx = (data['x_start'] + data['x_end']) / 2
 	my = (data['y_start'] + data['y_end']) / 2
-	l = np.sqrt(np.power(dx, 2) + np.power(dy, 2))
-	d = d0 / l
-	return dict(
+	length = np.sqrt(np.power(dx, 2) + np.power(dy, 2))
+	d = d0 / length
+
+	data_short = dict(
 		x_start=mx - dx * d,
 		y_start=my - dy * d,
 		x_end=mx + dx * d,
 		y_end=my + dy * d
 	)
+
+	cond = np.logical_and(np.abs(dx) <= 1, np.abs(dy) <= 1)
+	return dict((k, np.where(cond, data_short[k], data[k])) for k in data.keys())
 
 
 def flat_ix(a):
@@ -93,19 +98,29 @@ class TracebackPlotFactory:
 		self._p.add_glyph(source, glyph)
 
 	def _plot_traceback_matrix_arrows(self):
-		path = self._path
+		if not self._solution.traceback_has_max_degree_1:
+			edges = self._solution.traceback_as_edges[self._layer]
+			edges = edges[np.logical_and(edges[:, 0, 0] >= 0, edges[:, 0, 1] >= 0)]
+			src = edges[:, 0, :] + 1
+			dst = edges[:, 1, :] + 1
+
+		else:
+			matrix = self._solution.traceback_as_matrix[self._layer, 1:, 1:]
+			src = flat_ix(matrix) + 1
+			dst = matrix.reshape(-1, 2) + 1
+
+			path = self._path
+			path_set = set(tuple(x) for x in path)
+			mask = np.array([tuple(x) not in path_set for x in src], dtype=bool)
+			src = src[mask]
+			dst = dst[mask]
+
+			mask = np.logical_and(dst[:, 0] >= 0, dst[:, 1] >= 0)
+			src = src[mask]
+			dst = dst[mask]
 
 		arrow_color = 'blue'
 		arrow_alpha = 0.5
-		traceback = self._solution.traceback[self._layer, 1:, 1:]
-
-		src = flat_ix(traceback) + 1
-		dst = traceback.reshape(-1, 2) + 1
-
-		path_set = set(tuple(x) for x in path)
-		mask = np.array([tuple(x) not in path_set for x in src], dtype=bool)
-		src = src[mask]
-		dst = dst[mask]
 
 		source = bokeh.models.ColumnDataSource(data=inset_arrows(dict(
 			x_start=src[:, 1],
@@ -116,7 +131,7 @@ class TracebackPlotFactory:
 			end=bokeh.models.OpenHead(
 				line_color=arrow_color, line_alpha=arrow_alpha, line_width=1, size=5),
 			source=source, x_start='x_start', y_start='y_start', x_end='x_end', y_end='y_end',
-			line_color=None))
+			line_color=arrow_color))
 
 	def _plot_optimal_path_arrows(self):
 		path = self._path

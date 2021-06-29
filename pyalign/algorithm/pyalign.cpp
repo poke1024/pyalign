@@ -67,7 +67,9 @@ public:
 	}
 
 	virtual xt::pytensor<Value, 3> values() const = 0;
-	virtual xt::pytensor<Index, 4> traceback() const = 0;
+	virtual bool traceback_has_max_degree_1() const = 0;
+	virtual xt::pytensor<Index, 4> traceback_as_matrix() const = 0;
+	virtual py::list traceback_as_edges() const = 0;
 	virtual xt::pytensor<Index, 2> path() const = 0;
 	virtual float score() const = 0;
 	virtual AlgorithmRef algorithm() const = 0;
@@ -95,12 +97,27 @@ public:
 		m_alignment(p_alignment) {
 	}
 
+	virtual bool traceback_has_max_degree_1() const override {
+		return m_solution->has_degree_1_traceback();
+	}
+
 	virtual xt::pytensor<Value, 3> values() const override {
 		return m_solution->values();
 	}
 
-	virtual xt::pytensor<Index, 4> traceback() const override {
-		return m_solution->traceback();
+	virtual xt::pytensor<Index, 4> traceback_as_matrix() const override {
+		return m_solution->traceback_as_matrix();
+	}
+
+	virtual py::list traceback_as_edges() const override {
+		const auto edges = m_solution->traceback_as_edges();
+
+		py::list py_edges;
+		for (const auto &layer_edges : edges) {
+			py_edges.append(xt::pytensor<Index, 3>(layer_edges));
+		}
+
+		return py_edges;
 	}
 
 	virtual xt::pytensor<Index, 2> path() const override {
@@ -373,19 +390,33 @@ SolverRef create_alignment_solver(
 
 	const auto goal = p_options["goal"];
 	const auto detail = goal.attr("detail").cast<std::string>();
+	const auto count = goal.attr("count").cast<std::string>();
 
-	if (detail == "score") {
-		return AlignmentSolverFactory::resolve_locality<pyalign::goal::optimal_score>(
-			p_options,
-			p_max_len_s,
-			p_max_len_t);
-	} else if (detail == "alignment" || detail == "solution") {
-		return AlignmentSolverFactory::resolve_locality<pyalign::goal::one_optimal_alignment>(
-			p_options,
-			p_max_len_s,
-			p_max_len_t);
+	if (count == "one") {
+		if (detail == "score") {
+			return AlignmentSolverFactory::resolve_locality<pyalign::goal::optimal_score>(
+				p_options,
+				p_max_len_s,
+				p_max_len_t);
+		} else if (detail == "alignment" || detail == "solution") {
+			return AlignmentSolverFactory::resolve_locality<pyalign::goal::one_optimal_alignment>(
+				p_options,
+				p_max_len_s,
+				p_max_len_t);
+		} else {
+			throw std::invalid_argument(detail);
+		}
+	} else if (count == "all") {
+		if (detail == "alignment" || detail == "solution") {
+			return AlignmentSolverFactory::resolve_locality<pyalign::goal::all_optimal_alignments>(
+				p_options,
+				p_max_len_s,
+				p_max_len_t);
+		} else {
+			throw std::invalid_argument(detail);
+		}
 	} else {
-		throw std::invalid_argument(detail);
+		throw std::invalid_argument(count);
 	}
 }
 
@@ -395,7 +426,6 @@ SolverRef create_dtw_solver(
 	const py::dict &p_options) {
 
 	const std::string direction = p_options["direction"].cast<std::string>();
-
 
 	if (direction == "maximize") {
 		typedef pyalign::problem_type<
@@ -455,7 +485,9 @@ PYBIND11_MODULE(algorithm, m) {
 
 	py::class_<Solution, SolutionRef> solution(m, "Solution");
 	solution.def_property_readonly("values", &Solution::values);
-	solution.def_property_readonly("traceback", &Solution::traceback);
+	solution.def_property_readonly("traceback_has_max_degree_1", &Solution::traceback_has_max_degree_1);
+	solution.def_property_readonly("traceback_as_matrix", &Solution::traceback_as_matrix);
+	solution.def_property_readonly("traceback_as_edges", &Solution::traceback_as_edges);
 	solution.def_property_readonly("path", &Solution::path);
 	solution.def_property_readonly("score", &Solution::score);
 	solution.def_property_readonly("alignment", &Solution::alignment);

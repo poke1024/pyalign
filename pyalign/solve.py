@@ -2,6 +2,7 @@ import pyalign.algorithm
 import numpy as np
 
 from cached_property import cached_property
+from functools import lru_cache
 from pathlib import Path
 from .gaps import GapCost
 
@@ -72,9 +73,14 @@ class Solution:
 	def values(self):
 		return self._solution.values
 
-	@cached_property
-	def traceback(self):
-		return self._solution.traceback
+	@lru_cache
+	def traceback(self, form="matrix"):
+		if form == "matrix":
+			return self._solution.traceback_as_matrix
+		elif form == "edges":
+			return self._solution.traceback_as_edges
+		else:
+			return ValueError(form)
 
 	@cached_property
 	def path(self):
@@ -208,25 +214,27 @@ class SolverCache:
 class Goal:
 	details = set(["score", "alignment", "solution"])
 
-	def __init__(self, detail, complete):
+	def __init__(self, detail, count):
 		"""
 		Args:
 			detail (str): one of "score", "alignment", "solution"
-			complete (bool): compute all solutions?
+			count (str): how many optimal solutions? either "one" or "all"
 		"""
 
 		if detail not in Goal.details:
 			raise ValueError(detail)
+		if count not in ("one", "all"):
+			raise ValueError(count)
 
 		self._detail = detail
-		self._complete = complete
+		self._count = count
 
 	@staticmethod
 	def from_str(s):
 		if s in Goal.details:
-			return Goal(s, False)
+			return Goal(s, "one")
 		if s in [x + "s" for x in Goal.details]:
-			return Goal(s[:-1], True)
+			return Goal(s[:-1], "all")
 		raise ValueError(s)
 
 	@property
@@ -234,8 +242,8 @@ class Goal:
 		return self._detail
 
 	@property
-	def needs_multiple_tracebacks(self):
-		return self._complete
+	def count(self):
+		return self._count
 
 
 class Solver:

@@ -40,7 +40,6 @@ namespace goal {
 
 	typedef alignment<path::optimal::one> one_optimal_alignment;
 	typedef alignment<path::optimal::all> all_optimal_alignments;
-	typedef alignment<path::all> all_alignments;
 }
 
 namespace direction {
@@ -184,10 +183,20 @@ template<typename Value>
 using GapTensorFactory = std::function<xt::xtensor<Value, 1>(size_t)>;
 
 template<typename Index>
+constexpr inline int no_traceback() {
+	return std::numeric_limits<Index>::min();
+}
+
+template<typename Index>
 struct traceback_1 {
-	static constexpr bool multiple = false;
+	static constexpr bool max_degree_1 = true;
 
 	xt::xtensor_fixed<Index, xt::xshape<2>> uv;
+
+	inline void clear() {
+		uv(0) = no_traceback<Index>();
+		uv(1) = no_traceback<Index>();
+	}
 
 	inline void init(const Index u, const Index v) {
 		uv(0) = u;
@@ -207,22 +216,30 @@ struct traceback_1 {
 		uv = tb.uv;
 	}
 
-	inline Index u() const {
+	inline Index u(const size_t i = 0) const {
 		return uv(0);
 	}
 
-	inline Index v() const {
+	inline Index v(const size_t i = 0) const {
 		return uv(1);
+	}
+
+	inline size_t size() const {
+		return uv(0) != no_traceback<Index>() ? 1 : 0;
 	}
 };
 
 template<typename Index>
 struct traceback_n {
-	static constexpr bool multiple = true;
+	static constexpr bool max_degree_1 = false;
 
 	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Pt;
 
 	std::vector<Pt> pts;
+
+	inline void clear() {
+		pts.clear();
+	}
 
 	inline void init(const Index u, const Index v) {
 		pts.clear();
@@ -243,12 +260,16 @@ struct traceback_n {
 		}
 	}
 
-	inline Index u() const {
-		return pts.empty() ? -1 : pts[0](0);
+	inline Index u(const size_t i = 0) const {
+		return i < pts.size() ? pts[i](0) : no_traceback<Index>();
 	}
 
-	inline Index v() const {
-		return pts.empty() ? -1 : pts[0](1);
+	inline Index v(const size_t i = 0) const {
+		return i < pts.size() ? pts[i](1) : no_traceback<Index>();
+	}
+
+	inline size_t size() const {
+		return pts.size();
 	}
 };
 
@@ -277,6 +298,11 @@ struct traceback_cell_type_factory<goal::optimal_score::path_goal, Index> {
 template<typename Index>
 struct traceback_cell_type_factory<goal::path::optimal::one, Index> {
 	typedef traceback_1<Index> traceback_cell_type;
+};
+
+template<typename Index>
+struct traceback_cell_type_factory<goal::path::optimal::all, Index> {
+	typedef traceback_n<Index> traceback_cell_type;
 };
 
 template<typename CellType, typename ProblemType>
@@ -345,6 +371,16 @@ public:
 			m_max_len_s + 1,
 			m_max_len_t + 1
 		});
+
+		for (int k = 0; k < LayerCount; k++) {
+			for (size_t i = 0; i < m_max_len_s + 1; i++) {
+				m_data->traceback(k, i, 0).clear();
+			}
+			for (size_t j = 0; j < m_max_len_t + 1; j++) {
+				m_data->traceback(k, 0, j).clear();
+			}
+		}
+
 		m_data->best_column.resize({
 			m_max_len_s + 1
 		});
@@ -739,7 +775,7 @@ public:
 		if (Direction::is_gt(val, m_val)) {
 			m_val = val;
 			m_cell_tb.init(u, v);
-		} else if (Traceback::multiple && val == m_val) {
+		} else if (!Traceback::max_degree_1 && val == m_val) {
 			m_cell_tb.push(u, v);
 		}
 	}
@@ -751,7 +787,7 @@ public:
 		if (Direction::is_gt(val, m_val)) {
 			m_val = val;
 			m_cell_tb.init(tb);
-		} else if (Traceback::multiple && val == m_val) {
+		} else if (!Traceback::max_degree_1 && val == m_val) {
 			m_cell_tb.push(tb);
 		}
 	}
@@ -880,15 +916,48 @@ public:
 	}
 
 	inline std::optional<Value> next() {
-		// not yet implemented.
-		return std::optional<Value>();
+		// FIXME implement path splitting.
+
+		if (m_uvs.empty()) {
+			return std::optional<Value>();
+		}
+
+		const auto values = m_matrix.template values<1, 1>();
+
+		const auto initial_uv = m_uvs.top();
+		m_uvs.pop();
+
+		Index u = std::get<0>(initial_uv);
+		Index v = std::get<1>(initial_uv);
+		const auto best_val = values(u, v);
+
+		if (m_strategy.has_trace()) { // && m_path.wants_path()
+			const auto len_s = m_matrix.len_s();
+			const auto len_t = m_matrix.len_t();
+			m_path.begin(len_s, len_t);
+
+			const auto traceback = m_matrix.template traceback<1, 1>();
+
+			while (m_strategy.continue_traceback(u, v)) {
+				const Index last_u = u;
+				const Index last_v = v;
+
+				const auto &t = traceback(u, v);
+				u = t.u();
+				v = t.v();
+
+				m_path.step(last_u, last_v, u, v);
+			}
+		}
+
+		return best_val;
 	}
 };
 
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix, typename Path>
 using TracebackIterator2 = TracebackIterator<
-	traceback_type<CellType, ProblemType>::multiple, CellType, ProblemType, Strategy, Matrix, Path>;
+	!traceback_type<CellType, ProblemType>::max_degree_1, CellType, ProblemType, Strategy, Matrix, Path>;
 
 template<typename Locality, typename Matrix, typename Path>
 inline TracebackIterator2<
@@ -1027,10 +1096,9 @@ public:
 		void generate(Stack &r_seeds) const {
 			const auto len_s = m_matrix.len_s();
 			const auto len_t = m_matrix.len_t();
+			const auto values = m_matrix.template values<1, 1>();
 
-			const Value best_val = Direction::lim(
-				m_matrix.template values<1, 1>())();
-
+			const Value best_val = Direction::lim(values)();
 			for (Index i = len_s - 1; i >= 0; i--) {
 				for (Index j = len_t - 1; j >= 0; j--) {
 					if (values(i, j) == best_val) {
@@ -1160,14 +1228,6 @@ public:
 			const auto values = m_matrix.template values_n<1, 1>();
 			return u >= 0 && v >= 0;
 		}
-
-		inline Value path_val(
-			const Value best_val,
-			const Index u,
-			const Index v) const {
-
-			return best_val;
-		}
 	};
 };
 
@@ -1279,14 +1339,6 @@ public:
 			const auto values = m_matrix.template values_n<1, 1>();
 			return u >= 0 && v >= 0;
 		}
-
-		inline Value path_val(
-			const Value best_val,
-			const Index u,
-			const Index v) const {
-
-			return best_val;
-		}
 	};
 };
 
@@ -1297,6 +1349,11 @@ public:
 	typedef typename CellType::value_type Value;
 	typedef traceback_type<CellType, ProblemType> Traceback;
 
+private:
+	typedef std::pair<Index, Index> Coord;
+	typedef std::pair<Coord, Coord> Edge;
+
+public:
 	xt::xtensor<Value, 3> m_values;
 	xt::xtensor<Traceback, 3> m_traceback;
 	xt::xtensor<Index, 2> m_path;
@@ -1307,7 +1364,11 @@ public:
 		return m_values;
 	}
 
-	const auto traceback() const {
+	inline bool has_degree_1_traceback() const {
+		return Traceback::max_degree_1;
+	}
+
+	const auto traceback_as_matrix() const {
 		const size_t len_k = m_traceback.shape(0);
 		const size_t len_s = m_traceback.shape(1);
 		const size_t len_t = m_traceback.shape(2);
@@ -1325,6 +1386,56 @@ public:
 			}
 		}
 		return traceback;
+	}
+
+	const std::vector<xt::xtensor<Index, 3>> traceback_as_edges() const {
+		const size_t len_k = m_traceback.shape(0);
+		const size_t len_s = m_traceback.shape(1);
+		const size_t len_t = m_traceback.shape(2);
+
+		std::vector<xt::xtensor<Index, 3>> edges;
+		edges.resize(len_k);
+
+		const size_t avg_degree = 3; // an estimate
+		std::vector<Edge> layer_edges;
+		layer_edges.reserve(len_s * len_t * avg_degree);
+
+		for (size_t k = 0; k < len_k; k++) {
+			layer_edges.clear();
+			for (size_t i = 0; i < len_s; i++) {
+				for (size_t j = 0; j < len_t; j++) {
+					const auto &cell = m_traceback(k, i, j);
+					const size_t n_edges = cell.size();
+					for (size_t q = 0; q < n_edges; q++) {
+						layer_edges.emplace_back(std::make_pair<Coord, Coord>(
+							std::make_pair<Index, Index>(
+								static_cast<Index>(i) - 1,
+								static_cast<Index>(j) - 1),
+							std::make_pair<Index, Index>(
+								cell.u(q), cell.v(q))));
+					}
+				}
+			}
+
+			xt::xtensor<Index, 3> &tensor = edges[k];
+			const size_t n_edges = layer_edges.size();
+			tensor.resize({
+				n_edges, 2, 2
+			});
+			for (size_t i = 0; i < n_edges; i++) {
+				const auto &edge = layer_edges[i];
+
+				const auto &u = std::get<0>(edge);
+				tensor(i, 0, 0) = std::get<0>(u);
+				tensor(i, 0, 1) = std::get<1>(u);
+
+				const auto &v = std::get<1>(edge);
+				tensor(i, 1, 0) = std::get<0>(v);
+				tensor(i, 1, 1) = std::get<1>(v);
+			}
+		}
+
+		return edges;
 	}
 
 	const auto &path() const {
@@ -1650,16 +1761,16 @@ public:
 		auto tb_Q = matrix_Q.template traceback<0, 0>();
 
 		for (auto &e : xt::view(tb_P, 0, xt::all())) {
-			e.init(-1, -1);
+			e.clear();
 		}
 		for (auto &e : xt::view(tb_P, xt::all(), 0)) {
-			e.init(-1, -1);
+			e.clear();
 		}
 		for (auto &e : xt::view(tb_Q, 0, xt::all())) {
-			e.init(-1, -1);
+			e.clear();
 		}
 		for (auto &e : xt::view(tb_Q, xt::all(), 0)) {
-			e.init(-1, -1);
+			e.clear();
 		}
 	}
 
