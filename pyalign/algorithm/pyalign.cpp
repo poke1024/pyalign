@@ -11,7 +11,7 @@
 namespace py = pybind11;
 
 
-typedef pyalign::cell_type<float, int16_t> cell_type;
+typedef pyalign::cell_type<float, int16_t, 1> cell_type;
 
 class Alignment {
 public:
@@ -87,14 +87,17 @@ public:
 private:
 	const pyalign::SolutionRef<CellType, ProblemType> m_solution;
 	AlignmentRef m_alignment;
+	const int m_batch_index;
 
 public:
 	inline SolutionImpl(
 		const pyalign::SolutionRef<CellType, ProblemType> p_solution,
-		const AlignmentRef &p_alignment) :
+		const AlignmentRef &p_alignment,
+		const int p_batch_index) :
 
 		m_solution(p_solution),
-		m_alignment(p_alignment) {
+		m_alignment(p_alignment),
+		m_batch_index(p_batch_index) {
 	}
 
 	virtual bool traceback_has_max_degree_1() const override {
@@ -102,15 +105,15 @@ public:
 	}
 
 	virtual xt::pytensor<Value, 3> values() const override {
-		return m_solution->values();
+		return m_solution->values(m_batch_index);
 	}
 
 	virtual xt::pytensor<Index, 4> traceback_as_matrix() const override {
-		return m_solution->traceback_as_matrix();
+		return m_solution->traceback_as_matrix(m_batch_index);
 	}
 
 	virtual py::list traceback_as_edges() const override {
-		const auto edges = m_solution->traceback_as_edges();
+		const auto edges = m_solution->traceback_as_edges(m_batch_index);
 
 		py::list py_edges;
 		for (const auto &layer_edges : edges) {
@@ -210,7 +213,8 @@ public:
 		const auto alignment = std::make_shared<Alignment>();
 		return std::make_shared<SolutionImpl<CellType, ProblemType>>(
 			m_solver.solution(len_s, len_t, *alignment.get()),
-			alignment);
+			alignment,
+			0);
 	}
 };
 
