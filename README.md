@@ -1,27 +1,34 @@
 # pyalign
 
-pyalign is a small and hopefully rather versatile Python package
-for finding "optimum correspondences between sequences" (Kruskal, 1983),
-the main proponents of which are alignments and dynamic time warping.
+Alignments have been a staple algorithm in bioinformatics for decades now,
+but most packages implementing tend to be either easy to use and slow, or
+fast but very difficult to use and highly domain specific.
+
+pyalign is a small and hopefully rather versatile Python package that aims to
+be fast and easy to use. At its core, it is an optimizer for finding "optimum
+correspondences between sequences" (Kruskal, 1983) - the main proponents of which
+are alignments and dynamic time warping.
 
 Features:
 
 * easy to install and easy to use
 * robust and efficient implementation of standard algorithms
 * computes local, global and semiglobal alignments on pairs of sequences
-* supports different gap costs( commonly used ones as well as custom ones)
-* automatically selects best suitable algorithm
+* supports different gap costs (commonly used ones as well as custom ones)
+* automatically selects best suitable algorithm (e.g. Gotoh)
 * no assumptions on matched items, i.e. not limited to characters
 * supports any given similarity function
-* reasonably fast for smaller problem sizes (see below for details)
+* fast for smaller problem sizes (see below for details)
 * built-in visualization functionality for teaching purposes
 
-"Reasonably fast" means that the implementation
+The implementation should be rather fast due to highly optimized code paths
+for every special case. While it does *not* support GPUs, here are some facts:
 
-* does *not* support SIMD or GPUs
-* does support multithreading
+* supports SIMD via batching (i.e. simple SIMD parallelism as first
+suggested by Alpern et al. and more recently by Rudnicki et al.)
+* supports multithreading
 * allows preallocation of data structures
-* uses an optimized C++ core that employs <a href="https://github.com/xtensor-stack/xtensor">xtensor</a>
+* optimized C++ core employing <a href="https://github.com/xtensor-stack/xtensor">xtensor</a>
 
 # Example
 
@@ -138,9 +145,15 @@ Müller, M. (2007). Information Retrieval for Music and Motion. Springer Berlin 
 
 ## Implementations
 
+Alpern, B., Carter, L., & Su Gatlin, K. (1995). Microparallelism and high-performance protein matching. Proceedings of the 1995 ACM/IEEE Conference on Supercomputing (CDROM)  - Supercomputing ’95, 24-es. https://doi.org/10.1145/224170.224222
+
 Barnes, R. (2020). A Review of the Smith-Waterman GPU Landscape. https://www2.eecs.berkeley.edu/Pubs/TechRpts/2020/EECS-2020-152.html
 
+Farrar, M. (2007). Striped Smith-Waterman speeds database searches six times over other SIMD implementations. Bioinformatics, 23(2), 156–161. https://doi.org/10.1093/bioinformatics/btl582
+
 Rognes, T. (2011). Faster Smith-Waterman database searches with inter-sequence SIMD parallelisation. BMC Bioinformatics, 12(1), 221. https://doi.org/10.1186/1471-2105-12-221
+
+Rudnicki, W. R., Jankowski, A., Modzelewski, A., Piotrowski, A., & Zadrożny, A. (2009). The new SIMD Implementation of the Smith-Waterman Algorithm on Cell Microprocessor. Fundamenta Informaticae, 96(1–2), 181–194. https://doi.org/10.3233/FI-2009-173
 
 Tran, T. T., Liu, Y., & Schmidt, B. (2016). Bit-parallel approximate pattern matching: Kepler GPU versus Xeon Phi. 26th International Symposium on Computer Architecture and High Performance Computing, 54, 128–138. https://doi.org/10.1016/j.parco.2015.11.001
 

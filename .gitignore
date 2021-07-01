@@ -1,3 +1,5 @@
 /build
 /dist
 /pyalign.egg-info
+/demo/cpp/build
+/demo/.ipynb_checkpoints

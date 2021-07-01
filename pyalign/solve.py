@@ -1,39 +1,43 @@
 import pyalign.algorithm
 import numpy as np
+import time
 
 from cached_property import cached_property
 from functools import lru_cache
 from pathlib import Path
-from .gaps import GapCost
+from .gaps import GapCost, ConstantGapCost
 
 
 class Problem:
-	def __init__(self, matrix, s=None, t=None, direction="maximize"):
-		self._matrix = matrix
-		if s is not None and matrix.shape[0] != len(s):
-			raise ValueError(f"sequence s [{len(s)}] does not match matrix shape {matrix.shape}")
-		if t is not None and matrix.shape[1] != len(t):
-			raise ValueError(f"sequence t [{len(t)}] does not match matrix shape {matrix.shape}")
+	def __init__(self, shape, s=None, t=None, direction="maximize", dtype=np.float32):
+		self._shape = tuple(shape)
+		if s is not None and shape[0] != len(s):
+			raise ValueError(f"sequence s [{len(s)}] does not match matrix shape {shape}")
+		if t is not None and shape[1] != len(t):
+			raise ValueError(f"sequence t [{len(t)}] does not match matrix shape {shape}")
 		self._s = s
 		self._t = t
 		self._direction = direction
+		self._dtype = dtype
+
+	@property
+	def shape(self):
+		return self._shape
 
 	@property
 	def direction(self):
 		return self._direction
 
 	@property
-	def matrix(self):
+	def dtype(self):
+		return self._dtype
+
+	def build_matrix(self, out):
 		"""
 		Returns a matrix M that describes an alignment problem for two sequences \( s \) and \( t \).
 		\( M_{i, j} \) contains the similarity between \( s_i \) and \( t_j \).
 		"""
-
-		return self._matrix
-
-	@property
-	def shape(self):
-		return self._matrix.shape
+		raise NotImplementedError()
 
 	@property
 	def s(self):
@@ -42,6 +46,47 @@ class Problem:
 	@property
 	def t(self):
 		return self._t
+
+
+class ProblemBatch:
+	def __init__(self, problems):
+		self._problems = problems
+
+		self._shape = problems[0].shape
+		if not all(p.shape == self._shape for p in problems):
+			raise ValueError("problems in a batch need to have same shape")
+
+		self._direction = problems[0].direction
+		if not all(p.direction == self._direction for p in problems):
+			raise ValueError("problems in a batch need to have same direction")
+
+		self._dtype = problems[0].dtype
+		if not all(p.dtype == self._dtype for p in problems):
+			raise ValueError("problems in a batch need to have same dtype")
+
+	@property
+	def problems(self):
+		return self._problems
+
+	@property
+	def shape(self):
+		return self._shape
+
+	@property
+	def direction(self):
+		return self._direction
+
+	@property
+	def dtype(self):
+		return self._dtype
+
+	def build_matrix(self):
+		shape = self._shape
+		problems = self._problems
+		m = np.empty((shape[0], shape[1], len(problems)), dtype=self._dtype)
+		for i, p in enumerate(problems):
+			p.build_matrix(m[:, :, i])
+		return m
 
 
 class Solution:
@@ -247,7 +292,10 @@ class Goal:
 
 
 class Solver:
-	def __init__(self, gap_cost: GapCost = None, direction="maximize", generate="alignment", **kwargs):
+	def __init__(
+		self, gap_cost: GapCost = None, direction="maximize",
+		generate="alignment", batch=False, **kwargs):
+
 		if generate is None:
 			goal = Goal("alignment", False)
 		elif isinstance(generate, str):
@@ -255,10 +303,18 @@ class Solver:
 		else:
 			raise ValueError(generate)
 
+		if gap_cost is None:
+			gap_cost = ConstantGapCost(0)
+
 		self._direction = direction
 		self._goal = goal
 
-		self._options = dict(gap_cost=gap_cost, direction=direction, goal=goal, **kwargs)
+		self._options = dict(
+			gap_cost=gap_cost,
+			direction=direction,
+			goal=goal,
+			batch=batch,
+			**kwargs)
 
 		max_len_s = self._options.get("max_len_s")
 		max_len_t = self._options.get("max_len_t")
@@ -270,28 +326,66 @@ class Solver:
 			self._prepared_solver = None
 
 		self._cache = SolverCache(self._options)
+		self._times = {}
 
-	def solve(self, problem):
-		if problem.direction != self._direction:
+	@property
+	def batch_size(self):
+		solver = self._prepared_solver
+		if solver is None:
+			solver = self._cache.get(1, 1)
+		return solver.batch_size
+
+	@property
+	def times(self):
+		return dict((k, f"{t:d} ns") for k, t in self._times.items())
+
+	def solve_batch(self, batch):
+		if batch.direction != self._direction:
 			raise ValueError(
-				f"problem given is '{problem.direction}', "
+				f"problem given is '{batch.direction}', "
 				f"but solver is configured to '{self._direction}'")
 
-		matrix = problem.matrix
+		t0 = time.perf_counter_ns()
+		matrix = batch.build_matrix()
+		t1 = time.perf_counter_ns()
+		self._times['build_matrix'] = t1 - t0
+
 		detail = self._goal.detail
 
 		solver = self._prepared_solver
 		if solver is None:
 			solver = self._cache.get(matrix.shape[0], matrix.shape[1])
 
+		t0 = time.perf_counter_ns()
 		if detail == "score":
-			return solver.solve_for_score(matrix)
+			result = solver.solve_for_score(matrix)
 		elif detail == "alignment":
-			return Alignment(problem, solver, solver.solve_for_alignment(matrix))
+			alignments = solver.solve_for_alignment(matrix)
+			result = [
+				Alignment(problem, solver, alignment)
+				for problem, alignment in zip(batch.problems, alignments)]
 		elif detail == "solution":
-			return Solution(problem, solver, solver.solve_for_solution(matrix))
+			solutions = solver.solve_for_solution(matrix)
+			result = [
+				Solution(problem, solver, solution)
+				for problem, solution in zip(batch.problems, solutions)]
 		else:
 			return ValueError(detail)
+		t1 = time.perf_counter_ns()
+
+		self._times['solve'] = t1 - t0
+		return result
+
+	def solve_problem(self, problem):
+		batch = ProblemBatch([problem])
+		result = self.solve_batch(batch)
+		return result[0]
+
+	def solve(self, x):
+		if isinstance(x, ProblemBatch):
+			return self.solve_batch(x)
+		else:
+			return self.solve_problem(x)
 
 
 class LocalSolver(Solver):

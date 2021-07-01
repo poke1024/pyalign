@@ -216,7 +216,14 @@ public:
 		uv.v = no_traceback_vec<CellType>();
 	}
 
-	inline void init(const IndexVec &u, const IndexVec &v, const MaskVec &mask) {
+	inline void init(const Index p_u, const Index p_v) {
+		uv.u.fill(p_u);
+		uv.v.fill(p_v);
+	}
+
+	inline void init(const Index p_u, const Index p_v, const MaskVec &mask) {
+		const IndexVec u = xt::full_like(IndexVec(), p_u);
+		const IndexVec v = xt::full_like(IndexVec(), p_v);
 		uv.u = xt::where(mask, u, uv.u);
 		uv.v = xt::where(mask, v, uv.v);
 	}
@@ -226,7 +233,9 @@ public:
 		uv.v = xt::where(mask, tb.uv.v, uv.v);
 	}
 
-	inline void push(const IndexVec &u, const IndexVec &v, const MaskVec &mask) {
+	inline void push(const Index p_u, const Index p_v, const MaskVec &mask) {
+		const IndexVec u = xt::full_like(IndexVec(), p_u);
+		const IndexVec v = xt::full_like(IndexVec(), p_v);
 		uv.u = xt::where(mask, u, uv.u);
 		uv.v = xt::where(mask, v, uv.v);
 	}
@@ -274,10 +283,17 @@ public:
 		}
 	}
 
-	inline void init(const IndexVec &u, const IndexVec &v, const MaskVec &mask) {
+	inline void init(const Index p_u, const Index p_v) {
+		for (int i = 0; i < BatchSize; i++) {
+			pts[i].clear();
+			pts[i].emplace_back(Pt{p_u, p_v});
+		}
+	}
+
+	inline void init(const Index p_u, const Index p_v, const MaskVec &mask) {
 		for (auto i : xt::flatnonzero<xt::layout_type::row_major>(mask)) {
 			pts[i].clear();
-			pts[i].emplace_back(Pt{u(i), v(i)});
+			pts[i].emplace_back(Pt{p_u, p_v});
 		}
 	}
 
@@ -287,9 +303,9 @@ public:
 		}
 	}
 
-	inline void push(const IndexVec &u, const IndexVec &v, const MaskVec &mask) {
+	inline void push(const Index p_u, const Index p_v, const MaskVec &mask) {
 		for (auto i : xt::flatnonzero<xt::layout_type::row_major>(mask)) {
-			pts[i].emplace_back(Pt{u(i), v(i)});
+			pts[i].emplace_back(Pt{p_u, p_v});
 		}
 	}
 
@@ -318,16 +334,46 @@ public:
 	}
 };
 
-template<typename Value, typename Index, int BatchSize>
+struct no_batch {
+	template<typename Value, typename Index>
+	struct size {
+		static constexpr int s = 1;
+	};
+};
+
+template<int S>
+struct custom_batch_size {
+	template<typename Value, typename Index>
+	struct size {
+		static constexpr int s = S;
+	};
+};
+
+struct machine_batch_size {
+	template<typename Value, typename Index>
+	struct size {
+#if __AVX512F__
+		static constexpr int s = 512 / (std::max(sizeof(Value), sizeof(Index)) * 8);
+#elif __AVX2__
+		static constexpr int s = 256 / (std::max(sizeof(Value), sizeof(Index)) * 8);
+#elif __SSE__
+		static constexpr int s = 128 / (std::max(sizeof(Value), sizeof(Index)) * 8);
+#else
+		static constexpr int s = 1;
+#endif
+	};
+};
+
+template<typename Value, typename Index, typename Batch = no_batch>
 struct cell_type {
 	typedef Value value_type;
 	typedef Index index_type;
 
-	typedef xt::xtensor_fixed<Value, xt::xshape<BatchSize>> value_vec_type;
-	typedef xt::xtensor_fixed<Index, xt::xshape<BatchSize>> index_vec_type;
-	typedef xt::xtensor_fixed<bool, xt::xshape<BatchSize>> mask_vec_type;
+	static constexpr int batch_size = Batch::template size<Value, Index>::s;
 
-	static constexpr int batch_size = BatchSize;
+	typedef xt::xtensor_fixed<Value, xt::xshape<batch_size>> value_vec_type;
+	typedef xt::xtensor_fixed<Index, xt::xshape<batch_size>> index_vec_type;
+	typedef xt::xtensor_fixed<bool, xt::xshape<batch_size>> mask_vec_type;
 };
 
 template<typename Goal, typename Direction>
@@ -744,8 +790,8 @@ public:
 
 		inline auto push(
 			const ValueVec &val,
-			const IndexVec &u,
-			const IndexVec &v) {
+			const Index u,
+			const Index v) {
 
 			m_val = Direction::opt(val, m_val);
 			return cont{m_val};
@@ -789,8 +835,8 @@ public:
 
 		inline auto push(
 			const ValueVec &val,
-			const IndexVec &u,
-			const IndexVec &v) {
+			const Index u,
+			const Index v) {
 
 			m_val = val;
 			return cont{m_val};
@@ -829,13 +875,13 @@ public:
 
 		inline auto push(
 			const ValueVec &val,
-			const IndexVec &u,
-			const IndexVec &v) {
+			const Index u,
+			const Index v) {
 
 			if (BatchSize == 1 && Traceback::max_degree_1) {
 				if (Direction::is_opt(val(0), m_val(0))) {
 					m_val = val;
-					m_tb.init(u, v, xt::ones<bool>({BatchSize}));
+					m_tb.init(u, v);
 				}
 			} else {
 				m_tb.init(u, v, Direction::opt_q(val, m_val));
@@ -902,11 +948,11 @@ public:
 
 		inline auto push(
 			const ValueVec &val,
-			const IndexVec &u,
-			const IndexVec &v) {
+			const Index u,
+			const Index v) {
 
 			m_val = val;
-			m_tb.init(u, v, xt::ones<bool>({BatchSize}));
+			m_tb.init(u, v);
 			return cont{m_val, m_tb};
 		}
 
@@ -1173,6 +1219,8 @@ struct LocalInitializers {
 template<typename CellType, typename ProblemType>
 class Local {
 public:
+	typedef LocalInitializers Initializers;
+
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::index_vec_type IndexVec;
@@ -1198,8 +1246,8 @@ public:
 		auto acc = Accumulator::create(val, tb);
 		return acc.push(
 			xt::zeros<Value>({BatchSize}),
-			no_traceback_vec<CellType>(),
-			no_traceback_vec<CellType>());
+			no_traceback<Index>(),
+			no_traceback<Index>());
 	}
 
 	inline Local(const LocalInitializers &p_init) {
@@ -1214,7 +1262,9 @@ public:
 		Vector &&p_vector,
 		const xt::xtensor<Value, 1> &p_gap_cost) const {
 
-		p_vector.fill(ZERO);
+		for (size_t i = 0; i < p_vector.size(); i++) {
+			p_vector(i).fill(ZERO);
+		}
 	}
 
 	inline Value zero() const {
@@ -1317,6 +1367,8 @@ struct GlobalInitializers {
 template<typename CellType, typename ProblemType>
 class Global {
 public:
+	typedef GlobalInitializers Initializers;
+
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
@@ -1344,10 +1396,13 @@ public:
 		const xt::xtensor<Value, 1> &p_gap_cost) const {
 
 		if (p_vector.size() != p_gap_cost.size()) {
-			throw std::runtime_error("size mismatch in init_border_case");
+			throw std::runtime_error(
+				"size mismatch in Global::init_border_case");
 		}
 
-		p_vector = p_gap_cost;
+		for (size_t i = 0; i < p_vector.size(); i++) {
+			p_vector(i).fill(p_gap_cost(i));
+		}
 	}
 
 	inline Global(const GlobalInitializers&) {
@@ -1408,6 +1463,8 @@ struct SemiglobalInitializers {
 template<typename CellType, typename ProblemType>
 class Semiglobal {
 public:
+	typedef SemiglobalInitializers Initializers;
+
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
@@ -1434,7 +1491,9 @@ public:
 		Vector &&p_vector,
 		const xt::xtensor<Value, 1> &p_gap_cost) const {
 
-		p_vector.fill(0);
+		for (size_t i = 0; i < p_vector.size(); i++) {
+			p_vector(i).fill(0);
+		}
 	}
 
 	inline Semiglobal(const SemiglobalInitializers&) {
@@ -1632,10 +1691,17 @@ template<typename CellType, typename ProblemType>
 using SolutionRef = std::shared_ptr<Solution<CellType, ProblemType>>;
 
 
+struct matrix_name {
+	constexpr static int D = 0;
+	constexpr static int P = 1;
+	constexpr static int Q = 2;
+};
+
 template<typename CellType, typename ProblemType, template<typename, typename> class Locality, int LayerCount>
 class Solver {
 public:
 	typedef typename CellType::value_type Value;
+	typedef typename CellType::value_vec_type ValueVec;
 	typedef typename CellType::index_type Index;
 	typedef typename ProblemType::direction_type Direction;
 
@@ -1644,18 +1710,17 @@ protected:
 	MatrixFactory<CellType, ProblemType, LayerCount> m_factory;
 	const AlgorithmMetaDataRef m_algorithm;
 
-	typedef TracebackSupport<typename ProblemType::goal_type> TBS;
-	typedef typename TBS::template Accumulator<CellType, ProblemType> Accumulator;
-
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to_nolocal(ValueCell &val, TracebackCell &tb) const {
+		typedef TracebackSupport<typename ProblemType::goal_type> TBS;
+		typedef typename TBS::template Accumulator<CellType, ProblemType> Accumulator;
+
 		return Accumulator::create(val, tb);
 	}
 
 public:
-	template<typename LocalityInitializers>
 	inline Solver(
-		const LocalityInitializers &p_locality_init,
+		const typename Locality<CellType, ProblemType>::Initializers &p_locality_init,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
 		const AlgorithmMetaDataRef &p_algorithm) :
@@ -1673,32 +1738,42 @@ public:
 		return m_factory.max_len_t();
 	}
 
+	inline constexpr int batch_size() const {
+		return CellType::batch_size;
+	}
+
 	template<int Layer>
 	inline auto matrix(const Index len_s, const Index len_t) {
 		return m_factory.make<Layer>(len_s, len_t);
 	}
 
-	inline Value score(
+	inline ValueVec score(
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix = m_factory.template make<0>(len_s, len_t);
+		auto matrix = m_factory.template make<matrix_name::D>(len_s, len_t);
 		build_nothing nothing;
 		auto tb = make_traceback_iterator(m_locality, matrix, nothing);
-		const auto tb_val = tb.next(0);
-		return tb_val.value_or(Direction::template worst_val<Value>());
+
+		ValueVec scores;
+		for (int i = 0; i < CellType::batch_size; i++) {
+			const auto tb_val = tb.next(i);
+			scores(i) = tb_val.value_or(Direction::template worst_val<Value>());
+		}
+		return scores;
 	}
 
 	template<typename Alignment>
 	inline Value alignment(
 		const size_t len_s,
 		const size_t len_t,
-		Alignment &alignment) const {
+		Alignment &alignment,
+		const int p_batch_index = 0) const {
 
-		auto matrix = m_factory.template make<0>(len_s, len_t);
+		auto matrix = m_factory.template make<matrix_name::D>(len_s, len_t);
 		build_alignment<Alignment> build(alignment);
 		auto tb = make_traceback_iterator(m_locality, matrix, build);
-		const auto tb_val = tb.next(0);
+		const auto tb_val = tb.next(p_batch_index);
 		return tb_val.value_or(Direction::template worst_val<Value>());
 	}
 
@@ -1706,7 +1781,8 @@ public:
 	SolutionRef<CellType, ProblemType> solution(
 		const size_t len_s,
 		const size_t len_t,
-		Alignment &alignment) const {
+		Alignment &alignment,
+		const int p_batch_index = 0) const {
 
 		const SolutionRef<CellType, ProblemType> solution =
 			std::make_shared<Solution<CellType, ProblemType>>();
@@ -1718,9 +1794,9 @@ public:
 			build_path<Index>(), build_alignment<Alignment>(alignment)
 		);
 
-		auto matrix = m_factory.template make<0>(len_s, len_t);
+		auto matrix = m_factory.template make<matrix_name::D>(len_s, len_t);
 		auto tb = make_traceback_iterator(m_locality, matrix, build);
-		const auto tb_val = tb.next(0);
+		const auto tb_val = tb.next(p_batch_index);
 		solution->m_path = build.template get<0>().path();
 		solution->m_score = tb_val.value_or(Direction::template worst_val<Value>());
 
@@ -1765,6 +1841,7 @@ public:
 	typedef typename ProblemType::direction_type Direction;
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
+	typedef typename Locality<CellType, ProblemType>::Initializers LocalityInit;
 
 private:
 	const Value m_gap_cost_s;
@@ -1773,13 +1850,12 @@ private:
 public:
 	typedef Value GapCostSpec;
 
-	template<typename LocalityInitializers>
 	inline LinearGapCostSolver(
-		const LocalityInitializers &p_locality_init,
 		const Value p_gap_cost_s,
 		const Value p_gap_cost_t,
 		const size_t p_max_len_s,
-		const size_t p_max_len_t) :
+		const size_t p_max_len_t,
+		const LocalityInit p_locality_init = LocalityInit()) :
 
 		AlignmentSolver<CellType, ProblemType, Locality, 1>(
 			p_locality_init,
@@ -1792,7 +1868,7 @@ public:
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
 
-		auto values = this->m_factory.template values<0>();
+		auto values = this->m_factory.template values<matrix_name::D>();
 		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
 		this->m_locality.init_border_case(
@@ -1817,7 +1893,7 @@ public:
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix = this->m_factory.template make<0>(len_s, len_t);
+		auto matrix = this->m_factory.template make<matrix_name::D>(len_s, len_t);
 
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
@@ -1875,6 +1951,7 @@ public:
 	typedef typename ProblemType::direction_type Direction;
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
+	typedef typename Locality<CellType, ProblemType>::Initializers LocalityInit;
 
 	typedef AffineCost<Value> Cost;
 
@@ -1883,13 +1960,12 @@ private:
 	const Cost m_gap_cost_t;
 
 public:
-	template<typename LocalityInitializers>
 	inline AffineGapCostSolver(
-		const LocalityInitializers &p_locality_init,
 		const Cost &p_gap_cost_s,
 		const Cost &p_gap_cost_t,
 		const size_t p_max_len_s,
-		const size_t p_max_len_t) :
+		const size_t p_max_len_t,
+		const LocalityInit p_locality_init = LocalityInit()) :
 
 		AlignmentSolver<CellType, ProblemType, Locality, 3>(
 			p_locality_init,
@@ -1899,9 +1975,9 @@ public:
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
 
-		auto matrix_D = this->m_factory.template make<0>(p_max_len_s, p_max_len_t);
-		auto matrix_P = this->m_factory.template make<1>(p_max_len_s, p_max_len_t);
-		auto matrix_Q = this->m_factory.template make<2>(p_max_len_s, p_max_len_t);
+		auto matrix_D = this->m_factory.template make<matrix_name::D>(p_max_len_s, p_max_len_t);
+		auto matrix_P = this->m_factory.template make<matrix_name::P>(p_max_len_s, p_max_len_t);
+		auto matrix_Q = this->m_factory.template make<matrix_name::Q>(p_max_len_s, p_max_len_t);
 
 		auto D = matrix_D.template values<0, 0>();
 		auto P = matrix_P.template values<0, 0>();
@@ -1909,8 +1985,12 @@ public:
 
 		const auto inf = std::numeric_limits<Value>::infinity() * (Direction::is_minimize() ? 1 : -1);
 
-		xt::view(Q, xt::all(), 0).fill(inf);
-		xt::view(P, 0, xt::all()).fill(inf);
+		for (auto &cell : xt::view(Q, xt::all(), 0)) {
+			cell.fill(inf);
+		}
+		for (auto &cell : xt::view(P, 0, xt::all())) {
+			cell.fill(inf);
+		}
 
 		// setting D(m, 0) = P(m, 0) = w(m)
 		this->m_locality.init_border_case(
@@ -1951,9 +2031,9 @@ public:
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix_D = this->m_factory.template make<0>(len_s, len_t);
-		auto matrix_P = this->m_factory.template make<1>(len_s, len_t);
-		auto matrix_Q = this->m_factory.template make<2>(len_s, len_t);
+		auto matrix_D = this->m_factory.template make<matrix_name::D>(len_s, len_t);
+		auto matrix_P = this->m_factory.template make<matrix_name::P>(len_s, len_t);
+		auto matrix_Q = this->m_factory.template make<matrix_name::Q>(len_s, len_t);
 
 		auto D = matrix_D.template values_n<1, 1>();
 		auto tb_D = matrix_D.template traceback_n<1, 1>();
@@ -2044,6 +2124,7 @@ public:
 	typedef typename ProblemType::direction_type Direction;
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
+	typedef typename Locality<CellType, ProblemType>::Initializers LocalityInit;
 
 private:
 	const xt::xtensor<Value, 1> m_gap_cost_s;
@@ -2052,13 +2133,12 @@ private:
 public:
 	typedef GapTensorFactory<Value> GapCostSpec;
 
-	template<typename LocalityInitializers>
 	inline GeneralGapCostSolver(
-		const LocalityInitializers &p_locality_init,
 		const GapTensorFactory<Value> &p_gap_cost_s,
 		const GapTensorFactory<Value> &p_gap_cost_t,
 		const size_t p_max_len_s,
-		const size_t p_max_len_t) :
+		const size_t p_max_len_t,
+		const LocalityInit p_locality_init = LocalityInit()) :
 
 		AlignmentSolver<CellType, ProblemType, Locality, 1>(
 			p_locality_init,
@@ -2071,7 +2151,7 @@ public:
 		check_gap_tensor_shape(m_gap_cost_s, p_max_len_s + 1);
 		check_gap_tensor_shape(m_gap_cost_t, p_max_len_t + 1);
 
-		auto values = this->m_factory.template values<0>();
+		auto values = this->m_factory.template values<matrix_name::D>();
 		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
 		this->m_locality.init_border_case(
@@ -2099,7 +2179,7 @@ public:
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix = this->m_factory.template make<0>(len_s, len_t);
+		auto matrix = this->m_factory.template make<matrix_name::D>(len_s, len_t);
 
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
@@ -2156,9 +2236,12 @@ public:
 			p_max_len_t,
 			std::make_shared<AlgorithmMetaData>("DTW", "n^2", "n^2")) {
 
-		auto values = this->m_factory.template values<0>();
-		values.fill(std::numeric_limits<Value>::infinity() * (Direction::is_minimize() ? 1 : -1));
-		values.at(0, 0) = 0;
+		auto values = this->m_factory.template values<matrix_name::D>();
+		const auto worst = std::numeric_limits<Value>::infinity() * (Direction::is_minimize() ? 1 : -1);
+		for (auto &cell : values) {
+			cell.fill(worst);
+		}
+		values.at(0, 0).fill(0);
 	}
 
 	template<typename Pairwise>
@@ -2177,7 +2260,7 @@ public:
 		// than the Algorithm it Approximates. IEEE Transactions on Knowledge and Data
 		// Engineering, 1–1. https://doi.org/10.1109/TKDE.2020.3033752
 
-		auto matrix = this->m_factory.template make<0>(len_s, len_t);
+		auto matrix = this->m_factory.template make<matrix_name::D>(len_s, len_t);
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
 
