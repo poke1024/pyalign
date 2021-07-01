@@ -92,13 +92,10 @@ What you will *not* find in pyalign:
 
 * multiple or all best alignments. At the moment, pyalign only
 returns one best alignment
-* advanced algorithms - the implemented algorithms are O(n^2)
-and O(n^3), you won't find anything with sub quadratic runtime
-complexities here
+* acceleration via SIMD for single computations, see e.g. (Farrar 2007)
+* acceleration via GPU, see e.g. (Barnes, 2020)
 * approximate or randomized algorithms
 * advanced preprocessing or indexing
-* any massively parallel computation via GPU like in
-(Rognes, 2011), (Tran et al., 2016) and (Barnes, 2020)
 
 If you need any of the above, you might want to take a look at:
 
