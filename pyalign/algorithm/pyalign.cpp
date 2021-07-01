@@ -213,8 +213,15 @@ public:
 			return v;
 		};
 
-		m_solver.solve(get_sim, len_s, len_t);
-		return m_solver.score(len_s, len_t);
+		ValueVec scores;
+
+		{
+			py::gil_scoped_release release;
+			m_solver.solve(get_sim, len_s, len_t);
+			scores = m_solver.score(len_s, len_t);
+		}
+
+		return scores;
 	}
 
 	virtual py::tuple solve_for_alignment(
@@ -229,16 +236,25 @@ public:
 			return v;
 		};
 
-		m_solver.solve(get_sim, len_s, len_t);
+		AlignmentRef alignments[CellType::batch_size];
+
+		{
+			py::gil_scoped_release release;
+			m_solver.solve(get_sim, len_s, len_t);
+
+			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
+				AlignmentRef alignment = std::make_shared<Alignment>();
+				const float score = m_solver.alignment(
+					len_s, len_t, *alignment.get(), batch_i);
+				alignment->set_score(score);
+				alignments[batch_i] = alignment;
+			}
+		}
 
 		py::object py_alignments[CellType::batch_size];
 
 		for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-			AlignmentRef alignment = std::make_shared<Alignment>();
-			const float score = m_solver.alignment(
-				len_s, len_t, *alignment.get(), batch_i);
-			alignment->set_score(score);
-			py_alignments[batch_i] = py::cast(alignment);
+			py_alignments[batch_i] = py::cast(alignments[batch_i]);
 		}
 
 		return make_obj_tuple(
@@ -258,17 +274,26 @@ public:
 			return v;
 		};
 
-		m_solver.solve(get_sim, len_s, len_t);
+		SolutionRef solutions[CellType::batch_size];
+
+		{
+			py::gil_scoped_release release;
+			m_solver.solve(get_sim, len_s, len_t);
+
+			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
+				const auto alignment = std::make_shared<Alignment>();
+				SolutionRef solution = std::make_shared<SolutionImpl<CellType, ProblemType>>(
+					m_solver.solution(len_s, len_t, *alignment.get(), batch_i),
+					alignment,
+					batch_i);
+				solutions[batch_i] = solution;
+			}
+		}
 
 		py::object py_solutions[CellType::batch_size];
 
 		for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-			const auto alignment = std::make_shared<Alignment>();
-			SolutionRef solution = std::make_shared<SolutionImpl<CellType, ProblemType>>(
-				m_solver.solution(len_s, len_t, *alignment.get(), batch_i),
-				alignment,
-				batch_i);
-			py_solutions[batch_i] = py::cast(solution);
+			py_solutions[batch_i] = py::cast(solutions[batch_i]);
 		}
 
 		return make_obj_tuple(
