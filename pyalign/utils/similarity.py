@@ -17,7 +17,7 @@ class Encoder:
 		return self._alphabet
 
 
-class SimilarityOperator:
+class Operator:
 	def get(self, u, v):
 		raise NotImplementedError()
 
@@ -25,7 +25,7 @@ class SimilarityOperator:
 		raise NotImplementedError()
 
 
-class CoalescedSimilarity(SimilarityOperator):
+class Coalesced(Operator):
 	def __init__(self, *ops):
 		self._ops = ops
 
@@ -41,7 +41,7 @@ class CoalescedSimilarity(SimilarityOperator):
 			op.build_matrix(encoder, matrix)
 
 
-class PairwiseSimilarity(SimilarityOperator):
+class Pairwise(Operator):
 	def __init__(self, pairs: Dict):
 		self._dict = pairs
 
@@ -55,7 +55,7 @@ class PairwiseSimilarity(SimilarityOperator):
 			matrix[j, i] = w
 
 
-class BinarySimilarity(SimilarityOperator):
+class Binary(Operator):
 	def __init__(self, eq=1, ne=-1):
 		self._eq = eq
 		self._ne = ne

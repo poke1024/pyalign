@@ -1,6 +1,7 @@
 import pyalign.algorithm
 import numpy as np
 import time
+import contextlib
 
 from cached_property import cached_property
 from functools import lru_cache
@@ -64,6 +65,9 @@ class ProblemBatch:
 		if not all(p.dtype == self._dtype for p in problems):
 			raise ValueError("problems in a batch need to have same dtype")
 
+	def __len__(self):
+		return len(self._problems)
+
 	@property
 	def problems(self):
 		return self._problems
@@ -79,14 +83,6 @@ class ProblemBatch:
 	@property
 	def dtype(self):
 		return self._dtype
-
-	def build_matrix(self):
-		shape = self._shape
-		problems = self._problems
-		m = np.empty((shape[0], shape[1], len(problems)), dtype=self._dtype)
-		for i, p in enumerate(problems):
-			p.build_matrix(m[:, :, i])
-		return m
 
 
 class Solution:
@@ -240,20 +236,27 @@ class SolverCache:
 		self._options = options
 		self._max_lim_s = 0
 		self._max_lim_t = 0
-		self._solver = None
+		self._solvers = {}
 
-	def get(self, len_s, len_t):
+	def ensure(self, len_s, len_t):
 		lim_s = max(self._max_lim_s, next_power_of_2(len_s))
 		lim_t = max(self._max_lim_t, next_power_of_2(len_t))
 
 		if lim_s > self._max_lim_s or lim_t > self._max_lim_t:
-			self._solver = pyalign.algorithm.create_solver(
-				lim_s, lim_t, self._options)
-
 			self._max_lim_s = lim_s
 			self._max_lim_t = lim_t
+			self._solvers = {}
 
-		return self._solver
+	def get(self, len_s, len_t, batch):
+		self.ensure(len_s, len_t)
+		solver = self._solvers.get(batch)
+		if solver is None:
+			options = self._options.copy()
+			options['batch'] = batch
+			solver = pyalign.algorithm.create_solver(
+				self._max_lim_s, self._max_lim_t, options)
+			self._solvers[batch] = solver
+		return solver
 
 
 class Goal:
@@ -291,10 +294,47 @@ class Goal:
 		return self._count
 
 
+class NoTimings:
+	@contextlib.contextmanager
+	def measure(self, name):
+		yield
+
+
+class Timings:
+	def __init__(self, solver):
+		self._solver = solver
+		self._timings = dict()
+
+	def __enter__(self):
+		self._solver._timings = self
+		return self
+
+	def __exit__(self, type, value, traceback):
+		self._solver._timings = NoTimings()
+
+	@contextlib.contextmanager
+	def measure(self, name):
+		t0 = time.perf_counter_ns()
+		yield
+		t1 = time.perf_counter_ns()
+		self._timings[name] = self._timings.get(name, 0) + (t1 - t0)
+
+	def get(self):
+		return self._timings
+
+	def _ipython_display_(self):
+		for k, t in self._timings.items():
+			print(f"{k}: {t / 1000:.1f} µs")
+
+
+def chunks(items, n):
+	for i in range(0, len(items), n):
+		yield items[i:i + n]
+
+
 class Solver:
 	def __init__(
-		self, gap_cost: GapCost = None, direction="maximize",
-		generate="alignment", batch=False, **kwargs):
+		self, gap_cost: GapCost = None, direction="maximize", generate="alignment", **kwargs):
 
 		if generate is None:
 			goal = Goal("alignment", False)
@@ -313,31 +353,23 @@ class Solver:
 			gap_cost=gap_cost,
 			direction=direction,
 			goal=goal,
-			batch=batch,
 			**kwargs)
+
+		self._cache = SolverCache(self._options)
+		self._timings = NoTimings()
 
 		max_len_s = self._options.get("max_len_s")
 		max_len_t = self._options.get("max_len_t")
 
 		if max_len_s and max_len_t:
-			self._prepared_solver = pyalign.algorithm.create_solver(
-				max_len_s, max_len_t, self._options)
-		else:
-			self._prepared_solver = None
-
-		self._cache = SolverCache(self._options)
-		self._times = {}
+			self._cache.ensure(max_len_s, max_len_t)
 
 	@property
 	def batch_size(self):
-		solver = self._prepared_solver
-		if solver is None:
-			solver = self._cache.get(1, 1)
-		return solver.batch_size
+		return self._cache.get(1, 1, batch=True).batch_size
 
-	@property
-	def times(self):
-		return dict((k, f"{t:d} ns") for k, t in self._times.items())
+	def timings(self):
+		return Timings(self)
 
 	def solve_batch(self, batch):
 		if batch.direction != self._direction:
@@ -345,35 +377,39 @@ class Solver:
 				f"problem given is '{batch.direction}', "
 				f"but solver is configured to '{self._direction}'")
 
-		t0 = time.perf_counter_ns()
-		matrix = batch.build_matrix()
-		t1 = time.perf_counter_ns()
-		self._times['build_matrix'] = t1 - t0
+		is_batch = len(batch) > 1
+		shape = batch.shape
+		solver = self._cache.get(shape[0], shape[1], batch=is_batch)
+		batch_size = solver.batch_size
 
 		detail = self._goal.detail
+		result = []
 
-		solver = self._prepared_solver
-		if solver is None:
-			solver = self._cache.get(matrix.shape[0], matrix.shape[1])
+		matrix = np.empty((shape[0], shape[1], batch_size), dtype=batch.dtype)
 
-		t0 = time.perf_counter_ns()
-		if detail == "score":
-			result = solver.solve_for_score(matrix)
-		elif detail == "alignment":
-			alignments = solver.solve_for_alignment(matrix)
-			result = [
-				Alignment(problem, solver, alignment)
-				for problem, alignment in zip(batch.problems, alignments)]
-		elif detail == "solution":
-			solutions = solver.solve_for_solution(matrix)
-			result = [
-				Solution(problem, solver, solution)
-				for problem, solution in zip(batch.problems, solutions)]
-		else:
-			return ValueError(detail)
-		t1 = time.perf_counter_ns()
+		for i in range(0, len(batch), batch_size):
+			problems_chunk = batch.problems[i:i + batch_size]
 
-		self._times['solve'] = t1 - t0
+			with self._timings.measure("build_matrix"):
+				for i, p in enumerate(problems_chunk):
+					p.build_matrix(matrix[:, :, i])
+
+			with self._timings.measure("solve"):
+				if detail == "score":
+					result.extend(solver.solve_for_score(matrix)[:len(problems_chunk)])
+				elif detail == "alignment":
+					alignments = solver.solve_for_alignment(matrix)
+					result.extend([
+						Alignment(problem, solver, alignment)
+						for problem, alignment in zip(problems_chunk, alignments)])
+				elif detail == "solution":
+					solutions = solver.solve_for_solution(matrix)
+					result.extend([
+						Solution(problem, solver, solution)
+						for problem, solution in zip(problems_chunk, solutions)])
+				else:
+					return ValueError(detail)
+
 		return result
 
 	def solve_problem(self, problem):

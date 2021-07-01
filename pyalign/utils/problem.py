@@ -16,27 +16,43 @@ class SimpleProblem(Problem):
 
 
 class SimpleProblemFactory:
-	def __init__(self, sim: SimilarityOperator, dtype=np.float32):
+	def __init__(self, sim: Operator, direction="maximize", dtype=np.float32):
 		self._sim = sim
+		self._direction = direction
 		self._dtype = dtype
 
-	def new_problem(self, s, t, direction="maximize"):
+	def new_problem(self, s, t):
 		return SimpleProblem(
 			self._sim, (len(s), len(t)), s, t,
-			direction=direction, dtype=self._dtype)
+			direction=self._direction, dtype=self._dtype)
+
+
+class EncoderProblem(Problem):
+	def __init__(self, sim, encoder, *args, **kwargs):
+		self._sim = sim
+		self._encoder = encoder
+		super().__init__(*args, **kwargs)
+
+	def build_matrix(self, out):
+		encoder = self._encoder
+		out[:, :] = self._sim[np.ix_(
+			encoder.encode(self._s),
+			encoder.encode(self._t))]
 
 
 class EncoderProblemFactory:
-	def __init__(self, sim: SimilarityOperator, encoder: Encoder):
+	def __init__(self, sim: Operator, encoder: Encoder, direction="maximize", dtype=np.float32):
 		self._encoder = encoder
 		n = len(encoder.alphabet)
 		self._sim = np.empty((n, n), dtype=np.float32)
 		sim.build_matrix(encoder, self._sim)
+		self._direction = direction
+		self._dtype = dtype
 
-	def new_problem(self, s, t, direction="maximize"):
-		return Problem(self._sim[np.ix_(
-			self._encoder.encode(s),
-			self._encoder.encode(t))][:, :, np.newaxis], s, t, direction=direction)
+	def new_problem(self, s, t):
+		return EncoderProblem(
+			self._sim, self._encoder, (len(s), len(t)), s, t,
+			direction=self._direction, dtype=self._dtype)
 
 
 class SpatialProblemFactory:
