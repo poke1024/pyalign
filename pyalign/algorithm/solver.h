@@ -1034,144 +1034,207 @@ public:
 	}
 };
 
+template<typename T, int N, typename Context, int... I>
+std::array<T, N> seq_array_impl(const Context &c, std::integer_sequence<int, I...>) {
+	return {T(c, I)...};
+}
+
+template<typename T, size_t N, typename Context>
+auto seq_array(const Context &c) {
+	using Sequence = std::make_integer_sequence<int, N>;
+	return seq_array_impl<T, N, Context>(c, Sequence{});
+}
+
 template<bool Multiple, typename CellType, typename ProblemType, typename Strategy, typename Matrix>
-class TracebackIterator;
+class TracebackIterators;
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix>
-class TracebackIterator<false, CellType, ProblemType, Strategy, Matrix> {
+class TracebackIterators<false, CellType, ProblemType, Strategy, Matrix> {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
 	constexpr static int BatchSize = CellType::batch_size;
 
+	struct Context {
+		const Strategy strategy;
+		Matrix &matrix;
+	};
+
+	class Iterator {
+	private:
+		const Context m_context;
+		const int m_batch_index;
+		Stack1<std::pair<Index, Index>> m_stack;
+
+	public:
+		inline Iterator(
+			const Context &p_context,
+			const int p_batch_index) :
+
+			m_context(p_context),
+			m_batch_index(p_batch_index) {
+		}
+
+		inline void push(std::pair<Index, Index> &&p) {
+			m_stack.push(std::move(p));
+		}
+
+		template<typename Path>
+		inline std::optional<Value> next(Path &p_path) {
+			if (m_stack.empty()) {
+				return std::optional<Value>();
+			}
+
+			const auto values = m_context.matrix.template values<1, 1>();
+
+			const auto initial_uv = m_stack.top();
+			m_stack.pop();
+
+			Index u = std::get<0>(initial_uv);
+			Index v = std::get<1>(initial_uv);
+			const auto best_val = values(u, v)(m_batch_index);
+
+			if (m_context.strategy.has_trace()) { // && m_path.wants_path()
+				const auto len_s = m_context.matrix.len_s();
+				const auto len_t = m_context.matrix.len_t();
+				p_path.begin(len_s, len_t);
+
+				const auto traceback = m_context.matrix.template traceback<1, 1>();
+
+				while (m_context.strategy.continue_traceback(u, v, values(u, v)(m_batch_index))) {
+					const Index last_u = u;
+					const Index last_v = v;
+
+					const auto &t = traceback(u, v);
+					u = t.u(m_batch_index, 0);
+					v = t.v(m_batch_index, 0);
+
+					p_path.step(last_u, last_v, u, v);
+				}
+			}
+
+			return best_val;
+		}
+	};
+
 private:
-	const Strategy m_strategy;
-	Matrix &m_matrix;
-	Stack1<std::pair<Index, Index>> m_seed[BatchSize];
+	std::array<Iterator, BatchSize> m_iterators;
 
 public:
-	inline TracebackIterator(
-		Strategy &&p_strategy,
+	inline TracebackIterators(
+		const Strategy &p_strategy,
 		Matrix &p_matrix) :
-		m_strategy(p_strategy),
-		m_matrix(p_matrix) {
 
-		m_strategy.seeds().generate(m_seed);
+		m_iterators(seq_array<Iterator, BatchSize, Context>(
+			Context{p_strategy, p_matrix})) {
+
+		p_strategy.seeds().generate(m_iterators);
 	}
 
-	template<typename Path>
-	inline std::optional<Value> next(const int p_batch_index, Path &p_path) {
-		auto &seed = m_seed[p_batch_index];
-
-		if (seed.empty()) {
-			return std::optional<Value>();
-		}
-
-		const auto values = m_matrix.template values<1, 1>();
-
-		const auto initial_uv = seed.top();
-		seed.pop();
-
-		Index u = std::get<0>(initial_uv);
-		Index v = std::get<1>(initial_uv);
-		const auto best_val = values(u, v)(p_batch_index);
-
-		if (m_strategy.has_trace()) { // && m_path.wants_path()
-			const auto len_s = m_matrix.len_s();
-			const auto len_t = m_matrix.len_t();
-			p_path.begin(len_s, len_t);
-
-			const auto traceback = m_matrix.template traceback<1, 1>();
-
-			while (m_strategy.continue_traceback(u, v, values(u, v)(p_batch_index))) {
-				const Index last_u = u;
-				const Index last_v = v;
-
-				const auto &t = traceback(u, v);
-				u = t.u(p_batch_index, 0);
-				v = t.v(p_batch_index, 0);
-
-				p_path.step(last_u, last_v, u, v);
-			}
-		}
-
-		return best_val;
+	inline auto &iterator(const int p_batch_index) {
+		return m_iterators[p_batch_index];
 	}
 };
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix>
-class TracebackIterator<true, CellType, ProblemType, Strategy, Matrix> {
+class TracebackIterators<true, CellType, ProblemType, Strategy, Matrix> {
 public:
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::value_type Value;
 
 	constexpr static int BatchSize = CellType::batch_size;
 
+	struct Context {
+		const Strategy strategy;
+		Matrix &matrix;
+	};
+
+	class Iterator {
+	private:
+		const Context m_context;
+		const int m_batch_index;
+		std::stack<std::pair<Index, Index>> m_stack;
+
+	public:
+		inline Iterator(
+			const Context &p_context,
+			const int p_batch_index) :
+
+			m_context(p_context),
+			m_batch_index(p_batch_index) {
+		}
+
+		inline void push(std::pair<Index, Index> &&p) {
+			m_stack.push(std::move(p));
+		}
+
+		template<typename Path>
+		inline std::optional<Value> next(Path &p_path) {
+			// FIXME implement path splitting.
+
+			if (m_stack.empty()) {
+				return std::optional<Value>();
+			}
+
+			const auto values = m_context.matrix.template values<1, 1>();
+
+			const auto initial_uv = m_stack.top();
+			m_stack.pop();
+
+			Index u = std::get<0>(initial_uv);
+			Index v = std::get<1>(initial_uv);
+			const auto best_val = values(u, v)(m_batch_index);
+
+			if (m_context.strategy.has_trace()) { // && m_path.wants_path()
+				const auto len_s = m_context.matrix.len_s();
+				const auto len_t = m_context.matrix.len_t();
+				p_path.begin(len_s, len_t);
+
+				const auto traceback = m_context.matrix.template traceback<1, 1>();
+
+				while (m_context.strategy.continue_traceback(u, v, values(u, v)(m_batch_index))) {
+					const Index last_u = u;
+					const Index last_v = v;
+
+					const auto &t = traceback(u, v);
+					u = t.u(m_batch_index, 0);
+					v = t.v(m_batch_index, 0);
+
+					p_path.step(last_u, last_v, u, v);
+				}
+			}
+
+			return best_val;
+		}
+	};
+
 private:
-	const Strategy m_strategy;
-	Matrix &m_matrix;
-	std::stack<std::pair<Index, Index>> m_uvs[BatchSize];
+	std::array<Iterator, BatchSize> m_iterators;
 
 public:
-	inline TracebackIterator(
-		Strategy &&p_strategy,
+	inline TracebackIterators(
+		const Strategy &p_strategy,
 		Matrix &p_matrix) :
-		m_strategy(p_strategy),
-		m_matrix(p_matrix) {
 
-		m_strategy.seeds().generate(m_uvs);
+		m_iterators(seq_array<Iterator, BatchSize, Context>(
+			Context{p_strategy, p_matrix})) {
+
+		p_strategy.seeds().generate(m_iterators);
 	}
 
-	template<typename Path>
-	inline std::optional<Value> next(const int p_batch_index, Path &p_path) {
-		// FIXME implement path splitting.
-
-		auto &uvs = m_uvs[p_batch_index];
-
-		if (uvs.empty()) {
-			return std::optional<Value>();
-		}
-
-		const auto values = m_matrix.template values<1, 1>();
-
-		const auto initial_uv = uvs.top();
-		uvs.pop();
-
-		Index u = std::get<0>(initial_uv);
-		Index v = std::get<1>(initial_uv);
-		const auto best_val = values(u, v)(p_batch_index);
-
-		if (m_strategy.has_trace()) { // && m_path.wants_path()
-			const auto len_s = m_matrix.len_s();
-			const auto len_t = m_matrix.len_t();
-			p_path.begin(len_s, len_t);
-
-			const auto traceback = m_matrix.template traceback<1, 1>();
-
-			while (m_strategy.continue_traceback(u, v, values(u, v)(p_batch_index))) {
-				const Index last_u = u;
-				const Index last_v = v;
-
-				const auto &t = traceback(u, v);
-				u = t.u(p_batch_index, 0);
-				v = t.v(p_batch_index, 0);
-
-				p_path.step(last_u, last_v, u, v);
-			}
-		}
-
-		return best_val;
+	inline auto &iterator(const int p_batch_index) {
+		return m_iterators[p_batch_index];
 	}
 };
 
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix>
-using TracebackIterator2 = TracebackIterator<
+using TracebackIterators2 = TracebackIterators<
 	!traceback_type<CellType, ProblemType>::max_degree_1, CellType, ProblemType, Strategy, Matrix>;
 
 template<typename Locality, typename Matrix>
-inline TracebackIterator2<
+inline TracebackIterators2<
 	typename Locality::cell_type,
 	typename Locality::problem_type,
 	typename Locality::template TracebackStrategy<Matrix>,
@@ -1180,7 +1243,7 @@ inline TracebackIterator2<
 		const Locality &p_locality,
 		Matrix &p_matrix) {
 
-	return TracebackIterator2<
+	return TracebackIterators2<
 		typename Locality::cell_type,
 		typename Locality::problem_type,
 		typename Locality::template TracebackStrategy<Matrix>,
@@ -1839,7 +1902,7 @@ public:
 		ValueVec scores;
 		build_nothing nothing;
 		for (int i = 0; i < CellType::batch_size; i++) {
-			const auto tb_val = tb.next(i, nothing);
+			const auto tb_val = tb.iterator(i).next(nothing);
 			scores(i) = tb_val.value_or(Direction::template worst_val<Value>());
 		}
 		return scores;
@@ -1858,7 +1921,7 @@ public:
 		for (int i = 0; i < CellType::batch_size; i++) {
 			auto &alignment = deref(alignments[i]);
 			build_alignment<decltype(alignment)> build(alignment);
-			const auto tb_val = tb.next(i, build);
+			const auto tb_val = tb.iterator(i).next(build);
 			alignment.set_score(tb_val.value_or(
 				Direction::template worst_val<Value>()));
 		}
@@ -1886,7 +1949,7 @@ public:
 			solution.set_values(m_factory.all_layers().values(len_s, len_t), i);
 			solution.set_traceback(m_factory.all_layers().traceback(len_s, len_t), i);
 
-			const auto tb_val = tb.next(i, build);
+			const auto tb_val = tb.iterator(i).next(build);
 			solution.set_path(build.template get<0>().path());
 
 			const auto score = tb_val.value_or(Direction::template worst_val<Value>());
