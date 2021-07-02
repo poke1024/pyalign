@@ -2,6 +2,7 @@ import pyalign.algorithm
 import numpy as np
 import time
 import contextlib
+import enum
 
 from cached_property import cached_property
 from functools import lru_cache
@@ -12,14 +13,16 @@ from .gaps import GapCost, ConstantGapCost
 class Problem:
 	def __init__(self, shape, s=None, t=None, direction="maximize", dtype=np.float32):
 		self._shape = tuple(shape)
+		self._direction = direction
+		self._dtype = dtype
+
 		if s is not None and shape[0] != len(s):
 			raise ValueError(f"sequence s [{len(s)}] does not match matrix shape {shape}")
 		if t is not None and shape[1] != len(t):
 			raise ValueError(f"sequence t [{len(t)}] does not match matrix shape {shape}")
+
 		self._s = s
 		self._t = t
-		self._direction = direction
-		self._dtype = dtype
 
 	@property
 	def shape(self):
@@ -33,6 +36,21 @@ class Problem:
 	def dtype(self):
 		return self._dtype
 
+	@property
+	def s(self):
+		return self._s
+
+	@property
+	def t(self):
+		return self._t
+
+
+class Form(enum.Enum):
+	MATRIX_FORM = 0
+	INDEXED_MATRIX_FORM = 1
+
+
+class MatrixProblem(Problem):
 	def build_matrix(self, out):
 		"""
 		Returns a matrix M that describes an alignment problem for two sequences \( s \) and \( t \).
@@ -41,12 +59,27 @@ class Problem:
 		raise NotImplementedError()
 
 	@property
-	def s(self):
-		return self._s
+	def form(self):
+		return Form.MATRIX_FORM
+
+
+class IndexedMatrixProblem(Problem):
+	def build_matrix(self, out):
+		sim = self.similarity_lookup_table()
+		a = np.empty((self.shape[0],), dtype=np.uint32)
+		b = np.empty((self.shape[1],), dtype=np.uint32)
+		self.build_index_sequences(a, b)
+		out[:, :] = sim[np.ix_(a, b)]
+
+	def similarity_lookup_table(self):
+		raise NotImplementedError()
+
+	def build_index_sequences(self, a, b):
+		raise NotImplementedError()
 
 	@property
-	def t(self):
-		return self._t
+	def form(self):
+		return Form.INDEXED_MATRIX_FORM
 
 
 class ProblemBatch:
@@ -64,6 +97,8 @@ class ProblemBatch:
 		self._dtype = problems[0].dtype
 		if not all(p.dtype == self._dtype for p in problems):
 			raise ValueError("problems in a batch need to have same dtype")
+
+		self._form = Form(min(p.form.value for p in problems))
 
 	def __len__(self):
 		return len(self._problems)
@@ -83,6 +118,10 @@ class ProblemBatch:
 	@property
 	def dtype(self):
 		return self._dtype
+
+	@property
+	def form(self):
+		return self._form
 
 
 class Solution:
@@ -332,6 +371,60 @@ def chunks(items, n):
 		yield items[i:i + n]
 
 
+class MatrixForm:
+	def __init__(self, solver, detail, batch):
+		batch_size = solver.batch_size
+		shape = batch.shape
+		self._matrix = np.empty((shape[0], shape[1], batch_size), dtype=batch.dtype)
+		if detail == "score":
+			self._solve = solver.solve_for_score
+		elif detail == "alignment":
+			self._solve = solver.solve_for_alignment
+		elif detail == "solution":
+			self._solve = solver.solve_for_solution
+		else:
+			raise ValueError(detail)
+
+	def prepare(self, problems):
+		matrix = self._matrix
+
+		for k, p in enumerate(problems):
+			p.build_matrix(matrix[:, :, k])
+
+	def solve(self):
+		return self._solve(self._matrix)
+
+
+class IndexedMatrixForm:
+	def __init__(self, solver, detail, batch):
+		batch_size = solver.batch_size
+		shape = batch.shape
+
+		self._a = np.empty((batch_size, shape[0]), dtype=np.uint32)
+		self._b = np.empty((batch_size, shape[1]), dtype=np.uint32)
+
+		# FIXME check
+		self._sim = batch.problems[0].similarity_lookup_table()
+
+		if detail == "score":
+			self._solve = solver.solve_indexed_for_score
+		elif detail == "alignment":
+			self._solve = solver.solve_indexed_for_alignment
+		elif detail == "solution":
+			self._solve = solver.solve_indexed_for_solution
+		else:
+			raise ValueError(detail)
+
+	def prepare(self, problems):
+		a = self._a
+		b = self._b
+		for k, p in enumerate(problems):
+			p.build_index_sequences(a[k, :], b[k, :])
+
+	def solve(self):
+		return self._solve(self._a, self._b, self._sim)
+
+
 class Solver:
 	def __init__(
 		self, gap_cost: GapCost = None, direction="maximize", generate="alignment", **kwargs):
@@ -381,29 +474,34 @@ class Solver:
 		shape = batch.shape
 		solver = self._cache.get(shape[0], shape[1], batch=is_batch)
 		batch_size = solver.batch_size
+		form = batch.form
 
 		detail = self._goal.detail
 		result = []
 
-		matrix = np.empty((shape[0], shape[1], batch_size), dtype=batch.dtype)
+		if form == Form.MATRIX_FORM:
+			form_solver = MatrixForm(solver, detail, batch)
+		elif form == Form.INDEXED_MATRIX_FORM:
+			form_solver = IndexedMatrixForm(solver, detail, batch)
+		else:
+			raise ValueError(form)
 
 		for i in range(0, len(batch), batch_size):
 			problems_chunk = batch.problems[i:i + batch_size]
 
-			with self._timings.measure("build_matrix"):
-				for i, p in enumerate(problems_chunk):
-					p.build_matrix(matrix[:, :, i])
+			with self._timings.measure("prepare"):
+				form_solver.prepare(problems_chunk)
 
 			with self._timings.measure("solve"):
 				if detail == "score":
-					result.extend(solver.solve_for_score(matrix)[:len(problems_chunk)])
+					result.extend(form_solver.solve()[:len(problems_chunk)])
 				elif detail == "alignment":
-					alignments = solver.solve_for_alignment(matrix)
+					alignments = form_solver.solve()
 					result.extend([
 						Alignment(problem, solver, alignment)
 						for problem, alignment in zip(problems_chunk, alignments)])
 				elif detail == "solution":
-					solutions = solver.solve_for_solution(matrix)
+					solutions = form_solver.solve()
 					result.extend([
 						Solution(problem, solver, solution)
 						for problem, solution in zip(problems_chunk, solutions)])

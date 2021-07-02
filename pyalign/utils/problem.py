@@ -1,13 +1,13 @@
 import numpy as np
 
-from pyalign.solve import Problem
+from pyalign.solve import Problem, MatrixProblem, IndexedMatrixProblem
 from pyalign.utils.similarity import *
 
 
-class SimpleProblem(Problem):
-	def __init__(self, sim, *args, **kwargs):
+class SimpleProblem(MatrixProblem):
+	def __init__(self, sim, s, t, **kwargs):
+		super().__init__((len(s), len(t)), s, t, **kwargs)
 		self._sim = sim
-		super().__init__(*args, **kwargs)
 
 	def build_matrix(self, out):
 		for i, x in enumerate(self.s):
@@ -23,24 +23,27 @@ class SimpleProblemFactory:
 
 	def new_problem(self, s, t):
 		return SimpleProblem(
-			self._sim, (len(s), len(t)), s, t,
-			direction=self._direction, dtype=self._dtype)
+			self._sim, s, t,
+			direction=self._direction,
+			dtype=self._dtype)
 
 
-class EncoderProblem(Problem):
+class EncodedProblem(IndexedMatrixProblem):
 	def __init__(self, sim, encoder, *args, **kwargs):
 		self._sim = sim
 		self._encoder = encoder
 		super().__init__(*args, **kwargs)
 
-	def build_matrix(self, out):
+	def similarity_lookup_table(self):
+		return self._sim
+
+	def build_index_sequences(self, a, b):
 		encoder = self._encoder
-		out[:, :] = self._sim[np.ix_(
-			encoder.encode(self._s),
-			encoder.encode(self._t))]
+		encoder.encode(self._s, out=a)
+		encoder.encode(self._t, out=b)
 
 
-class EncoderProblemFactory:
+class EncodedProblemFactory:
 	def __init__(self, sim: Operator, encoder: Encoder, direction="maximize", dtype=np.float32):
 		self._encoder = encoder
 		n = len(encoder.alphabet)
@@ -50,7 +53,7 @@ class EncoderProblemFactory:
 		self._dtype = dtype
 
 	def new_problem(self, s, t):
-		return EncoderProblem(
+		return EncodedProblem(
 			self._sim, self._encoder, (len(s), len(t)), s, t,
 			direction=self._direction, dtype=self._dtype)
 

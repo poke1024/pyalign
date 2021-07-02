@@ -8,9 +8,13 @@ class Encoder:
 		self._alphabet = set(alphabet)
 		self._ids = dict((k, i) for i, k in enumerate(self._alphabet))
 
-	def encode(self, s):
+	def encode(self, s, out=None):
 		ids = self._ids
-		return np.array([ids[x] for x in s], dtype=np.uint32)
+		if out is None:
+			return [ids[x] for x in s]
+		else:
+			for i, x in enumerate(s):
+				out[i] = ids[x]
 
 	@property
 	def alphabet(self):

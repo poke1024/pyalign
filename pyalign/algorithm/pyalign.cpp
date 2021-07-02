@@ -153,11 +153,26 @@ public:
 	virtual xt::pytensor<float, 1> solve_for_score(
 		const xt::pytensor<float, 3> &p_similarity) const = 0;
 
+	virtual xt::pytensor<float, 1> solve_indexed_for_score(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const xt::pytensor<float, 2> &p_similarity) const = 0;
+
 	virtual py::tuple solve_for_alignment(
 		const xt::pytensor<float, 3> &p_similarity) const = 0;
 
-	virtual py::list solve_for_solution(
+	virtual py::tuple solve_indexed_for_alignment(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const xt::pytensor<float, 2> &p_similarity) const = 0;
+
+	virtual py::tuple solve_for_solution(
 		const xt::pytensor<float, 3> &p_similarity) const = 0;
+
+	virtual py::tuple solve_indexed_for_solution(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const xt::pytensor<float, 2> &p_similarity) const = 0;
 };
 
 typedef std::shared_ptr<Solver> SolverRef;
@@ -177,11 +192,154 @@ py::tuple make_obj_tuple(const Array& array, std::index_sequence<T...>) {
     return py::make_tuple(array[T]...);
 }
 
+template<typename CellType>
+struct matrix_form {
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_vec_type ValueVec;
+
+	const xt::pytensor<float, 3> &m_similarity;
+
+	inline void check() const {
+		check_batch_size(m_similarity.shape(2), CellType::batch_size);
+	}
+
+	inline size_t len_s() const {
+		return m_similarity.shape(0);
+	}
+
+	inline size_t len_t() const {
+		return m_similarity.shape(1);
+	}
+
+	inline ValueVec operator()(const Index i, const Index j) const {
+		ValueVec v = xt::view(m_similarity, i, j, xt::all());
+		return v;
+	}
+};
+
+template<typename CellType>
+struct indexed_matrix_form {
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_vec_type ValueVec;
+
+	const xt::pytensor<uint32_t, 2> &m_a;
+	const xt::pytensor<uint32_t, 2> &m_b;
+	const xt::pytensor<float, 2> &m_similarity;
+
+	inline void check() const {
+		check_batch_size(m_a.shape(0), CellType::batch_size);
+		check_batch_size(m_b.shape(0), CellType::batch_size);
+
+		if (xt::amax(m_a)() >= m_similarity.shape(0)) {
+			throw std::invalid_argument("out of bounds index in a");
+		}
+		if (xt::amax(m_b)() >= m_similarity.shape(1)) {
+			throw std::invalid_argument("out of bounds index in b");
+		}
+	}
+
+	inline size_t len_s() const {
+		return m_a.shape(1);
+	}
+
+	inline size_t len_t() const {
+		return m_b.shape(1);
+	}
+
+	inline ValueVec operator()(const Index i, const Index j) const {
+		ValueVec v;
+		for (int k = 0; k < CellType::batch_size; k++) {
+			v(k) = m_similarity(m_a(k, i), m_b(k, j));
+		}
+		return v;
+	}
+};
+
 template<typename CellType, typename ProblemType, typename S>
 class SolverImpl : public Solver {
 private:
 	const py::dict m_options;
 	S m_solver;
+
+	template<typename Pairwise>
+	inline xt::pytensor<float, 1> _solve_for_score(
+		const Pairwise &p_pairwise) const {
+
+		ValueVec scores;
+
+		{
+			py::gil_scoped_release release;
+			p_pairwise.check();
+			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
+			scores = m_solver.score(p_pairwise.len_s(), p_pairwise.len_t());
+		}
+
+		return scores;
+	}
+
+	template<typename Pairwise>
+	inline py::tuple _solve_for_alignment(
+		const Pairwise &p_pairwise) const {
+
+		AlignmentRef alignments[CellType::batch_size];
+
+		{
+			py::gil_scoped_release release;
+			p_pairwise.check();
+			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
+
+			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
+				AlignmentRef alignment = std::make_shared<Alignment>();
+				const float score = m_solver.alignment(
+					p_pairwise.len_s(), p_pairwise.len_t(),
+					*alignment.get(), batch_i);
+				alignment->set_score(score);
+				alignments[batch_i] = alignment;
+			}
+		}
+
+		py::object py_alignments[CellType::batch_size];
+
+		for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
+			py_alignments[batch_i] = py::cast(alignments[batch_i]);
+		}
+
+		return make_obj_tuple(
+			py_alignments,
+			std::make_index_sequence<CellType::batch_size>());
+	}
+
+	template<typename Pairwise>
+	inline py::tuple _solve_for_solution(
+		const Pairwise &p_pairwise) const {
+
+		SolutionRef solutions[CellType::batch_size];
+
+		{
+			py::gil_scoped_release release;
+			p_pairwise.check();
+			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
+
+			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
+				const auto alignment = std::make_shared<Alignment>();
+				SolutionRef solution = std::make_shared<SolutionImpl<CellType, ProblemType>>(
+					m_solver.solution(p_pairwise.len_s(), p_pairwise.len_t(), *alignment.get(), batch_i),
+					alignment,
+					batch_i);
+				solutions[batch_i] = solution;
+			}
+		}
+
+		py::object py_solutions[CellType::batch_size];
+
+		for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
+			py_solutions[batch_i] = py::cast(solutions[batch_i]);
+		}
+
+		return make_obj_tuple(
+			py_solutions,
+			std::make_index_sequence<CellType::batch_size>());
+	}
 
 public:
 	typedef typename CellType::index_type Index;
@@ -204,101 +362,49 @@ public:
 	virtual xt::pytensor<float, 1> solve_for_score(
 		const xt::pytensor<float, 3> &p_similarity) const override {
 
-		const auto len_s = p_similarity.shape(0);
-		const auto len_t = p_similarity.shape(1);
-		check_batch_size(p_similarity.shape(2), m_solver.batch_size());
+		return _solve_for_score(
+			matrix_form<CellType>{p_similarity});
+	}
 
-		const auto get_sim = [&p_similarity] (const Index i, const Index j) {
-			ValueVec v = xt::view(p_similarity, i, j, xt::all());
-			return v;
-		};
+	virtual xt::pytensor<float, 1> solve_indexed_for_score(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const xt::pytensor<float, 2> &p_similarity) const override {
 
-		ValueVec scores;
-
-		{
-			py::gil_scoped_release release;
-			m_solver.solve(get_sim, len_s, len_t);
-			scores = m_solver.score(len_s, len_t);
-		}
-
-		return scores;
+		return _solve_for_score(
+			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
 	}
 
 	virtual py::tuple solve_for_alignment(
 		const xt::pytensor<float, 3> &p_similarity) const override {
 
-		const auto len_s = p_similarity.shape(0);
-		const auto len_t = p_similarity.shape(1);
-		check_batch_size(p_similarity.shape(2), m_solver.batch_size());
-
-		const auto get_sim = [&p_similarity] (const Index i, const Index j) {
-			ValueVec v = xt::view(p_similarity, i, j, xt::all());
-			return v;
-		};
-
-		AlignmentRef alignments[CellType::batch_size];
-
-		{
-			py::gil_scoped_release release;
-			m_solver.solve(get_sim, len_s, len_t);
-
-			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-				AlignmentRef alignment = std::make_shared<Alignment>();
-				const float score = m_solver.alignment(
-					len_s, len_t, *alignment.get(), batch_i);
-				alignment->set_score(score);
-				alignments[batch_i] = alignment;
-			}
-		}
-
-		py::object py_alignments[CellType::batch_size];
-
-		for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-			py_alignments[batch_i] = py::cast(alignments[batch_i]);
-		}
-
-		return make_obj_tuple(
-			py_alignments,
-			std::make_index_sequence<CellType::batch_size>());
+		return _solve_for_alignment(
+			matrix_form<CellType>{p_similarity});
 	}
 
-	virtual py::list solve_for_solution(
+	virtual py::tuple solve_indexed_for_alignment(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const xt::pytensor<float, 2> &p_similarity) const override {
+
+		return _solve_for_alignment(
+			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
+	}
+
+	virtual py::tuple solve_for_solution(
 		const xt::pytensor<float, 3> &p_similarity) const override {
 
-		const auto len_s = p_similarity.shape(0);
-		const auto len_t = p_similarity.shape(1);
-		check_batch_size(p_similarity.shape(2), m_solver.batch_size());
+		return _solve_for_solution(
+			matrix_form<CellType>{p_similarity});
+	}
 
-		const auto get_sim = [&p_similarity] (const Index i, const Index j) {
-			ValueVec v = xt::view(p_similarity, i, j, xt::all());
-			return v;
-		};
+	virtual py::tuple solve_indexed_for_solution(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const xt::pytensor<float, 2> &p_similarity) const override {
 
-		SolutionRef solutions[CellType::batch_size];
-
-		{
-			py::gil_scoped_release release;
-			m_solver.solve(get_sim, len_s, len_t);
-
-			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-				const auto alignment = std::make_shared<Alignment>();
-				SolutionRef solution = std::make_shared<SolutionImpl<CellType, ProblemType>>(
-					m_solver.solution(len_s, len_t, *alignment.get(), batch_i),
-					alignment,
-					batch_i);
-				solutions[batch_i] = solution;
-			}
-		}
-
-		py::object py_solutions[CellType::batch_size];
-
-		for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-			py_solutions[batch_i] = py::cast(solutions[batch_i]);
-		}
-
-		return make_obj_tuple(
-			py_solutions,
-			std::make_index_sequence<CellType::batch_size>());
+		return _solve_for_solution(
+			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
 	}
 };
 
@@ -579,8 +685,11 @@ PYBIND11_MODULE(algorithm, m) {
 	solver.def_property_readonly("options", &Solver::options);
 	solver.def_property_readonly("batch_size", &Solver::batch_size);
 	solver.def("solve_for_score", &Solver::solve_for_score);
+	solver.def("solve_indexed_for_score", &Solver::solve_indexed_for_score);
 	solver.def("solve_for_alignment", &Solver::solve_for_alignment);
+	solver.def("solve_indexed_for_alignment", &Solver::solve_indexed_for_alignment);
 	solver.def("solve_for_solution", &Solver::solve_for_solution);
+	solver.def("solve_indexed_for_solution", &Solver::solve_indexed_for_solution);
 
 	py::class_<Alignment, AlignmentRef> alignment(m, "Alignment");
 	alignment.def_property_readonly("score", &Alignment::score);
