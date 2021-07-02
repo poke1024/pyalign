@@ -39,7 +39,7 @@ import pyalign.utils
 import pyalign.solve
 import pyalign.gaps
 
-pf = pyalign.utils.SimpleProblemFactory(pyalign.utils.BinarySimilarity(eq=1, ne=-1))
+pf = pyalign.utils.SimilarityProblemFactory(pyalign.utils.Binary(eq=1, ne=-1))
 solver = pyalign.solve.GlobalSolver(gap_cost=pyalign.gaps.LinearGapCost(0.2))
 problem = pf.new_problem("INDUSTRY", "INTEREST")
 alignment = solver.solve(problem)

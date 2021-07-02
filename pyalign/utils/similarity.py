@@ -25,6 +25,9 @@ class Operator:
 	def get(self, u, v):
 		raise NotImplementedError()
 
+	def __call__(self, u, v):
+		return self.get(u, v)
+
 	def build_matrix(self, encoder, matrix):
 		raise NotImplementedError()
 

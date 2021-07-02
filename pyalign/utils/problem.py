@@ -4,7 +4,7 @@ from pyalign.solve import MatrixProblem, IndexedMatrixProblem
 from pyalign.utils.similarity import *
 
 
-class GeneralProblem(MatrixProblem):
+class SimilarityProblem(MatrixProblem):
 	def __init__(self, sim, s, t, **kwargs):
 		super().__init__((len(s), len(t)), s, t, **kwargs)
 		self._sim = sim
@@ -12,23 +12,49 @@ class GeneralProblem(MatrixProblem):
 	def build_matrix(self, out):
 		for i, x in enumerate(self.s):
 			for j, y in enumerate(self.t):
-				out[i, j] = self._sim.get(x, y)
+				out[i, j] = self._sim(x, y)
 
 
-class GeneralProblemFactory:
+class SimilarityProblemFactory:
 	def __init__(self, sim: Operator, direction="maximize", dtype=np.float32):
 		self._sim = sim
 		self._direction = direction
 		self._dtype = dtype
 
 	def new_problem(self, s, t):
-		return GeneralProblem(
+		return SimilarityProblem(
 			self._sim, s, t,
 			direction=self._direction,
 			dtype=self._dtype)
 
 
-class EncodedProblem(IndexedMatrixProblem):
+class DistanceProblem(MatrixProblem):
+	def __init__(self, distance, s, t, **kwargs):
+		super().__init__((len(s), len(t)), s, t, **kwargs)
+		self._distance = distance
+
+	def build_matrix(self, out):
+		for i, x in enumerate(self.s):
+			for j, y in enumerate(self.t):
+				out[i, j] = self._distance(x, y)
+
+
+class DistanceProblemFactory:
+	def __init__(self, distance=None, direction="minimize", dtype=np.float32):
+		if distance is None:
+			from scipy.spatial.distance import euclidean
+			distance = euclidean
+
+		self._distance = distance
+		self._direction = direction
+		self._dtype = dtype
+
+	def new_problem(self, s, t):
+		return DistanceProblem(
+			self._distance, s, t, direction=self._direction, dtype=self._dtype)
+
+
+class AlphabetProblem(IndexedMatrixProblem):
 	def __init__(self, sim, encoder, *args, **kwargs):
 		self._sim = sim
 		self._encoder = encoder
@@ -43,7 +69,7 @@ class EncodedProblem(IndexedMatrixProblem):
 		encoder.encode(self._t, out=b)
 
 
-class EncodedProblemFactory:
+class AlphabetProblemFactory:
 	def __init__(self, sim: Operator, encoder: Encoder, direction="maximize", dtype=np.float32):
 		self._encoder = encoder
 		n = len(encoder.alphabet)
@@ -53,32 +79,6 @@ class EncodedProblemFactory:
 		self._dtype = dtype
 
 	def new_problem(self, s, t):
-		return EncodedProblem(
+		return AlphabetProblem(
 			self._sim, self._encoder, (len(s), len(t)), s, t,
 			direction=self._direction, dtype=self._dtype)
-
-
-class SpatialProblem(MatrixProblem):
-	def __init__(self, distance, s, t, **kwargs):
-		super().__init__((len(s), len(t)), s, t, **kwargs)
-		self._distance = distance
-
-	def build_matrix(self, out):
-		for i, x in enumerate(self.s):
-			for j, y in enumerate(self.t):
-				out[i, j] = self._distance(x, y)
-
-
-class SpatialProblemFactory:
-	def __init__(self, distance=None, direction="minimize", dtype=np.float32):
-		if distance is None:
-			from scipy.spatial.distance import euclidean
-			distance = euclidean
-
-		self._distance = distance
-		self._direction = direction
-		self._dtype = dtype
-
-	def new_problem(self, s, t):
-		return SpatialProblem(
-			self._distance, s, t, direction=self._direction, dtype=self._dtype)
