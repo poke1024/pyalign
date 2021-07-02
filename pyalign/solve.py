@@ -258,6 +258,16 @@ class Alignment:
 				lower.append(t[x])
 				last_x = x
 
+		for j in range(last_x + 1, len(t)):
+			if not is_elastic:
+				upper.append(" ")
+				edges.append(" ")
+				lower.append(t[j])
+			else:
+				upper.append(s[-1])
+				edges.append(" ")
+				lower.append(t[j])
+
 		print("".join(upper))
 		print("".join(edges))
 		print("".join(lower))
@@ -403,8 +413,9 @@ class IndexedMatrixForm:
 		self._a = np.empty((batch_size, shape[0]), dtype=np.uint32)
 		self._b = np.empty((batch_size, shape[1]), dtype=np.uint32)
 
-		# FIXME check
 		self._sim = batch.problems[0].similarity_lookup_table()
+		if not all(p.similarity_lookup_table() is self._sim for p in batch.problems):
+			raise ValueError("similarity table must be identical for all problems in a batch")
 
 		if detail == "score":
 			self._solve = solver.solve_indexed_for_score

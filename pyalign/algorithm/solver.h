@@ -681,6 +681,14 @@ public:
 			m_alignment.add_edge(last_u, last_v);
 		}
 	}
+
+	inline size_t size() const {
+		return 0;
+	}
+
+	inline void go_back(
+		const size_t p_size) {
+	}
 };
 
 template<typename Index>
@@ -727,6 +735,15 @@ public:
 		}
 		return path;
 	}
+
+	inline size_t size() const {
+		return m_path.size();
+	}
+
+	inline void go_back(
+		const size_t p_size) {
+		m_path.resize(p_size);
+	}
 };
 
 template<typename... BuildRest>
@@ -747,6 +764,14 @@ public:
 		const Index last_v,
 		const Index u,
 		const Index v) {
+	}
+
+	inline size_t size() {
+		return 0;
+	}
+
+	inline void go_back(
+		const size_t p_size) {
 	}
 
 	template<int i>
@@ -786,6 +811,16 @@ public:
 		m_rest.step(last_u, last_v, u, v);
 	}
 
+	inline size_t size() {
+		return m_head.size();
+	}
+
+	inline void go_back(
+		const size_t p_size) {
+		m_head.go_back(p_size);
+		m_rest.go_back(p_size);
+	}
+
 	template<int i>
 	const auto &get() const {
 		return m_rest.template get<i-1>();
@@ -811,6 +846,14 @@ public:
 		const Index last_v,
 		const Index u,
 		const Index v) {
+	}
+
+	inline size_t size() const {
+		return 0;
+	}
+
+	inline void go_back(
+		const size_t p_size) {
 	}
 };
 
@@ -1081,12 +1124,21 @@ public:
 		}
 
 		template<typename Path>
+		inline void init(Path &p_path) {
+			if (!m_stack.empty() && m_context.strategy.has_trace()) {
+				const auto len_s = m_context.matrix.len_s();
+				const auto len_t = m_context.matrix.len_t();
+				p_path.begin(len_s, len_t);
+			}
+		}
+
+		template<typename Path>
 		inline std::optional<Value> next(Path &p_path) {
 			if (m_stack.empty()) {
 				return std::optional<Value>();
 			}
 
-			const auto values = m_context.matrix.template values<1, 1>();
+			const auto values = m_context.matrix.template values_n<1, 1>();
 
 			const auto initial_uv = m_stack.top();
 			m_stack.pop();
@@ -1096,13 +1148,12 @@ public:
 			const auto best_val = values(u, v)(m_batch_index);
 
 			if (m_context.strategy.has_trace()) { // && m_path.wants_path()
-				const auto len_s = m_context.matrix.len_s();
-				const auto len_t = m_context.matrix.len_t();
-				p_path.begin(len_s, len_t);
-
 				const auto traceback = m_context.matrix.template traceback<1, 1>();
 
-				while (m_context.strategy.continue_traceback(u, v, values(u, v)(m_batch_index))) {
+				while (
+					m_context.strategy.continue_traceback_1(u, v) &&
+					m_context.strategy.continue_traceback_2(values(u, v)(m_batch_index))) {
+
 					const Index last_u = u;
 					const Index last_v = v;
 
@@ -1152,9 +1203,16 @@ public:
 
 	class Iterator {
 	private:
+		struct Entry {
+			float path_val;
+			std::pair<Index, Index> previous;
+			std::pair<Index, Index> current;
+			Index path_len;
+		};
+
 		const Context m_context;
 		const int m_batch_index;
-		std::stack<std::pair<Index, Index>> m_stack;
+		std::stack<Entry> m_stack;
 
 	public:
 		inline Iterator(
@@ -1165,47 +1223,93 @@ public:
 			m_batch_index(p_batch_index) {
 		}
 
-		inline void push(std::pair<Index, Index> &&p) {
-			m_stack.push(std::move(p));
+		inline void push(std::pair<Index, Index> &&p0) {
+			const std::pair<Index, Index> p(p0);
+
+			const Index u = std::get<0>(p);
+			const Index v = std::get<1>(p);
+
+			const auto values = m_context.matrix.template values_n<1, 1>();
+			const auto path_val = values(u, v)(m_batch_index);
+
+			m_stack.push(Entry{
+				path_val,
+				{no_traceback<Index>(), no_traceback<Index>()},
+				p,
+				0
+			});
+		}
+
+		template<typename Path>
+		inline void init(Path &p_path) {
+			if (!m_stack.empty() && m_context.strategy.has_trace()) {
+				const auto len_s = m_context.matrix.len_s();
+				const auto len_t = m_context.matrix.len_t();
+				p_path.begin(len_s, len_t);
+			}
 		}
 
 		template<typename Path>
 		inline std::optional<Value> next(Path &p_path) {
-			// FIXME implement path splitting.
 
-			if (m_stack.empty()) {
-				return std::optional<Value>();
-			}
-
-			const auto values = m_context.matrix.template values<1, 1>();
-
-			const auto initial_uv = m_stack.top();
-			m_stack.pop();
-
-			Index u = std::get<0>(initial_uv);
-			Index v = std::get<1>(initial_uv);
-			const auto best_val = values(u, v)(m_batch_index);
-
-			if (m_context.strategy.has_trace()) { // && m_path.wants_path()
-				const auto len_s = m_context.matrix.len_s();
-				const auto len_t = m_context.matrix.len_t();
-				p_path.begin(len_s, len_t);
-
-				const auto traceback = m_context.matrix.template traceback<1, 1>();
-
-				while (m_context.strategy.continue_traceback(u, v, values(u, v)(m_batch_index))) {
-					const Index last_u = u;
-					const Index last_v = v;
-
-					const auto &t = traceback(u, v);
-					u = t.u(m_batch_index, 0);
-					v = t.v(m_batch_index, 0);
-
-					p_path.step(last_u, last_v, u, v);
+			if (!m_context.strategy.has_trace()) {
+				if (m_stack.empty()) {
+					return std::optional<Value>();
+				} else {
+					const auto best_val = m_stack.top().path_val;
+					m_stack.pop();
+					return best_val;
 				}
 			}
 
-			return best_val;
+			const auto values = m_context.matrix.template values_n<1, 1>();
+			const auto traceback = m_context.matrix.template traceback<1, 1>();
+
+			while (!m_stack.empty()) {
+				const auto &top = m_stack.top();
+				const Index u1 = std::get<0>(top.current);
+				const Index v1 = std::get<1>(top.current);
+				const auto best_val = top.path_val;
+				p_path.go_back(top.path_len);
+				const auto prev = top.previous;
+				m_stack.pop();
+
+				if (std::get<0>(prev) != no_traceback<Index>()) {
+					p_path.step(
+						std::get<0>(prev), std::get<1>(prev),
+						u1, v1);
+				}
+
+				if (m_context.strategy.continue_traceback_1(u1, v1) &&
+					m_context.strategy.continue_traceback_2(values(u1, v1)(m_batch_index))) {
+
+					const auto &t = traceback(u1, v1);
+					const size_t n = t.size(m_batch_index);
+					const Index path_size = static_cast<Index>(p_path.size());
+
+					if (n >= 1) {
+						for (size_t i = 0; i < n; i++) {
+							m_stack.push(Entry{
+								best_val,
+								{u1, v1},
+								{t.u(m_batch_index, i), t.v(m_batch_index, i)},
+								path_size
+							});
+						}
+					} else {
+						m_stack.push(Entry{
+							best_val,
+							{u1, v1},
+							{no_traceback<Index>(), no_traceback<Index>()},
+							path_size
+						});
+					}
+				} else {
+					return best_val;
+				}
+			}
+
+			return std::optional<Value>();
 		}
 	};
 
@@ -1450,11 +1554,17 @@ public:
 				Matrix, typename ProblemType::goal_type::path_goal>{m_matrix};
 		}
 
-		inline bool continue_traceback(const Index u,
-			const Index v,
+		inline bool continue_traceback_1(
+			const Index u,
+			const Index v) const {
+
+			return u >= 0 && v >= 0;
+		}
+
+		inline bool continue_traceback_2(
 			const Value val) const {
 
-			return u >= 0 && v >= 0 && Direction::is_opt(val, Local::ZERO);
+			return Direction::is_opt(val, ZERO);
 		}
 	};
 };
@@ -1544,12 +1654,17 @@ public:
 				Matrix, typename ProblemType::goal_type::path_goal>{m_matrix};
 		}
 
-		inline bool continue_traceback(
+		inline bool continue_traceback_1(
 			const Index u,
-			const Index v,
-			const Value val) const {
+			const Index v) const {
 
 			return u >= 0 && v >= 0;
+		}
+
+		inline bool continue_traceback_2(
+			const Value val) const {
+
+			return true;
 		}
 	};
 };
@@ -1649,12 +1764,17 @@ public:
 				Matrix, typename ProblemType::goal_type::path_goal>{m_matrix};
 		}
 
-		inline bool continue_traceback(
+		inline bool continue_traceback_1(
 			const Index u,
-			const Index v,
-			const Value val) const {
+			const Index v) const {
 
 			return u >= 0 && v >= 0;
+		}
+
+		inline bool continue_traceback_2(
+			const Value val) const {
+
+			return true;
 		}
 	};
 };
@@ -1902,6 +2022,7 @@ public:
 		ValueVec scores;
 		build_nothing nothing;
 		for (int i = 0; i < CellType::batch_size; i++) {
+			tb.iterator(i).init(nothing);
 			const auto tb_val = tb.iterator(i).next(nothing);
 			scores(i) = tb_val.value_or(Direction::template worst_val<Value>());
 		}
@@ -1921,6 +2042,7 @@ public:
 		for (int i = 0; i < CellType::batch_size; i++) {
 			auto &alignment = deref(alignments[i]);
 			build_alignment<decltype(alignment)> build(alignment);
+			tb.iterator(i).init(build);
 			const auto tb_val = tb.iterator(i).next(build);
 			alignment.set_score(tb_val.value_or(
 				Direction::template worst_val<Value>()));
@@ -1949,6 +2071,7 @@ public:
 			solution.set_values(m_factory.all_layers().values(len_s, len_t), i);
 			solution.set_traceback(m_factory.all_layers().traceback(len_s, len_t), i);
 
+			tb.iterator(i).init(build);
 			const auto tb_val = tb.iterator(i).next(build);
 			solution.set_path(build.template get<0>().path());
 
