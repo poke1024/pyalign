@@ -1,10 +1,10 @@
 import numpy as np
 
-from pyalign.solve import Problem, MatrixProblem, IndexedMatrixProblem
+from pyalign.solve import MatrixProblem, IndexedMatrixProblem
 from pyalign.utils.similarity import *
 
 
-class SimpleProblem(MatrixProblem):
+class GeneralProblem(MatrixProblem):
 	def __init__(self, sim, s, t, **kwargs):
 		super().__init__((len(s), len(t)), s, t, **kwargs)
 		self._sim = sim
@@ -15,14 +15,14 @@ class SimpleProblem(MatrixProblem):
 				out[i, j] = self._sim.get(x, y)
 
 
-class SimpleProblemFactory:
+class GeneralProblemFactory:
 	def __init__(self, sim: Operator, direction="maximize", dtype=np.float32):
 		self._sim = sim
 		self._direction = direction
 		self._dtype = dtype
 
 	def new_problem(self, s, t):
-		return SimpleProblem(
+		return GeneralProblem(
 			self._sim, s, t,
 			direction=self._direction,
 			dtype=self._dtype)
@@ -58,17 +58,27 @@ class EncodedProblemFactory:
 			direction=self._direction, dtype=self._dtype)
 
 
+class SpatialProblem(MatrixProblem):
+	def __init__(self, distance, s, t, **kwargs):
+		super().__init__((len(s), len(t)), s, t, **kwargs)
+		self._distance = distance
+
+	def build_matrix(self, out):
+		for i, x in enumerate(self.s):
+			for j, y in enumerate(self.t):
+				out[i, j] = self._distance(x, y)
+
+
 class SpatialProblemFactory:
-	def __init__(self, distance=None):
+	def __init__(self, distance=None, direction="minimize", dtype=np.float32):
 		if distance is None:
 			from scipy.spatial.distance import euclidean
 			distance = euclidean
 
 		self._distance = distance
+		self._direction = direction
+		self._dtype = dtype
 
-	def new_problem(self, s, t, direction="minimize"):
-		m = np.empty((len(s), len(t)), dtype=np.float32)
-		for i, x in enumerate(s):
-			for j, y in enumerate(t):
-				m[i, j] = self._distance(x, y)
-		return Problem(m, s, t, direction=direction)
+	def new_problem(self, s, t):
+		return SpatialProblem(
+			self._distance, s, t, direction=self._direction, dtype=self._dtype)
