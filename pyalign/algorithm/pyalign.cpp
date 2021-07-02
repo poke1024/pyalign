@@ -88,17 +88,14 @@ public:
 private:
 	const pyalign::SolutionRef<CellType, ProblemType> m_solution;
 	AlignmentRef m_alignment;
-	const int m_batch_index;
 
 public:
 	inline SolutionImpl(
 		const pyalign::SolutionRef<CellType, ProblemType> p_solution,
-		const AlignmentRef &p_alignment,
-		const int p_batch_index) :
+		const AlignmentRef &p_alignment) :
 
 		m_solution(p_solution),
-		m_alignment(p_alignment),
-		m_batch_index(p_batch_index) {
+		m_alignment(p_alignment) {
 	}
 
 	virtual bool traceback_has_max_degree_1() const override {
@@ -106,15 +103,15 @@ public:
 	}
 
 	virtual xt::pytensor<Value, 3> values() const override {
-		return m_solution->values(m_batch_index);
+		return m_solution->values();
 	}
 
 	virtual xt::pytensor<Index, 4> traceback_as_matrix() const override {
-		return m_solution->traceback_as_matrix(m_batch_index);
+		return m_solution->traceback_as_matrix();
 	}
 
 	virtual py::list traceback_as_edges() const override {
-		const auto edges = m_solution->traceback_as_edges(m_batch_index);
+		const auto edges = m_solution->traceback_as_edges();
 
 		py::list py_edges;
 		for (const auto &layer_edges : edges) {
@@ -281,21 +278,19 @@ private:
 	inline py::tuple _solve_for_alignment(
 		const Pairwise &p_pairwise) const {
 
-		AlignmentRef alignments[CellType::batch_size];
+		std::array<AlignmentRef, CellType::batch_size> alignments;
 
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
 			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
 
-			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-				AlignmentRef alignment = std::make_shared<Alignment>();
-				const float score = m_solver.alignment(
-					p_pairwise.len_s(), p_pairwise.len_t(),
-					*alignment.get(), batch_i);
-				alignment->set_score(score);
-				alignments[batch_i] = alignment;
+			for (int i = 0; i < m_solver.batch_size(); i++) {
+				alignments[i] = std::make_shared<Alignment>();
 			}
+
+			m_solver.alignment(
+				p_pairwise.len_s(), p_pairwise.len_t(), alignments);
 		}
 
 		py::object py_alignments[CellType::batch_size];
@@ -320,13 +315,25 @@ private:
 			p_pairwise.check();
 			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
 
+			std::array<AlignmentRef, CellType::batch_size> alignments;
+			std::array<pyalign::SolutionRef<CellType, ProblemType>, CellType::batch_size> sol0;
+
 			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-				const auto alignment = std::make_shared<Alignment>();
-				SolutionRef solution = std::make_shared<SolutionImpl<CellType, ProblemType>>(
-					m_solver.solution(p_pairwise.len_s(), p_pairwise.len_t(), *alignment.get(), batch_i),
-					alignment,
-					batch_i);
-				solutions[batch_i] = solution;
+				alignments[batch_i] = std::make_shared<Alignment>();
+				sol0[batch_i] = std::make_shared<
+					pyalign::Solution<CellType, ProblemType>>();
+			}
+
+			m_solver.solution(
+				p_pairwise.len_s(),
+				p_pairwise.len_t(),
+				alignments,
+				sol0);
+
+			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
+				solutions[batch_i] = std::make_shared<SolutionImpl<CellType, ProblemType>>(
+					sol0[batch_i],
+					alignments[batch_i]);
 			}
 		}
 
