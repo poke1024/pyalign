@@ -449,7 +449,7 @@ using traceback_type = typename traceback_cell_type_factory<
 	CellType>::traceback_cell_type;
 
 
-template<typename CellType, typename ProblemType, int LayerCount, int Layer>
+template<typename CellType, typename ProblemType, int LayerCount>
 class Matrix;
 
 template<typename CellType, typename ProblemType, int LayerCount>
@@ -462,9 +462,7 @@ public:
 	typedef traceback_type<CellType, ProblemType> Traceback;
 
 protected:
-	friend class Matrix<CellType, ProblemType, LayerCount, 0>;
-	friend class Matrix<CellType, ProblemType, LayerCount, 1>;
-	friend class Matrix<CellType, ProblemType, LayerCount, 2>;
+	friend class Matrix<CellType, ProblemType, LayerCount>;
 
 	struct Data {
 		xt::xtensor<ValueVec, 3> values;
@@ -522,7 +520,7 @@ public:
 	}
 
 	template<int Layer>
-	inline Matrix<CellType, ProblemType, LayerCount, Layer> make(
+	inline Matrix<CellType, ProblemType, LayerCount> make(
 		const Index len_s, const Index len_t) const;
 
 	inline Index max_len_s() const {
@@ -559,6 +557,9 @@ public:
 	}
 };
 
+template<typename CellType, typename ProblemType, int LayerCount>
+using MatrixFactoryRef = std::shared_ptr<MatrixFactory<CellType, ProblemType, LayerCount>>;
+
 template<ssize_t i0, ssize_t j0, typename View>
 struct shifted_xview {
 	View v;
@@ -577,7 +578,7 @@ shifted_xview<i0, j0, View> shift_xview(View &&v) {
 	return shifted_xview<i0, j0, View>{v};
 }
 
-template<typename CellType, typename ProblemType, int LayerCount, int Layer>
+template<typename CellType, typename ProblemType, int LayerCount>
 class Matrix {
 public:
 	typedef typename CellType::value_type Value;
@@ -587,16 +588,19 @@ private:
 	const MatrixFactory<CellType, ProblemType, LayerCount> &m_factory;
 	const Index m_len_s;
 	const Index m_len_t;
+	const uint8_t m_layer;
 
 public:
 	inline Matrix(
 		const MatrixFactory<CellType, ProblemType, LayerCount> &factory,
 		const Index len_s,
-		const Index len_t) :
+		const Index len_t,
+		const uint8_t layer) :
 
 	    m_factory(factory),
 	    m_len_s(len_s),
-	    m_len_t(len_t) {
+	    m_len_t(len_t),
+	    m_layer(layer) {
 	}
 
 	inline Index len_s() const {
@@ -610,13 +614,13 @@ public:
 	template<int i0, int j0>
 	inline auto values_n() const {
 		return shift_xview<i0, j0>(xt::view(
-			m_factory.m_data->values, Layer, xt::all(), xt::all()));
+			m_factory.m_data->values, m_layer, xt::all(), xt::all()));
 	}
 
 	template<int i0, int j0>
 	inline auto traceback_n() const {
 		return shift_xview<i0, j0>(xt::view(
-			m_factory.m_data->traceback, Layer, xt::all(), xt::all()));
+			m_factory.m_data->traceback, m_layer, xt::all(), xt::all()));
 	}
 
 	struct assume_non_negative_indices {
@@ -626,7 +630,7 @@ public:
 	inline auto values() const {
 		return xt::view(
 			m_factory.m_data->values,
-			Layer,
+			m_layer,
 			xt::range(i0, m_len_s + 1),
 			xt::range(j0, m_len_t + 1));
 	}
@@ -635,7 +639,7 @@ public:
 	inline auto traceback() const {
 		return xt::view(
 			m_factory.m_data->traceback,
-			Layer,
+			m_layer,
 			xt::range(i0, m_len_s + 1),
 			xt::range(j0, m_len_t + 1));
 	}
@@ -643,14 +647,14 @@ public:
 
 template<typename CellType, typename ProblemType, int LayerCount>
 template<int Layer>
-inline Matrix<CellType, ProblemType, LayerCount, Layer>
+inline Matrix<CellType, ProblemType, LayerCount>
 MatrixFactory<CellType, ProblemType, LayerCount>::make(
 	const Index len_s, const Index len_t) const {
 
 	static_assert(Layer < LayerCount, "layer index exceeds layer count");
 	check_size_against_max(len_s, m_max_len_s);
 	check_size_against_max(len_t, m_max_len_t);
-	return Matrix<CellType, ProblemType, LayerCount, Layer>(*this, len_s, len_t);
+	return Matrix<CellType, ProblemType, LayerCount>(*this, len_s, len_t, Layer);
 }
 
 template<typename Alignment>
@@ -1101,7 +1105,7 @@ public:
 
 	struct Context {
 		const Strategy strategy;
-		Matrix &matrix;
+		const Matrix &matrix;
 	};
 
 	class Iterator {
@@ -1170,17 +1174,19 @@ public:
 	};
 
 private:
+	const Matrix m_matrix;
 	std::array<Iterator, BatchSize> m_iterators;
 
 public:
 	inline TracebackIterators(
 		const Strategy &p_strategy,
-		Matrix &p_matrix) :
+		const Matrix &p_matrix) :
 
+		m_matrix(p_matrix),
 		m_iterators(seq_array<Iterator, BatchSize, Context>(
-			Context{p_strategy, p_matrix})) {
+			Context{p_strategy, m_matrix})) {
 
-		p_strategy.seeds().generate(m_iterators);
+		p_strategy.seeds(m_matrix).generate(m_iterators);
 	}
 
 	inline auto &iterator(const int p_batch_index) {
@@ -1198,7 +1204,7 @@ public:
 
 	struct Context {
 		const Strategy strategy;
-		Matrix &matrix;
+		const Matrix &matrix;
 	};
 
 	class Iterator {
@@ -1314,17 +1320,19 @@ public:
 	};
 
 private:
+	const Matrix m_matrix;
 	std::array<Iterator, BatchSize> m_iterators;
 
 public:
 	inline TracebackIterators(
 		const Strategy &p_strategy,
-		Matrix &p_matrix) :
+		const Matrix &p_matrix) :
 
+		m_matrix(p_matrix),
 		m_iterators(seq_array<Iterator, BatchSize, Context>(
-			Context{p_strategy, p_matrix})) {
+			Context{p_strategy, m_matrix})) {
 
-		p_strategy.seeds().generate(m_iterators);
+		p_strategy.seeds(m_matrix).generate(m_iterators);
 	}
 
 	inline auto &iterator(const int p_batch_index) {
@@ -1332,6 +1340,39 @@ public:
 	}
 };
 
+template<typename Locality, int LayerCount>
+struct SharedTracebackIterator {
+	typedef typename Locality::cell_type CellType;
+	typedef typename Locality::problem_type ProblemType;
+	typedef typename Locality::TracebackStrategy TracebackStrategy;
+	typedef Matrix<CellType, ProblemType, LayerCount> LayerMatrix;
+
+	const MatrixFactoryRef<CellType, ProblemType, LayerCount> factory;
+
+	TracebackIterators<
+		!traceback_type<CellType, ProblemType>::max_degree_1,
+		CellType,
+		ProblemType,
+		TracebackStrategy,
+		LayerMatrix> iterators;
+
+	inline SharedTracebackIterator(
+		const MatrixFactoryRef<CellType, ProblemType, LayerCount> &p_factory,
+		const TracebackStrategy &p_strategy,
+		const LayerMatrix &p_matrix) :
+		factory(p_factory),
+		iterators(p_strategy, p_matrix) {
+	}
+};
+
+template<typename Locality, int LayerCount>
+using SharedTracebackIteratorRef = std::shared_ptr<SharedTracebackIterator<Locality, LayerCount>>;
+
+template<typename Locality, int LayerCount>
+class AlignmentIterator {
+	SharedTracebackIteratorRef<Locality, LayerCount> m_iterators;
+	int m_batch_index;
+};
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix>
 using TracebackIterators2 = TracebackIterators<
@@ -1341,7 +1382,7 @@ template<typename Locality, typename Matrix>
 inline TracebackIterators2<
 	typename Locality::cell_type,
 	typename Locality::problem_type,
-	typename Locality::template TracebackStrategy<Matrix>,
+	typename Locality::TracebackStrategy,
 	Matrix>
 	make_traceback_iterator(
 		const Locality &p_locality,
@@ -1350,10 +1391,10 @@ inline TracebackIterators2<
 	return TracebackIterators2<
 		typename Locality::cell_type,
 		typename Locality::problem_type,
-		typename Locality::template TracebackStrategy<Matrix>,
+		typename Locality::TracebackStrategy,
 		Matrix>(
 
-		typename Locality::template TracebackStrategy<Matrix>(p_locality, p_matrix),
+		typename Locality::TracebackStrategy(p_locality),
 		p_matrix
 	);
 }
@@ -1532,26 +1573,22 @@ public:
 		}
 	};
 
-	template<typename Matrix>
 	class TracebackStrategy {
 		typedef typename ProblemType::direction_type Direction;
 
-		Matrix &m_matrix;
-
 	public:
 		inline TracebackStrategy(
-			const Local<CellType, ProblemType> &p_locality,
-			Matrix &p_matrix) :
-			m_matrix(p_matrix) {
+			const Local<CellType, ProblemType> &p_locality) {
 		}
 
 		inline constexpr bool has_trace() const {
 			return TBS::has_trace;
 		}
 
-		inline auto seeds() const {
+		template<typename Matrix>
+		inline auto seeds(const Matrix &p_matrix) const {
 			return TracebackSeeds<
-				Matrix, typename ProblemType::goal_type::path_goal>{m_matrix};
+				Matrix, typename ProblemType::goal_type::path_goal>{p_matrix};
 		}
 
 		inline bool continue_traceback_1(
@@ -1632,26 +1669,22 @@ public:
 		}
 	};
 
-	template<typename Matrix>
 	class TracebackStrategy {
 		typedef typename ProblemType::direction_type Direction;
 
-		Matrix &m_matrix;
-
 	public:
 		inline TracebackStrategy(
-			const Global<CellType, ProblemType> &p_locality,
-			Matrix &p_matrix) :
-			m_matrix(p_matrix) {
+			const Global<CellType, ProblemType> &p_locality) {
 		}
 
 		inline constexpr bool has_trace() const {
 			return TBS::has_trace;
 		}
 
-		inline auto seeds() const {
+		template<typename Matrix>
+		inline auto seeds(const Matrix &p_matrix) const {
 			return TracebackSeeds<
-				Matrix, typename ProblemType::goal_type::path_goal>{m_matrix};
+				Matrix, typename ProblemType::goal_type::path_goal>{p_matrix};
 		}
 
 		inline bool continue_traceback_1(
@@ -1742,26 +1775,22 @@ public:
 		}
 	};
 
-	template<typename Matrix>
 	class TracebackStrategy {
 		typedef typename ProblemType::direction_type Direction;
 
-		Matrix &m_matrix;
-
 	public:
 		inline TracebackStrategy(
-			const Semiglobal<CellType, ProblemType> &p_locality,
-			Matrix &p_matrix) :
-			m_matrix(p_matrix) {
+			const Semiglobal<CellType, ProblemType> &p_locality) {
 		}
 
 		inline constexpr bool has_trace() const {
 			return TBS::has_trace;
 		}
 
-		inline auto seeds() const {
+		template<typename Matrix>
+		inline auto seeds(const Matrix &p_matrix) const {
 			return TracebackSeeds<
-				Matrix, typename ProblemType::goal_type::path_goal>{m_matrix};
+				Matrix, typename ProblemType::goal_type::path_goal>{p_matrix};
 		}
 
 		inline bool continue_traceback_1(
@@ -1972,7 +2001,7 @@ public:
 
 protected:
 	const Locality<CellType, ProblemType> m_locality;
-	MatrixFactory<CellType, ProblemType, LayerCount> m_factory;
+	const MatrixFactoryRef<CellType, ProblemType, LayerCount> m_factory;
 	const AlgorithmMetaDataRef m_algorithm;
 
 	template<typename ValueCell, typename TracebackCell>
@@ -1991,16 +2020,17 @@ public:
 		const AlgorithmMetaDataRef &p_algorithm) :
 
 		m_locality(p_locality_init),
-		m_factory(p_max_len_s, p_max_len_t),
+		m_factory(std::make_shared<MatrixFactory<CellType, ProblemType, LayerCount>>(
+			p_max_len_s, p_max_len_t)),
 		m_algorithm(p_algorithm) {
 	}
 
 	inline Index max_len_s() const {
-		return m_factory.max_len_s();
+		return m_factory->max_len_s();
 	}
 
 	inline Index max_len_t() const {
-		return m_factory.max_len_t();
+		return m_factory->max_len_t();
 	}
 
 	inline constexpr int batch_size() const {
@@ -2009,14 +2039,14 @@ public:
 
 	template<int Layer>
 	inline auto matrix(const Index len_s, const Index len_t) {
-		return m_factory.make<Layer>(len_s, len_t);
+		return m_factory->make<Layer>(len_s, len_t);
 	}
 
 	inline ValueVec score(
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix = m_factory.template make<matrix_name::D>(len_s, len_t);
+		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
 		auto tb = make_traceback_iterator(m_locality, matrix);
 
 		ValueVec scores;
@@ -2035,7 +2065,7 @@ public:
 		const size_t len_t,
 		const std::array<AlignmentRef, CellType::batch_size> &alignments) const {
 
-		auto matrix = m_factory.template make<matrix_name::D>(len_s, len_t);
+		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
 		auto tb = make_traceback_iterator(m_locality, matrix);
 		const auto deref = Deref();
 
@@ -2049,6 +2079,26 @@ public:
 		}
 	}
 
+	template<typename Alignment>
+	std::vector<std::shared_ptr<AlignmentIterator<Locality<CellType, ProblemType>, LayerCount>>> alignment_iterator(
+		const size_t len_s,
+		const size_t len_t) {
+
+		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
+		auto shared_it = std::make_shared<SharedTracebackIterator<
+			Locality<CellType, ProblemType>, LayerCount>>(m_factory, m_locality, matrix);
+
+		std::vector<std::shared_ptr<AlignmentIterator<Locality<CellType, ProblemType>, LayerCount>>> iterators;
+		iterators.reserve(CellType::batch_size);
+		for (int i = 0; i < CellType::batch_size; i++) {
+			iterators.push_back(std::make_shared<AlignmentIterator<Locality<CellType, ProblemType>, LayerCount>>(
+				shared_it, i
+			));
+		}
+
+		return iterators;
+	}
+
 	template<typename AlignmentRef, typename SolutionRef, typename Deref=shared_ptr_deref>
 	void solution(
 		const size_t len_s,
@@ -2056,7 +2106,7 @@ public:
 		const std::array<AlignmentRef, CellType::batch_size> &alignments,
 		const std::array<SolutionRef, CellType::batch_size> &solutions) const {
 
-		auto matrix = m_factory.template make<matrix_name::D>(len_s, len_t);
+		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
 		auto tb = make_traceback_iterator(m_locality, matrix);
 		const auto deref = Deref();
 
@@ -2068,8 +2118,8 @@ public:
 				build_path<Index>(), build_alignment<decltype(alignment)>(alignment)
 			);
 
-			solution.set_values(m_factory.all_layers().values(len_s, len_t), i);
-			solution.set_traceback(m_factory.all_layers().traceback(len_s, len_t), i);
+			solution.set_values(m_factory->all_layers().values(len_s, len_t), i);
+			solution.set_traceback(m_factory->all_layers().traceback(len_s, len_t), i);
 
 			tb.iterator(i).init(build);
 			const auto tb_val = tb.iterator(i).next(build);
@@ -2146,7 +2196,7 @@ public:
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
 
-		auto values = this->m_factory.template values<matrix_name::D>();
+		auto values = this->m_factory->template values<matrix_name::D>();
 		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
 		this->m_locality.init_border_case(
@@ -2171,7 +2221,7 @@ public:
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix = this->m_factory.template make<matrix_name::D>(len_s, len_t);
+		auto matrix = this->m_factory->template make<matrix_name::D>(len_s, len_t);
 
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
@@ -2253,9 +2303,9 @@ public:
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
 
-		auto matrix_D = this->m_factory.template make<matrix_name::D>(p_max_len_s, p_max_len_t);
-		auto matrix_P = this->m_factory.template make<matrix_name::P>(p_max_len_s, p_max_len_t);
-		auto matrix_Q = this->m_factory.template make<matrix_name::Q>(p_max_len_s, p_max_len_t);
+		auto matrix_D = this->m_factory->template make<matrix_name::D>(p_max_len_s, p_max_len_t);
+		auto matrix_P = this->m_factory->template make<matrix_name::P>(p_max_len_s, p_max_len_t);
+		auto matrix_Q = this->m_factory->template make<matrix_name::Q>(p_max_len_s, p_max_len_t);
 
 		auto D = matrix_D.template values<0, 0>();
 		auto P = matrix_P.template values<0, 0>();
@@ -2309,9 +2359,9 @@ public:
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix_D = this->m_factory.template make<matrix_name::D>(len_s, len_t);
-		auto matrix_P = this->m_factory.template make<matrix_name::P>(len_s, len_t);
-		auto matrix_Q = this->m_factory.template make<matrix_name::Q>(len_s, len_t);
+		auto matrix_D = this->m_factory->template make<matrix_name::D>(len_s, len_t);
+		auto matrix_P = this->m_factory->template make<matrix_name::P>(len_s, len_t);
+		auto matrix_Q = this->m_factory->template make<matrix_name::Q>(len_s, len_t);
 
 		auto D = matrix_D.template values_n<1, 1>();
 		auto tb_D = matrix_D.template traceback_n<1, 1>();
@@ -2429,7 +2479,7 @@ public:
 		check_gap_tensor_shape(m_gap_cost_s, p_max_len_s + 1);
 		check_gap_tensor_shape(m_gap_cost_t, p_max_len_t + 1);
 
-		auto values = this->m_factory.template values<matrix_name::D>();
+		auto values = this->m_factory->template values<matrix_name::D>();
 		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
 
 		this->m_locality.init_border_case(
@@ -2457,7 +2507,7 @@ public:
 		const size_t len_s,
 		const size_t len_t) const {
 
-		auto matrix = this->m_factory.template make<matrix_name::D>(len_s, len_t);
+		auto matrix = this->m_factory->template make<matrix_name::D>(len_s, len_t);
 
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
@@ -2514,7 +2564,7 @@ public:
 			p_max_len_t,
 			std::make_shared<AlgorithmMetaData>("DTW", "n^2", "n^2")) {
 
-		auto values = this->m_factory.template values<matrix_name::D>();
+		auto values = this->m_factory->template values<matrix_name::D>();
 		const auto worst = std::numeric_limits<Value>::infinity() * (Direction::is_minimize() ? 1 : -1);
 		for (auto &cell : values) {
 			cell.fill(worst);
@@ -2538,7 +2588,7 @@ public:
 		// than the Algorithm it Approximates. IEEE Transactions on Knowledge and Data
 		// Engineering, 1–1. https://doi.org/10.1109/TKDE.2020.3033752
 
-		auto matrix = this->m_factory.template make<matrix_name::D>(len_s, len_t);
+		auto matrix = this->m_factory->template make<matrix_name::D>(len_s, len_t);
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
 
