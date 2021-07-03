@@ -14,27 +14,62 @@ typedef int16_t cell_index_t;
 typedef pyalign::cell_type<float, cell_index_t, pyalign::no_batch> cell_type_nobatch;
 typedef pyalign::cell_type<float, cell_index_t, pyalign::machine_batch_size> cell_type_batched;
 
+template<typename Index>
+xt::pytensor<Index, 1> invert(
+	const xt::pytensor<Index, 1> &p_source,
+	const size_t p_inverted_len) {
+
+	xt::pytensor<Index, 1> inverted;
+	inverted.resize({static_cast<ssize_t>(p_inverted_len)});
+	inverted.fill(-1);
+
+	const size_t n = p_source.shape(0);
+	for (size_t i = 0; i < n; i++) {
+		auto j = p_source(i);
+		if (j >= 0) {
+			inverted(j) = i;
+		}
+	}
+
+	return inverted;
+}
+
 class Alignment {
 public:
 	typedef cell_index_t Index;
 
 private:
-	xt::pytensor<Index, 1> m_s_to_t;
-	xt::pytensor<Index, 1> m_t_to_s;
+	std::optional<xt::pytensor<Index, 1>> m_s_to_t;
+	std::optional<xt::pytensor<Index, 1>> m_t_to_s;
+	Index m_len_s;
+	Index m_len_t;
 	float m_score;
 
 public:
-	inline void resize(const size_t len_s, const size_t len_t) {
-		m_s_to_t.resize({static_cast<ssize_t>(len_s)});
-		m_s_to_t.fill(-1);
+	inline Alignment() : m_len_s(0), m_len_t(0) {
+	}
 
-		m_t_to_s.resize({static_cast<ssize_t>(len_t)});
-		m_t_to_s.fill(-1);
+	inline void resize(const size_t len_s, const size_t len_t) {
+		m_len_s = len_s;
+		m_len_t = len_t;
+
+		if (len_s <= len_t) {
+			m_s_to_t = xt::pytensor<Index, 1>();
+			m_s_to_t.value().resize({static_cast<ssize_t>(len_s)});
+			m_s_to_t.value().fill(-1);
+		} else {
+			m_t_to_s = xt::pytensor<Index, 1>();
+			m_t_to_s.value().resize({static_cast<ssize_t>(len_t)});
+			m_t_to_s.value().fill(-1);
+		}
 	}
 
 	inline void add_edge(const size_t u, const size_t v) {
-		m_s_to_t[u] = v;
-		m_t_to_s[v] = u;
+		if (m_s_to_t.has_value()) {
+			m_s_to_t.value()[u] = v;
+		} else {
+			m_t_to_s.value()[v] = u;
+		}
 	}
 
 	inline void set_score(const float p_score) {
@@ -45,12 +80,18 @@ public:
 		return m_score;
 	}
 
-	inline const xt::pytensor<Index, 1> &s_to_t() const {
-		return m_s_to_t;
+	inline const xt::pytensor<Index, 1> &s_to_t() {
+		if (!m_s_to_t.has_value()) {
+			m_s_to_t = invert<Index>(m_t_to_s.value(), m_len_s);
+		}
+		return m_s_to_t.value();
 	}
 
-	inline const xt::pytensor<Index, 1> &t_to_s() const {
-		return m_t_to_s;
+	inline const xt::pytensor<Index, 1> &t_to_s() {
+		if (!m_t_to_s.has_value()) {
+			m_t_to_s = invert<Index>(m_s_to_t.value(), m_len_t);
+		}
+		return m_t_to_s.value();
 	}
 };
 
