@@ -663,6 +663,138 @@ MatrixFactory<CellType, ProblemType>::make(
 }
 
 template<typename CellType, typename ProblemType>
+class build_val {
+public:
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type Index;
+	typedef typename ProblemType::direction_type Direction;
+
+private:
+	Value m_val;
+
+public:
+	inline build_val() : m_val(Direction::template worst_val<Value>()) {
+	}
+
+	inline Value val() const {
+		return m_val;
+	}
+
+	inline void begin(
+		const Index len_s,
+		const Index len_t) {
+	}
+
+	inline void step(
+		const Index last_u,
+		const Index last_v,
+		const Index u,
+		const Index v) {
+	}
+
+	inline void emit(
+		const Value p_val) {
+		m_val = p_val;
+	}
+
+	inline size_t size() const {
+		return 0;
+	}
+
+	inline void go_back(
+		const size_t p_size) {
+	}
+};
+
+template<typename CellType, typename ProblemType>
+class build_path {
+public:
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type Index;
+	typedef typename ProblemType::direction_type Direction;
+
+private:
+	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Coord;
+
+	std::vector<Coord> m_path;
+	Value m_val;
+
+public:
+	inline build_path() : m_val(Direction::template worst_val<Value>()) {
+	}
+
+	inline Value val() const {
+		return m_val;
+	}
+
+	inline void begin(
+		const Index len_s,
+		const Index len_t) {
+
+		m_path.reserve(len_s + len_t);
+		m_val = Direction::template worst_val<Value>();
+	}
+
+	inline void step(
+		const Index last_u,
+		const Index last_v,
+		const Index u,
+		const Index v) {
+
+		if (m_path.empty()) {
+			m_path.push_back(Coord{last_u, last_v});
+			m_path.push_back(Coord{u, v});
+		} else {
+			if (m_path.back()(0) != last_u) {
+				throw std::runtime_error(
+					"internal error in traceback generation");
+			}
+			if (m_path.back()(1) != last_v) {
+				throw std::runtime_error(
+					"internal error in traceback generation");
+			}
+			m_path.push_back(Coord{u, v});
+		}
+	}
+
+	template<typename Value>
+	inline void emit(Value val) {
+		m_val = val;
+	}
+
+	inline xt::xtensor<Index, 2> path() const {
+		xt::xtensor<Index, 2> path;
+		path.resize({m_path.size(), 2});
+		for (size_t i = 0; i < m_path.size(); i++) {
+			xt::view(path, i, xt::all()) = m_path[i];
+		}
+		return path;
+	}
+
+	inline size_t size() const {
+		return m_path.size();
+	}
+
+	inline void go_back(
+		const size_t p_size) {
+		m_path.resize(p_size);
+	}
+
+	template<typename F>
+	inline void iterate(const F &f) {
+		const size_t n = m_path.size();
+		for (size_t i = 1; i < n; i++) {
+			f(
+				m_path[i - 1](0),
+				m_path[i - 1](1),
+				m_path[i](0),
+				m_path[i](1)
+			);
+		}
+	}
+};
+
+template<typename CellType, typename ProblemType>
 struct build_alignment {
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::index_type Index;
@@ -727,14 +859,21 @@ struct build_alignment {
 
 	template<typename Alignment>
 	class buffered {
+		build_path<CellType, ProblemType> m_path;
+		Index m_len_s;
+		Index m_len_t;
+
 	public:
-		inline buffered() {
+		inline buffered() : m_len_s(0), m_len_t(0) {
 		}
 
 		inline void begin(
 			const Index len_s,
 			const Index len_t) {
 
+			m_len_s = len_s;
+			m_len_t = len_t;
+			m_path.begin(len_s + len_t);
 		}
 
 		inline void step(
@@ -743,94 +882,41 @@ struct build_alignment {
 			const Index u,
 			const Index v) {
 
+			m_path.step(last_u, last_v, u, v);
 		}
 
 		inline void emit(Value val) {
+			m_path.emit(val);
 		}
 
 		inline size_t size() const {
-			return 0;
+			return m_path.size();
 		}
 
 		inline void go_back(
 			const size_t p_size) {
+			m_path.go_back(p_size);
+		}
 
+		inline void copy_to(
+			Alignment &p_alignment) {
+
+			p_alignment.resize(m_len_s, m_len_t);
+
+			m_path.iterate([&p_alignment] (
+				const Index last_u,
+				const Index last_v,
+				const Index u,
+				const Index v) {
+
+				if (u != last_u && v != last_v) {
+					p_alignment.add_edge(last_u, last_v);
+				}
+			});
+
+			p_alignment.set_score(m_path.val());
 		}
 	};
-};
-
-template<typename CellType, typename ProblemType>
-class build_path {
-public:
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_type Index;
-	typedef typename ProblemType::direction_type Direction;
-
-private:
-	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Coord;
-
-	std::vector<Coord> m_path;
-	Value m_val;
-
-public:
-	inline build_path() : m_val(Direction::template worst_val<Value>()) {
-	}
-
-	inline Value val() const {
-		return m_val;
-	}
-
-	inline void begin(
-		const Index len_s,
-		const Index len_t) {
-
-		m_path.reserve(len_s + len_t);
-	}
-
-	inline void step(
-		const Index last_u,
-		const Index last_v,
-		const Index u,
-		const Index v) {
-
-		if (m_path.empty()) {
-			m_path.push_back(Coord{last_u, last_v});
-			m_path.push_back(Coord{u, v});
-		} else {
-			if (m_path.back()(0) != last_u) {
-				throw std::runtime_error(
-					"internal error in traceback generation");
-			}
-			if (m_path.back()(1) != last_v) {
-				throw std::runtime_error(
-					"internal error in traceback generation");
-			}
-			m_path.push_back(Coord{u, v});
-		}
-	}
-
-	template<typename Value>
-	inline void emit(Value val) {
-		m_val = val;
-	}
-
-	inline xt::xtensor<Index, 2> path() const {
-		xt::xtensor<Index, 2> path;
-		path.resize({m_path.size(), 2});
-		for (size_t i = 0; i < m_path.size(); i++) {
-			xt::view(path, i, xt::all()) = m_path[i];
-		}
-		return path;
-	}
-
-	inline size_t size() const {
-		return m_path.size();
-	}
-
-	inline void go_back(
-		const size_t p_size) {
-		m_path.resize(p_size);
-	}
 };
 
 template<typename... BuildRest>
@@ -946,51 +1032,6 @@ public:
 		return m_head;
 	}
 };
-
-template<typename CellType, typename ProblemType>
-class build_val {
-public:
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_type Index;
-	typedef typename ProblemType::direction_type Direction;
-
-private:
-	Value m_val;
-
-public:
-	inline build_val() : m_val(Direction::template worst_val<Value>()) {
-	}
-
-	inline Value val() const {
-		return m_val;
-	}
-
-	inline void begin(
-		const Index len_s,
-		const Index len_t) {
-	}
-
-	inline void step(
-		const Index last_u,
-		const Index last_v,
-		const Index u,
-		const Index v) {
-	}
-
-	inline void emit(
-		const Value p_val) {
-		m_val = p_val;
-	}
-
-	inline size_t size() const {
-		return 0;
-	}
-
-	inline void go_back(
-		const size_t p_size) {
-	}
-};
-
 
 template<typename CellType, typename ProblemType>
 class Accumulator {
@@ -2147,6 +2188,7 @@ public:
 	typedef typename CellType::value_vec_type ValueVec;
 	typedef typename CellType::index_type Index;
 	typedef typename ProblemType::direction_type Direction;
+	typedef Locality<CellType, ProblemType> locality_type;
 
 protected:
 	const Locality<CellType, ProblemType> m_locality;

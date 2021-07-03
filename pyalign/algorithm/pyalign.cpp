@@ -97,6 +97,31 @@ public:
 
 typedef std::shared_ptr<Alignment> AlignmentRef;
 
+class AlignmentIterator {
+public:
+	virtual ~AlignmentIterator() {
+	}
+
+	virtual AlignmentRef next() = 0;
+};
+
+typedef std::shared_ptr<AlignmentIterator> AlignmentIteratorRef;
+
+template<typename Locality>
+class AlignmentIteratorImpl : public AlignmentIterator {
+	std::shared_ptr<pyalign::AlignmentIterator<Alignment, Locality>> m_iterator;
+
+public:
+	inline AlignmentIteratorImpl(
+		const std::shared_ptr<pyalign::AlignmentIterator<Alignment, Locality>> &p_iterator) :
+		m_iterator(p_iterator) {
+	}
+
+	virtual AlignmentRef next() override {
+		return AlignmentRef();
+	}
+};
+
 typedef pyalign::AlgorithmMetaData Algorithm;
 typedef pyalign::AlgorithmMetaDataRef AlgorithmRef;
 
@@ -226,8 +251,21 @@ inline void check_batch_size(const size_t given, const size_t batch_size) {
 }
 
 template<typename Array, std::size_t... T>
-py::tuple make_obj_tuple(const Array& array, std::index_sequence<T...>) {
+py::tuple to_tuple_with_seq(const Array& array, std::index_sequence<T...>) {
     return py::make_tuple(array[T]...);
+}
+
+template<typename T, int N>
+py::tuple to_tuple(const std::array<T, N> &obj) {
+	py::object py_obj[N];
+
+	for (int i = 0; i < N; i++) {
+		py_obj[i] = py::cast(obj[i]);
+	}
+
+	return to_tuple_with_seq(
+		py_obj,
+		std::make_index_sequence<N>());
 }
 
 template<typename CellType>
@@ -334,22 +372,34 @@ private:
 				p_pairwise.len_s(), p_pairwise.len_t(), alignments);
 		}
 
-		py::object py_alignments[CellType::batch_size];
+		return to_tuple<AlignmentRef, CellType::batch_size>(alignments);
+	}
 
-		for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-			py_alignments[batch_i] = py::cast(alignments[batch_i]);
+	template<typename Pairwise>
+	inline py::tuple solve_for_alignments(
+		const Pairwise &p_pairwise) const {
+
+		std::array<AlignmentIteratorRef, CellType::batch_size> iterators;
+
+		{
+			py::gil_scoped_release release;
+			p_pairwise.check();
+			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
+
+			size_t i = 0;
+			for (auto iterator : m_solver.alignment_iterator(p_pairwise.len_s(), p_pairwise.len_t())) {
+				iterators.at(i++) = std::make_shared<AlignmentIteratorImpl<typename S::locality_type>>(iterator);
+			}
 		}
 
-		return make_obj_tuple(
-			py_alignments,
-			std::make_index_sequence<CellType::batch_size>());
+		return to_tuple(iterators);
 	}
 
 	template<typename Pairwise>
 	inline py::tuple _solve_for_solution(
 		const Pairwise &p_pairwise) const {
 
-		SolutionRef solutions[CellType::batch_size];
+		std::array<SolutionRef, CellType::batch_size> solutions;
 
 		{
 			py::gil_scoped_release release;
@@ -378,15 +428,7 @@ private:
 			}
 		}
 
-		py::object py_solutions[CellType::batch_size];
-
-		for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-			py_solutions[batch_i] = py::cast(solutions[batch_i]);
-		}
-
-		return make_obj_tuple(
-			py_solutions,
-			std::make_index_sequence<CellType::batch_size>());
+		return to_tuple<SolutionRef, CellType::batch_size>(solutions);
 	}
 
 public:
@@ -743,6 +785,9 @@ PYBIND11_MODULE(algorithm, m) {
 	alignment.def_property_readonly("score", &Alignment::score);
 	alignment.def_property_readonly("s_to_t", &Alignment::s_to_t);
 	alignment.def_property_readonly("t_to_s", &Alignment::t_to_s);
+
+	py::class_<AlignmentIterator, AlignmentIteratorRef> alignment_iterator(m, "AlignmentIterator");
+	alignment_iterator.def("next", &AlignmentIterator::next);
 
 	py::class_<Solution, SolutionRef> solution(m, "Solution");
 	solution.def_property_readonly("values", &Solution::values);
