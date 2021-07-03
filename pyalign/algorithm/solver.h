@@ -449,10 +449,10 @@ using traceback_type = typename traceback_cell_type_factory<
 	CellType>::traceback_cell_type;
 
 
-template<typename CellType, typename ProblemType, int LayerCount>
+template<typename CellType, typename ProblemType>
 class Matrix;
 
-template<typename CellType, typename ProblemType, int LayerCount>
+template<typename CellType, typename ProblemType>
 class MatrixFactory {
 public:
 	typedef typename CellType::value_type Value;
@@ -462,7 +462,7 @@ public:
 	typedef traceback_type<CellType, ProblemType> Traceback;
 
 protected:
-	friend class Matrix<CellType, ProblemType, LayerCount>;
+	friend class Matrix<CellType, ProblemType>;
 
 	struct Data {
 		xt::xtensor<ValueVec, 3> values;
@@ -472,6 +472,7 @@ protected:
 	const std::unique_ptr<Data> m_data;
 	const size_t m_max_len_s;
 	const size_t m_max_len_t;
+	const uint16_t m_layer_count;
 
 	inline void check_size_against_max(const size_t p_len, const size_t p_max) const {
 		if (p_len > p_max) {
@@ -489,27 +490,29 @@ protected:
 public:
 	inline MatrixFactory(
 		const size_t p_max_len_s,
-		const size_t p_max_len_t) :
+		const size_t p_max_len_t,
+		const uint16_t p_layer_count) :
 
 		m_data(std::make_unique<Data>()),
 		m_max_len_s(p_max_len_s),
-		m_max_len_t(p_max_len_t) {
+		m_max_len_t(p_max_len_t),
+		m_layer_count(p_layer_count) {
 
 		check_size_against_implementation_limit(p_max_len_s);
 		check_size_against_implementation_limit(p_max_len_t);
 
 		m_data->values.resize({
-			LayerCount,
+			p_layer_count,
 			m_max_len_s + 1,
 			m_max_len_t + 1
 		});
 		m_data->traceback.resize({
-			LayerCount,
+			p_layer_count,
 			m_max_len_s + 1,
 			m_max_len_t + 1
 		});
 
-		for (int k = 0; k < LayerCount; k++) {
+		for (int k = 0; k < p_layer_count; k++) {
 			for (size_t i = 0; i < m_max_len_s + 1; i++) {
 				m_data->traceback(k, i, 0).clear();
 			}
@@ -520,7 +523,7 @@ public:
 	}
 
 	template<int Layer>
-	inline Matrix<CellType, ProblemType, LayerCount> make(
+	inline Matrix<CellType, ProblemType> make(
 		const Index len_s, const Index len_t) const;
 
 	inline Index max_len_s() const {
@@ -557,8 +560,8 @@ public:
 	}
 };
 
-template<typename CellType, typename ProblemType, int LayerCount>
-using MatrixFactoryRef = std::shared_ptr<MatrixFactory<CellType, ProblemType, LayerCount>>;
+template<typename CellType, typename ProblemType>
+using MatrixFactoryRef = std::shared_ptr<MatrixFactory<CellType, ProblemType>>;
 
 template<ssize_t i0, ssize_t j0, typename View>
 struct shifted_xview {
@@ -578,24 +581,24 @@ shifted_xview<i0, j0, View> shift_xview(View &&v) {
 	return shifted_xview<i0, j0, View>{v};
 }
 
-template<typename CellType, typename ProblemType, int LayerCount>
+template<typename CellType, typename ProblemType>
 class Matrix {
 public:
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::index_type Index;
 
 private:
-	const MatrixFactory<CellType, ProblemType, LayerCount> &m_factory;
+	const MatrixFactory<CellType, ProblemType> &m_factory;
 	const Index m_len_s;
 	const Index m_len_t;
-	const uint8_t m_layer;
+	const uint16_t m_layer;
 
 public:
 	inline Matrix(
-		const MatrixFactory<CellType, ProblemType, LayerCount> &factory,
+		const MatrixFactory<CellType, ProblemType> &factory,
 		const Index len_s,
 		const Index len_t,
-		const uint8_t layer) :
+		const uint16_t layer) :
 
 	    m_factory(factory),
 	    m_len_s(len_s),
@@ -645,16 +648,18 @@ public:
 	}
 };
 
-template<typename CellType, typename ProblemType, int LayerCount>
+template<typename CellType, typename ProblemType>
 template<int Layer>
-inline Matrix<CellType, ProblemType, LayerCount>
-MatrixFactory<CellType, ProblemType, LayerCount>::make(
+inline Matrix<CellType, ProblemType>
+MatrixFactory<CellType, ProblemType>::make(
 	const Index len_s, const Index len_t) const {
 
-	static_assert(Layer < LayerCount, "layer index exceeds layer count");
+	if (Layer >= m_layer_count) {
+		throw std::invalid_argument("layer index exceeds layer count");
+	}
 	check_size_against_max(len_s, m_max_len_s);
 	check_size_against_max(len_t, m_max_len_t);
-	return Matrix<CellType, ProblemType, LayerCount>(*this, len_s, len_t, Layer);
+	return Matrix<CellType, ProblemType>(*this, len_s, len_t, Layer);
 }
 
 template<typename Alignment>
@@ -1340,14 +1345,14 @@ public:
 	}
 };
 
-template<typename Locality, int LayerCount>
+template<typename Locality>
 struct SharedTracebackIterator {
 	typedef typename Locality::cell_type CellType;
 	typedef typename Locality::problem_type ProblemType;
 	typedef typename Locality::TracebackStrategy TracebackStrategy;
-	typedef Matrix<CellType, ProblemType, LayerCount> LayerMatrix;
+	typedef Matrix<CellType, ProblemType> LayerMatrix;
 
-	const MatrixFactoryRef<CellType, ProblemType, LayerCount> factory;
+	const MatrixFactoryRef<CellType, ProblemType> factory;
 
 	TracebackIterators<
 		!traceback_type<CellType, ProblemType>::max_degree_1,
@@ -1357,7 +1362,7 @@ struct SharedTracebackIterator {
 		LayerMatrix> iterators;
 
 	inline SharedTracebackIterator(
-		const MatrixFactoryRef<CellType, ProblemType, LayerCount> &p_factory,
+		const MatrixFactoryRef<CellType, ProblemType> &p_factory,
 		const TracebackStrategy &p_strategy,
 		const LayerMatrix &p_matrix) :
 		factory(p_factory),
@@ -1365,12 +1370,12 @@ struct SharedTracebackIterator {
 	}
 };
 
-template<typename Locality, int LayerCount>
-using SharedTracebackIteratorRef = std::shared_ptr<SharedTracebackIterator<Locality, LayerCount>>;
+template<typename Locality>
+using SharedTracebackIteratorRef = std::shared_ptr<SharedTracebackIterator<Locality>>;
 
-template<typename Locality, int LayerCount>
+template<typename Locality>
 class AlignmentIterator {
-	SharedTracebackIteratorRef<Locality, LayerCount> m_iterators;
+	SharedTracebackIteratorRef<Locality> m_iterators;
 	int m_batch_index;
 };
 
@@ -1991,7 +1996,7 @@ struct shared_ptr_deref {
 	}
 };
 
-template<typename CellType, typename ProblemType, template<typename, typename> class Locality, int LayerCount>
+template<typename CellType, typename ProblemType, template<typename, typename> class Locality>
 class Solver {
 public:
 	typedef typename CellType::value_type Value;
@@ -2001,7 +2006,7 @@ public:
 
 protected:
 	const Locality<CellType, ProblemType> m_locality;
-	const MatrixFactoryRef<CellType, ProblemType, LayerCount> m_factory;
+	const MatrixFactoryRef<CellType, ProblemType> m_factory;
 	const AlgorithmMetaDataRef m_algorithm;
 
 	template<typename ValueCell, typename TracebackCell>
@@ -2017,11 +2022,12 @@ public:
 		const typename Locality<CellType, ProblemType>::Initializers &p_locality_init,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
+		const size_t p_layer_count,
 		const AlgorithmMetaDataRef &p_algorithm) :
 
 		m_locality(p_locality_init),
-		m_factory(std::make_shared<MatrixFactory<CellType, ProblemType, LayerCount>>(
-			p_max_len_s, p_max_len_t)),
+		m_factory(std::make_shared<MatrixFactory<CellType, ProblemType>>(
+			p_max_len_s, p_max_len_t, p_layer_count)),
 		m_algorithm(p_algorithm) {
 	}
 
@@ -2080,18 +2086,18 @@ public:
 	}
 
 	template<typename Alignment>
-	std::vector<std::shared_ptr<AlignmentIterator<Locality<CellType, ProblemType>, LayerCount>>> alignment_iterator(
+	std::vector<std::shared_ptr<AlignmentIterator<Locality<CellType, ProblemType>>>> alignment_iterator(
 		const size_t len_s,
 		const size_t len_t) {
 
 		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
 		auto shared_it = std::make_shared<SharedTracebackIterator<
-			Locality<CellType, ProblemType>, LayerCount>>(m_factory, m_locality, matrix);
+			Locality<CellType, ProblemType>>>(m_factory, m_locality, matrix);
 
-		std::vector<std::shared_ptr<AlignmentIterator<Locality<CellType, ProblemType>, LayerCount>>> iterators;
+		std::vector<std::shared_ptr<AlignmentIterator<Locality<CellType, ProblemType>>>> iterators;
 		iterators.reserve(CellType::batch_size);
 		for (int i = 0; i < CellType::batch_size; i++) {
-			iterators.push_back(std::make_shared<AlignmentIterator<Locality<CellType, ProblemType>, LayerCount>>(
+			iterators.push_back(std::make_shared<AlignmentIterator<Locality<CellType, ProblemType>>>(
 				shared_it, i
 			));
 		}
@@ -2134,11 +2140,11 @@ public:
 	}
 };
 
-template<typename CellType, typename ProblemType, template<typename, typename> class Locality, int LayerCount>
-using AlignmentSolver = Solver<CellType, ProblemType, Locality, LayerCount>;
+template<typename CellType, typename ProblemType, template<typename, typename> class Locality>
+using AlignmentSolver = Solver<CellType, ProblemType, Locality>;
 
 template<typename CellType, typename ProblemType, template<typename, typename> class Locality>
-class LinearGapCostSolver final : public AlignmentSolver<CellType, ProblemType, Locality, 1> {
+class LinearGapCostSolver final : public AlignmentSolver<CellType, ProblemType, Locality> {
 	// For global alignment, we pose the problem as a Needleman-Wunsch problem, but follow the
 	// implementation of Sankoff and Kruskal.
 
@@ -2185,10 +2191,11 @@ public:
 		const size_t p_max_len_t,
 		const LocalityInit p_locality_init = LocalityInit()) :
 
-		AlignmentSolver<CellType, ProblemType, Locality, 1>(
+		AlignmentSolver<CellType, ProblemType, Locality>(
 			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
+			1, // layer count
 			std::make_shared<AlgorithmMetaData>(
 				Locality<CellType, ProblemType>::is_global() ?
 					"Needleman-Wunsch": "Smith-Waterman",
@@ -2270,7 +2277,7 @@ struct AffineCost {
 };
 
 template<typename CellType, typename ProblemType, template<typename, typename> class Locality>
-class AffineGapCostSolver final : public AlignmentSolver<CellType, ProblemType, Locality, 3> {
+class AffineGapCostSolver final : public AlignmentSolver<CellType, ProblemType, Locality> {
 public:
 	// Gotoh, O. (1982). An improved algorithm for matching biological sequences.
 	// Journal of Molecular Biology, 162(3), 705–708. https://doi.org/10.1016/0022-2836(82)90398-9
@@ -2295,10 +2302,11 @@ public:
 		const size_t p_max_len_t,
 		const LocalityInit p_locality_init = LocalityInit()) :
 
-		AlignmentSolver<CellType, ProblemType, Locality, 3>(
+		AlignmentSolver<CellType, ProblemType, Locality>(
 			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
+			3, // layer count
 			std::make_shared<AlgorithmMetaData>("Gotoh", "n^2", "n^2")),
 		m_gap_cost_s(p_gap_cost_s),
 		m_gap_cost_t(p_gap_cost_t) {
@@ -2432,7 +2440,7 @@ inline void check_gap_tensor_shape(const xt::xtensor<Value, 1> &tensor, const si
 }
 
 template<typename CellType, typename ProblemType, template<typename, typename> class Locality>
-class GeneralGapCostSolver final : public AlignmentSolver<CellType, ProblemType, Locality, 1> {
+class GeneralGapCostSolver final : public AlignmentSolver<CellType, ProblemType, Locality> {
 	// Our implementation follows what is sometimes referred to as Waterman-Smith-Beyer, i.e.
 	// an O(n^3) algorithm for generic gap costs. Waterman-Smith-Beyer generates a local alignment.
 
@@ -2468,10 +2476,11 @@ public:
 		const size_t p_max_len_t,
 		const LocalityInit p_locality_init = LocalityInit()) :
 
-		AlignmentSolver<CellType, ProblemType, Locality, 1>(
+		AlignmentSolver<CellType, ProblemType, Locality>(
 			p_locality_init,
 			p_max_len_s,
 			p_max_len_t,
+			1, // layer count
 			std::make_shared<AlgorithmMetaData>("Waterman-Smith-Beyer", "n^3", "n^2")),
 		m_gap_cost_s(p_gap_cost_s(p_max_len_s + 1)),
 		m_gap_cost_t(p_gap_cost_t(p_max_len_t + 1)) {
@@ -2547,7 +2556,7 @@ public:
 };
 
 template<typename CellType, typename ProblemType>
-class DynamicTimeSolver final : public Solver<CellType, ProblemType, Global, 1> {
+class DynamicTimeSolver final : public Solver<CellType, ProblemType, Global> {
 public:
 	typedef typename ProblemType::goal_type Goal;
 	typedef typename ProblemType::direction_type Direction;
@@ -2558,10 +2567,11 @@ public:
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) :
 
-		Solver<CellType, ProblemType, Global, 1>(
+		Solver<CellType, ProblemType, Global>(
 			GlobalInitializers(),
 			p_max_len_s,
 			p_max_len_t,
+			1, // layer count
 			std::make_shared<AlgorithmMetaData>("DTW", "n^2", "n^2")) {
 
 		auto values = this->m_factory->template values<matrix_name::D>();
