@@ -662,51 +662,124 @@ MatrixFactory<CellType, ProblemType>::make(
 	return Matrix<CellType, ProblemType>(*this, len_s, len_t, Layer);
 }
 
-template<typename Alignment>
-class build_alignment {
-	Alignment &m_alignment;
+template<typename CellType, typename ProblemType>
+struct build_alignment {
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type Index;
+	typedef typename ProblemType::direction_type Direction;
 
-public:
-	inline build_alignment(Alignment &p_alignment) :
-		m_alignment(p_alignment) {
-	}
+	template<typename Alignment>
+	struct unbuffered {
+		Alignment &m_alignment;
+		Index m_steps;
 
-	template<typename Index>
-	inline void begin(
-		const Index len_s,
-		const Index len_t) {
-
-		m_alignment.resize(len_s, len_t);
-	}
-
-	template<typename Index>
-	inline void step(
-		const Index last_u,
-		const Index last_v,
-		const Index u,
-		const Index v) {
-
-		if (u != last_u && v != last_v) {
-			m_alignment.add_edge(last_u, last_v);
+	public:
+		inline unbuffered(Alignment &p_alignment) :
+			m_alignment(p_alignment),
+			m_steps(0) {
 		}
-	}
 
-	inline size_t size() const {
-		return 0;
-	}
+		inline void begin(
+			const Index len_s,
+			const Index len_t) {
 
-	inline void go_back(
-		const size_t p_size) {
-	}
+			m_alignment.resize(len_s, len_t);
+			m_steps = 0;
+		}
+
+		inline void step(
+			const Index last_u,
+			const Index last_v,
+			const Index u,
+			const Index v) {
+
+			if (u != last_u && v != last_v) {
+				m_alignment.add_edge(last_u, last_v);
+			}
+
+			// m_steps needs to match with build_path's concept of size()
+			if (m_steps == 0) {
+				m_steps = 2;
+			} else {
+				m_steps += 1;
+			}
+		}
+
+		inline void emit(Value val) {
+			m_alignment.set_score(val);
+		}
+
+		inline size_t size() const {
+			return m_steps;
+		}
+
+		inline void go_back(
+			const size_t p_size) {
+
+			if (static_cast<Index>(p_size) != m_steps) {
+				std::ostringstream s;
+				s << "cannot go back to pos " << p_size <<
+					" on unbuffered alignment of size " << m_steps;
+				throw std::runtime_error(s.str());
+			}
+		}
+	};
+
+	template<typename Alignment>
+	class buffered {
+	public:
+		inline buffered() {
+		}
+
+		inline void begin(
+			const Index len_s,
+			const Index len_t) {
+
+		}
+
+		inline void step(
+			const Index last_u,
+			const Index last_v,
+			const Index u,
+			const Index v) {
+
+		}
+
+		inline void emit(Value val) {
+		}
+
+		inline size_t size() const {
+			return 0;
+		}
+
+		inline void go_back(
+			const size_t p_size) {
+
+		}
+	};
 };
 
-template<typename Index>
+template<typename CellType, typename ProblemType>
 class build_path {
+public:
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type Index;
+	typedef typename ProblemType::direction_type Direction;
+
+private:
 	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Coord;
 
 	std::vector<Coord> m_path;
+	Value m_val;
 
 public:
+	inline build_path() : m_val(Direction::template worst_val<Value>()) {
+	}
+
+	inline Value val() const {
+		return m_val;
+	}
+
 	inline void begin(
 		const Index len_s,
 		const Index len_t) {
@@ -734,6 +807,11 @@ public:
 			}
 			m_path.push_back(Coord{u, v});
 		}
+	}
+
+	template<typename Value>
+	inline void emit(Value val) {
+		m_val = val;
 	}
 
 	inline xt::xtensor<Index, 2> path() const {
@@ -775,8 +853,17 @@ public:
 		const Index v) {
 	}
 
+	template<typename Value>
+	inline void emit(
+		const Value p_val) {
+	}
+
 	inline size_t size() {
 		return 0;
+	}
+
+	inline void check_size(
+		const size_t p_size) const {
 	}
 
 	inline void go_back(
@@ -820,8 +907,27 @@ public:
 		m_rest.step(last_u, last_v, u, v);
 	}
 
+	template<typename Value>
+	inline void emit(
+		const Value p_val) {
+
+		m_head.emit(p_val);
+		m_rest.emit(p_val);
+	}
+
 	inline size_t size() {
-		return m_head.size();
+		const size_t s = m_head.size();
+		m_rest.check_size(s);
+		return s;
+	}
+
+	inline void check_size(
+		const size_t p_size) const {
+		if (p_size != m_head.size()) {
+			throw std::runtime_error(
+				"inconsistent size in build_multiple");
+		}
+		m_rest.check_size(p_size);
 	}
 
 	inline void go_back(
@@ -841,9 +947,23 @@ public:
 	}
 };
 
-class build_nothing {
+template<typename CellType, typename ProblemType>
+class build_val {
 public:
-	typedef ssize_t Index;
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type Index;
+	typedef typename ProblemType::direction_type Direction;
+
+private:
+	Value m_val;
+
+public:
+	inline build_val() : m_val(Direction::template worst_val<Value>()) {
+	}
+
+	inline Value val() const {
+		return m_val;
+	}
 
 	inline void begin(
 		const Index len_s,
@@ -855,6 +975,11 @@ public:
 		const Index last_v,
 		const Index u,
 		const Index v) {
+	}
+
+	inline void emit(
+		const Value p_val) {
+		m_val = p_val;
 	}
 
 	inline size_t size() const {
@@ -1133,18 +1258,9 @@ public:
 		}
 
 		template<typename Path>
-		inline void init(Path &p_path) {
-			if (!m_stack.empty() && m_context.strategy.has_trace()) {
-				const auto len_s = m_context.matrix.len_s();
-				const auto len_t = m_context.matrix.len_t();
-				p_path.begin(len_s, len_t);
-			}
-		}
-
-		template<typename Path>
-		inline std::optional<Value> next(Path &p_path) {
+		inline bool next(Path &p_path) {
 			if (m_stack.empty()) {
-				return std::optional<Value>();
+				return false;
 			}
 
 			const auto values = m_context.matrix.template values_n<1, 1>();
@@ -1157,6 +1273,10 @@ public:
 			const auto best_val = values(u, v)(m_batch_index);
 
 			if (m_context.strategy.has_trace()) { // && m_path.wants_path()
+				const auto len_s = m_context.matrix.len_s();
+				const auto len_t = m_context.matrix.len_t();
+				p_path.begin(len_s, len_t);
+
 				const auto traceback = m_context.matrix.template traceback<1, 1>();
 
 				while (
@@ -1174,7 +1294,9 @@ public:
 				}
 			}
 
-			return best_val;
+			p_path.emit(best_val);
+
+			return true;
 		}
 	};
 
@@ -1261,15 +1383,16 @@ public:
 		}
 
 		template<typename Path>
-		inline std::optional<Value> next(Path &p_path) {
+		inline bool next(Path &p_path) {
 
 			if (!m_context.strategy.has_trace()) {
 				if (m_stack.empty()) {
-					return std::optional<Value>();
+					return false;
 				} else {
 					const auto best_val = m_stack.top().path_val;
 					m_stack.pop();
-					return best_val;
+					p_path.emit(best_val);
+					return true;
 				}
 			}
 
@@ -1289,6 +1412,10 @@ public:
 					p_path.step(
 						std::get<0>(prev), std::get<1>(prev),
 						u1, v1);
+				} else {
+					const auto len_s = m_context.matrix.len_s();
+					const auto len_t = m_context.matrix.len_t();
+					p_path.begin(len_s, len_t);
 				}
 
 				if (m_context.strategy.continue_traceback_1(u1, v1) &&
@@ -1316,11 +1443,12 @@ public:
 						});
 					}
 				} else {
-					return best_val;
+					p_path.emit(best_val);
+					return true;
 				}
 			}
 
-			return std::optional<Value>();
+			return false;
 		}
 	};
 
@@ -1354,7 +1482,7 @@ struct SharedTracebackIterator {
 
 	const MatrixFactoryRef<CellType, ProblemType> factory;
 
-	TracebackIterators<
+	const TracebackIterators<
 		!traceback_type<CellType, ProblemType>::max_degree_1,
 		CellType,
 		ProblemType,
@@ -1373,10 +1501,26 @@ struct SharedTracebackIterator {
 template<typename Locality>
 using SharedTracebackIteratorRef = std::shared_ptr<SharedTracebackIterator<Locality>>;
 
-template<typename Locality>
+template<typename Alignment, typename Locality>
 class AlignmentIterator {
-	SharedTracebackIteratorRef<Locality> m_iterators;
-	int m_batch_index;
+public:
+	typedef typename Locality::cell_type CellType;
+	typedef typename Locality::problem_type ProblemType;
+
+	const SharedTracebackIteratorRef<Locality> m_iterators;
+	const int m_batch_index;
+	typename build_alignment<CellType, ProblemType>::template buffered<Alignment> m_build;
+
+	std::shared_ptr<Alignment> next() {
+		auto it = m_iterators.iterators.iterator(m_batch_index);
+		if (it.next(m_build)) {
+			std::shared_ptr<Alignment> alignment = std::make_shared<Alignment>();
+			m_build.copy_to(*alignment.get());
+			return alignment;
+		} else {
+			return std::shared_ptr<Alignment>();
+		}
+	}
 };
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix>
@@ -2056,11 +2200,10 @@ public:
 		auto tb = make_traceback_iterator(m_locality, matrix);
 
 		ValueVec scores;
-		build_nothing nothing;
+		build_val<CellType, ProblemType> val_only;
 		for (int i = 0; i < CellType::batch_size; i++) {
-			tb.iterator(i).init(nothing);
-			const auto tb_val = tb.iterator(i).next(nothing);
-			scores(i) = tb_val.value_or(Direction::template worst_val<Value>());
+			const bool tb_good = tb.iterator(i).next(val_only);
+			scores(i) = tb_good ? val_only.val() : Direction::template worst_val<Value>();
 		}
 		return scores;
 	}
@@ -2077,16 +2220,15 @@ public:
 
 		for (int i = 0; i < CellType::batch_size; i++) {
 			auto &alignment = deref(alignments[i]);
-			build_alignment<decltype(alignment)> build(alignment);
-			tb.iterator(i).init(build);
-			const auto tb_val = tb.iterator(i).next(build);
-			alignment.set_score(tb_val.value_or(
-				Direction::template worst_val<Value>()));
+			typename build_alignment<CellType, ProblemType>::template unbuffered<decltype(alignment)> build(alignment);
+			if (!tb.iterator(i).next(build)) {
+				alignment.set_score(Direction::template worst_val<Value>());
+			}
 		}
 	}
 
 	template<typename Alignment>
-	std::vector<std::shared_ptr<AlignmentIterator<Locality<CellType, ProblemType>>>> alignment_iterator(
+	std::vector<std::shared_ptr<AlignmentIterator<Alignment, Locality<CellType, ProblemType>>>> alignment_iterator(
 		const size_t len_s,
 		const size_t len_t) {
 
@@ -2094,10 +2236,10 @@ public:
 		auto shared_it = std::make_shared<SharedTracebackIterator<
 			Locality<CellType, ProblemType>>>(m_factory, m_locality, matrix);
 
-		std::vector<std::shared_ptr<AlignmentIterator<Locality<CellType, ProblemType>>>> iterators;
+		std::vector<std::shared_ptr<AlignmentIterator<Alignment, Locality<CellType, ProblemType>>>> iterators;
 		iterators.reserve(CellType::batch_size);
 		for (int i = 0; i < CellType::batch_size; i++) {
-			iterators.push_back(std::make_shared<AlignmentIterator<Locality<CellType, ProblemType>>>(
+			iterators.push_back(std::make_shared<AlignmentIterator<Alignment, Locality<CellType, ProblemType>>>(
 				shared_it, i
 			));
 		}
@@ -2120,20 +2262,27 @@ public:
 			auto &alignment = deref(alignments[i]);
 			auto &solution = deref(solutions[i]);
 
-			auto build = build_multiple<build_path<Index>, build_alignment<decltype(alignment)>>(
-				build_path<Index>(), build_alignment<decltype(alignment)>(alignment)
+			auto build = build_multiple<
+				build_path<CellType, ProblemType>,
+				typename build_alignment<CellType, ProblemType>::template unbuffered<decltype(alignment)>>(
+
+				build_path<CellType, ProblemType>(),
+				typename build_alignment<CellType, ProblemType>::template unbuffered<decltype(alignment)>(alignment)
 			);
 
 			solution.set_values(m_factory->all_layers().values(len_s, len_t), i);
 			solution.set_traceback(m_factory->all_layers().traceback(len_s, len_t), i);
 
-			tb.iterator(i).init(build);
-			const auto tb_val = tb.iterator(i).next(build);
-			solution.set_path(build.template get<0>().path());
+			const bool tb_good = tb.iterator(i).next(build);
+			if (tb_good) {
+				solution.set_path(build.template get<0>().path());
+			}
 
-			const auto score = tb_val.value_or(Direction::template worst_val<Value>());
-			solution.set_score(score);
-			alignment.set_score(score);
+			const auto val = tb_good ?
+				build.template get<0>().val() :
+				Direction::template worst_val<Value>();
+			alignment.set_score(val);
+			solution.set_score(val);
 
 			solution.set_algorithm(m_algorithm);
 		}
