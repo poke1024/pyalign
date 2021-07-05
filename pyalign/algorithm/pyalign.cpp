@@ -109,7 +109,7 @@ typedef std::shared_ptr<AlignmentIterator> AlignmentIteratorRef;
 
 template<typename Locality>
 class AlignmentIteratorImpl : public AlignmentIterator {
-	std::shared_ptr<pyalign::AlignmentIterator<Alignment, Locality>> m_iterator;
+	const std::shared_ptr<pyalign::AlignmentIterator<Alignment, Locality>> m_iterator;
 
 public:
 	inline AlignmentIteratorImpl(
@@ -118,7 +118,7 @@ public:
 	}
 
 	virtual AlignmentRef next() override {
-		return AlignmentRef();
+		return m_iterator->next();
 	}
 };
 
@@ -224,7 +224,15 @@ public:
 	virtual py::tuple solve_for_alignment(
 		const xt::pytensor<float, 3> &p_similarity) const = 0;
 
+	virtual py::tuple solve_for_alignment_iterator(
+		const xt::pytensor<float, 3> &p_similarity) const = 0;
+
 	virtual py::tuple solve_indexed_for_alignment(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const xt::pytensor<float, 2> &p_similarity) const = 0;
+
+	virtual py::tuple solve_indexed_for_alignment_iterator(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
 		const xt::pytensor<float, 2> &p_similarity) const = 0;
@@ -376,7 +384,7 @@ private:
 	}
 
 	template<typename Pairwise>
-	inline py::tuple solve_for_alignments(
+	inline py::tuple _solve_for_alignment_iterator(
 		const Pairwise &p_pairwise) const {
 
 		std::array<AlignmentIteratorRef, CellType::batch_size> iterators;
@@ -387,12 +395,12 @@ private:
 			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
 
 			size_t i = 0;
-			for (auto iterator : m_solver.alignment_iterator(p_pairwise.len_s(), p_pairwise.len_t())) {
+			for (auto iterator : m_solver.template alignment_iterator<Alignment>(p_pairwise.len_s(), p_pairwise.len_t())) {
 				iterators.at(i++) = std::make_shared<AlignmentIteratorImpl<typename S::locality_type>>(iterator);
 			}
 		}
 
-		return to_tuple(iterators);
+		return to_tuple<AlignmentIteratorRef, CellType::batch_size>(iterators);
 	}
 
 	template<typename Pairwise>
@@ -472,12 +480,28 @@ public:
 			matrix_form<CellType>{p_similarity});
 	}
 
+	virtual py::tuple solve_for_alignment_iterator(
+		const xt::pytensor<float, 3> &p_similarity) const override {
+
+		return _solve_for_alignment_iterator(
+			matrix_form<CellType>{p_similarity});
+	}
+
 	virtual py::tuple solve_indexed_for_alignment(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
 		const xt::pytensor<float, 2> &p_similarity) const override {
 
 		return _solve_for_alignment(
+			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
+	}
+
+	virtual py::tuple solve_indexed_for_alignment_iterator(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const xt::pytensor<float, 2> &p_similarity) const override {
+
+		return _solve_for_alignment_iterator(
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
 	}
 
@@ -777,7 +801,9 @@ PYBIND11_MODULE(algorithm, m) {
 	solver.def("solve_for_score", &Solver::solve_for_score);
 	solver.def("solve_indexed_for_score", &Solver::solve_indexed_for_score);
 	solver.def("solve_for_alignment", &Solver::solve_for_alignment);
+	solver.def("solve_for_alignment_iterator", &Solver::solve_for_alignment_iterator);
 	solver.def("solve_indexed_for_alignment", &Solver::solve_indexed_for_alignment);
+	solver.def("solve_indexed_for_alignment_iterator", &Solver::solve_indexed_for_alignment_iterator);
 	solver.def("solve_for_solution", &Solver::solve_for_solution);
 	solver.def("solve_indexed_for_solution", &Solver::solve_indexed_for_solution);
 

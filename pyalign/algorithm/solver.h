@@ -646,6 +646,33 @@ public:
 			xt::range(i0, m_len_s + 1),
 			xt::range(j0, m_len_t + 1));
 	}
+
+	void print_values(int batch_index = 0) const {
+		auto m = this->values<1, 1>();
+		for (Index i = -1; i < m_len_s; i++) {
+			for (Index j = -1; j < m_len_t; j++) {
+				const auto &cell = m(i, j);
+				std::cout << "(" << i << "," << j << "): " << cell(batch_index) << std::endl;
+			}
+		}
+	}
+
+	void print_traceback(int batch_index = 0) const {
+		auto m = this->traceback<1, 1>();
+		for (Index i = -1; i < m_len_s; i++) {
+			for (Index j = -1; j < m_len_t; j++) {
+				std::cout << "(" << i << "," << j << "): ";
+				const auto &cell = m(i, j);
+				for (int k = 0; k < cell.size(batch_index); k++) {
+					if (k > 0) {
+						std::cout << ", ";
+					}
+					std::cout << "(" << cell.u(batch_index, k) << ", " << cell.v(batch_index, k) << ")";
+				}
+				std::cout << std::endl;
+			}
+		}
+	}
 };
 
 template<typename CellType, typename ProblemType>
@@ -873,7 +900,7 @@ struct build_alignment {
 
 			m_len_s = len_s;
 			m_len_t = len_t;
-			m_path.begin(len_s + len_t);
+			m_path.begin(len_s, len_t);
 		}
 
 		inline void step(
@@ -1395,6 +1422,14 @@ public:
 
 			m_context(p_context),
 			m_batch_index(p_batch_index) {
+
+			/*std::cout << "value matrix:" << std::endl;
+			m_context.matrix.print_values();
+			std::cout << std::endl;
+
+			std::cout << "traceback matrix:" << std::endl;
+			m_context.matrix.print_traceback();
+			std::cout << std::endl;*/
 		}
 
 		inline void push(std::pair<Index, Index> &&p0) {
@@ -1425,7 +1460,6 @@ public:
 
 		template<typename Path>
 		inline bool next(Path &p_path) {
-
 			if (!m_context.strategy.has_trace()) {
 				if (m_stack.empty()) {
 					return false;
@@ -1441,12 +1475,11 @@ public:
 			const auto traceback = m_context.matrix.template traceback<1, 1>();
 
 			while (!m_stack.empty()) {
-				const auto &top = m_stack.top();
-				const Index u1 = std::get<0>(top.current);
-				const Index v1 = std::get<1>(top.current);
-				const auto best_val = top.path_val;
-				p_path.go_back(top.path_len);
-				const auto prev = top.previous;
+				const Index u1 = std::get<0>(m_stack.top().current);
+				const Index v1 = std::get<1>(m_stack.top().current);
+				const auto best_val = m_stack.top().path_val;
+				p_path.go_back(m_stack.top().path_len);
+				const auto prev = m_stack.top().previous;
 				m_stack.pop();
 
 				if (std::get<0>(prev) != no_traceback<Index>()) {
@@ -1523,7 +1556,7 @@ struct SharedTracebackIterator {
 
 	const MatrixFactoryRef<CellType, ProblemType> factory;
 
-	const TracebackIterators<
+	TracebackIterators<
 		!traceback_type<CellType, ProblemType>::max_degree_1,
 		CellType,
 		ProblemType,
@@ -1548,12 +1581,22 @@ public:
 	typedef typename Locality::cell_type CellType;
 	typedef typename Locality::problem_type ProblemType;
 
+private:
 	const SharedTracebackIteratorRef<Locality> m_iterators;
 	const int m_batch_index;
 	typename build_alignment<CellType, ProblemType>::template buffered<Alignment> m_build;
 
+public:
+	inline AlignmentIterator(
+		const SharedTracebackIteratorRef<Locality> &p_iterators,
+		const int p_batch_index) :
+
+		m_iterators(p_iterators),
+		m_batch_index(p_batch_index) {
+	}
+
 	std::shared_ptr<Alignment> next() {
-		auto it = m_iterators.iterators.iterator(m_batch_index);
+		auto &it = m_iterators->iterators.iterator(m_batch_index);
 		if (it.next(m_build)) {
 			std::shared_ptr<Alignment> alignment = std::make_shared<Alignment>();
 			m_build.copy_to(*alignment.get());
@@ -2272,7 +2315,7 @@ public:
 	template<typename Alignment>
 	std::vector<std::shared_ptr<AlignmentIterator<Alignment, Locality<CellType, ProblemType>>>> alignment_iterator(
 		const size_t len_s,
-		const size_t len_t) {
+		const size_t len_t) const {
 
 		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
 		auto shared_it = std::make_shared<SharedTracebackIterator<

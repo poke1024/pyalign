@@ -14,7 +14,7 @@ int main() {
 	const std::string b = "INTEREST";
 
 	solver.solve([&a, &b] (int i, int j) {
-		if (a[i] == b[i]) {
+		if (a[i] == b[j]) {
 			return 1;
 		} else {
 			return 0;

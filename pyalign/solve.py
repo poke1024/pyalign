@@ -44,6 +44,19 @@ class Problem:
 	def t(self):
 		return self._t
 
+	def build_matrix(self, out):
+		"""
+		Build a matrix M that describes an alignment problem for two sequences \( s \) and \( t \).
+		\( M_{i, j} \) contains the similarity between \( s_i \) and \( t_j \).
+		"""
+		raise NotImplementedError()
+
+	@property
+	def matrix(self):
+		m = np.empty(self.shape, dtype=self._dtype)
+		self.build_matrix(m)
+		return m
+
 
 class Form(enum.Enum):
 	MATRIX_FORM = 0
@@ -51,13 +64,6 @@ class Form(enum.Enum):
 
 
 class MatrixProblem(Problem):
-	def build_matrix(self, out):
-		"""
-		Returns a matrix M that describes an alignment problem for two sequences \( s \) and \( t \).
-		\( M_{i, j} \) contains the similarity between \( s_i \) and \( t_j \).
-		"""
-		raise NotImplementedError()
-
 	@property
 	def form(self):
 		return Form.MATRIX_FORM
@@ -381,19 +387,47 @@ def chunks(items, n):
 		yield items[i:i + n]
 
 
+class AlignmentIterator:
+	def __init__(self, problem, solver, iterator):
+		self._problem = problem
+		self._solver = solver
+		self._iterator = iterator
+
+	def __iter__(self):
+		while True:
+			x = self._iterator.next()
+			if x is None:
+				break
+			yield Alignment(self._problem, self._solver, x)
+
+
+
+def solver_variants(prefix):
+	data = {
+		("score", "one"): ("for_score", lambda _1, _2, x: x),
+		("score", "all"): ("for_score", lambda _1, _2, x: x),
+		("alignment", "one"): ("for_alignment", Alignment),
+		("alignment", "all"): ("for_alignment_iterator", AlignmentIterator),
+		("solution", "one"): ("for_solution", Solution),
+		("solution", "all"): ("for_solution_iterator", None)
+	}
+	return dict((k, (f"{prefix}_{v1}", v2)) for k, (v1, v2) in data.items())
+
+
 class MatrixForm:
-	def __init__(self, solver, detail, batch):
+	_solvers = solver_variants("solve")
+
+	def __init__(self, solver, detail, count, batch):
+		self._solver = solver
 		batch_size = solver.batch_size
 		shape = batch.shape
 		self._matrix = np.empty((shape[0], shape[1], batch_size), dtype=batch.dtype)
-		if detail == "score":
-			self._solve = solver.solve_for_score
-		elif detail == "alignment":
-			self._solve = solver.solve_for_alignment
-		elif detail == "solution":
-			self._solve = solver.solve_for_solution
-		else:
-			raise ValueError(detail)
+
+		variant = MatrixForm._solvers.get((detail, count))
+		if variant is None:
+			raise ValueError((detail, count))
+		self._solve = getattr(solver, variant[0])
+		self._construct = variant[1]
 
 	def prepare(self, problems):
 		matrix = self._matrix
@@ -401,12 +435,18 @@ class MatrixForm:
 		for k, p in enumerate(problems):
 			p.build_matrix(matrix[:, :, k])
 
-	def solve(self):
-		return self._solve(self._matrix)
+	def solve(self, problems):
+		r = self._solve(self._matrix)
+		return [
+			self._construct(problem, self._solver, x)
+			for problem, x in zip(problems, r)]
 
 
 class IndexedMatrixForm:
-	def __init__(self, solver, detail, batch):
+	_solvers = solver_variants("solve_indexed")
+
+	def __init__(self, solver, detail, count, batch):
+		self._solver = solver
 		batch_size = solver.batch_size
 		shape = batch.shape
 
@@ -417,14 +457,11 @@ class IndexedMatrixForm:
 		if not all(p.similarity_lookup_table() is self._sim for p in batch.problems):
 			raise ValueError("similarity table must be identical for all problems in a batch")
 
-		if detail == "score":
-			self._solve = solver.solve_indexed_for_score
-		elif detail == "alignment":
-			self._solve = solver.solve_indexed_for_alignment
-		elif detail == "solution":
-			self._solve = solver.solve_indexed_for_solution
-		else:
-			raise ValueError(detail)
+		variant = IndexedMatrixForm._solvers.get((detail, count))
+		if variant is None:
+			raise ValueError((detail, count))
+		self._solve = getattr(solver, variant[0])
+		self._construct = variant[1]
 
 	def prepare(self, problems):
 		a = self._a
@@ -432,8 +469,11 @@ class IndexedMatrixForm:
 		for k, p in enumerate(problems):
 			p.build_index_sequences(a[k, :], b[k, :])
 
-	def solve(self):
-		return self._solve(self._a, self._b, self._sim)
+	def solve(self, problems):
+		r = self._solve(self._a, self._b, self._sim)
+		return [
+			self._construct(problem, self._solver, x)
+			for problem, x in zip(problems, r)]
 
 
 class Solver:
@@ -488,12 +528,13 @@ class Solver:
 		form = batch.form
 
 		detail = self._goal.detail
+		count = self._goal.count
 		result = []
 
 		if form == Form.MATRIX_FORM:
-			form_solver = MatrixForm(solver, detail, batch)
+			form_solver = MatrixForm(solver, detail, count, batch)
 		elif form == Form.INDEXED_MATRIX_FORM:
-			form_solver = IndexedMatrixForm(solver, detail, batch)
+			form_solver = IndexedMatrixForm(solver, detail, count, batch)
 		else:
 			raise ValueError(form)
 
@@ -504,20 +545,7 @@ class Solver:
 				form_solver.prepare(problems_chunk)
 
 			with self._timings.measure("solve"):
-				if detail == "score":
-					result.extend(form_solver.solve()[:len(problems_chunk)])
-				elif detail == "alignment":
-					alignments = form_solver.solve()
-					result.extend([
-						Alignment(problem, solver, alignment)
-						for problem, alignment in zip(problems_chunk, alignments)])
-				elif detail == "solution":
-					solutions = form_solver.solve()
-					result.extend([
-						Solution(problem, solver, solution)
-						for problem, solution in zip(problems_chunk, solutions)])
-				else:
-					return ValueError(detail)
+				result.extend(form_solver.solve(problems_chunk))
 
 		return result
 

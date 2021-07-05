@@ -19,7 +19,7 @@ int main() {
 
 	solver.solve([&a, &b] (int i, int j) {
 		cell_type::value_vec_type v;
-		if (a[i] == b[i]) {
+		if (a[i] == b[j]) {
 			v.fill(1);
 		} else {
 			v.fill(0);
