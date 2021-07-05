@@ -97,6 +97,9 @@ public:
 
 typedef std::shared_ptr<Alignment> AlignmentRef;
 
+template<typename CellType, typename ProblemType>
+using NativeSolution = pyalign::Solution<CellType, ProblemType, pyalign::SharedPtrFactory<Alignment>>;
+
 struct SharedAlignment {
 	typedef std::shared_ptr<Alignment> ref_type;
 	typedef Alignment deref_type;
@@ -122,11 +125,13 @@ typedef std::shared_ptr<AlignmentIterator> AlignmentIteratorRef;
 
 template<typename Locality>
 class AlignmentIteratorImpl : public AlignmentIterator {
-	const std::shared_ptr<pyalign::AlignmentIterator<pyalign::SharedPtrFactory<Alignment>, Locality>> m_iterator;
+	const std::shared_ptr<pyalign::AlignmentIterator<
+		pyalign::SharedPtrFactory<Alignment>, Locality>> m_iterator;
 
 public:
 	inline AlignmentIteratorImpl(
-		const std::shared_ptr<pyalign::AlignmentIterator<pyalign::SharedPtrFactory<Alignment>, Locality>> &p_iterator) :
+		const std::shared_ptr<pyalign::AlignmentIterator<
+			pyalign::SharedPtrFactory<Alignment>, Locality>> &p_iterator) :
 		m_iterator(p_iterator) {
 	}
 
@@ -157,6 +162,17 @@ public:
 };
 
 typedef std::shared_ptr<Solution> SolutionRef;
+
+class SolutionIterator {
+public:
+	virtual ~SolutionIterator() {
+	}
+
+	virtual SolutionRef next() = 0;
+};
+
+typedef std::shared_ptr<SolutionIterator> SolutionIteratorRef;
+
 
 template<typename CellType, typename ProblemType>
 class SolutionImpl : public Solution {
@@ -228,6 +244,37 @@ public:
 	}
 };
 
+template<typename Locality>
+class SolutionIteratorImpl : public SolutionIterator {
+public:
+	typedef typename Locality::cell_type CellType;
+	typedef typename Locality::problem_type ProblemType;
+
+private:
+	const std::shared_ptr<pyalign::SolutionIterator<
+		pyalign::SharedPtrFactory<Alignment>,
+		pyalign::SharedPtrFactory<NativeSolution<CellType, ProblemType>>,
+		Locality>> m_iterator;
+
+public:
+	inline SolutionIteratorImpl(
+		const std::shared_ptr<pyalign::SolutionIterator<
+			pyalign::SharedPtrFactory<Alignment>,
+			pyalign::SharedPtrFactory<NativeSolution<CellType, ProblemType>>,
+			Locality>> &p_iterator) :
+		m_iterator(p_iterator) {
+	}
+
+	virtual SolutionRef next() override {
+		const auto r = m_iterator->next();
+		if (r.get()) {
+			return std::make_shared<SolutionImpl<CellType, ProblemType>>(r);
+		} else {
+			return SolutionRef();
+		}
+	}
+};
+
 class Solver {
 public:
 	virtual inline ~Solver() {
@@ -264,7 +311,15 @@ public:
 	virtual py::tuple solve_for_solution(
 		const xt::pytensor<float, 3> &p_similarity) const = 0;
 
+	virtual py::tuple solve_for_solution_iterator(
+		const xt::pytensor<float, 3> &p_similarity) const = 0;
+
 	virtual py::tuple solve_indexed_for_solution(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const xt::pytensor<float, 2> &p_similarity) const = 0;
+
+	virtual py::tuple solve_indexed_for_solution_iterator(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
 		const xt::pytensor<float, 2> &p_similarity) const = 0;
@@ -415,7 +470,8 @@ private:
 			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
 
 			size_t i = 0;
-			for (auto iterator : m_solver.template alignment_iterator<pyalign::SharedPtrFactory<Alignment>>(p_pairwise.len_s(), p_pairwise.len_t())) {
+			for (auto iterator : m_solver.template alignment_iterator<pyalign::SharedPtrFactory<Alignment>>(
+				p_pairwise.len_s(), p_pairwise.len_t())) {
 				iterators.at(i++) = std::make_shared<AlignmentIteratorImpl<typename S::locality_type>>(iterator);
 			}
 		}
@@ -434,13 +490,11 @@ private:
 			p_pairwise.check();
 			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
 
-			typedef pyalign::Solution<CellType, ProblemType, pyalign::SharedPtrFactory<Alignment>> SolutionType;
-
-			std::array<std::shared_ptr<SolutionType>, CellType::batch_size> sol0;
+			std::array<std::shared_ptr<NativeSolution<CellType, ProblemType>>, CellType::batch_size> sol0;
 
 			m_solver.template solution<
 				pyalign::SharedPtrFactory<Alignment>,
-				pyalign::SharedPtrFactory<SolutionType>>(
+				pyalign::SharedPtrFactory<NativeSolution<CellType, ProblemType>>>(
 					p_pairwise.len_s(),
 					p_pairwise.len_t(),
 					sol0);
@@ -452,6 +506,31 @@ private:
 		}
 
 		return to_tuple<SolutionRef, CellType::batch_size>(solutions);
+	}
+
+	template<typename Pairwise>
+	inline py::tuple _solve_for_solution_iterator(
+		const Pairwise &p_pairwise) const {
+
+		std::array<SolutionIteratorRef, CellType::batch_size> iterators;
+
+		{
+			py::gil_scoped_release release;
+			p_pairwise.check();
+			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
+
+			size_t i = 0;
+			for (auto iterator : m_solver.template solution_iterator<
+				pyalign::SharedPtrFactory<Alignment>,
+				pyalign::SharedPtrFactory<NativeSolution<CellType, ProblemType>>>(
+				p_pairwise.len_s(), p_pairwise.len_t())) {
+
+				iterators.at(i++) = std::make_shared<SolutionIteratorImpl<
+					typename S::locality_type>>(iterator);
+			}
+		}
+
+		return to_tuple<SolutionIteratorRef, CellType::batch_size>(iterators);
 	}
 
 public:
@@ -527,12 +606,28 @@ public:
 			matrix_form<CellType>{p_similarity});
 	}
 
+	virtual py::tuple solve_for_solution_iterator(
+		const xt::pytensor<float, 3> &p_similarity) const override {
+
+		return _solve_for_solution_iterator(
+			matrix_form<CellType>{p_similarity});
+	}
+
 	virtual py::tuple solve_indexed_for_solution(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
 		const xt::pytensor<float, 2> &p_similarity) const override {
 
 		return _solve_for_solution(
+			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
+	}
+
+	virtual py::tuple solve_indexed_for_solution_iterator(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const xt::pytensor<float, 2> &p_similarity) const override {
+
+		return _solve_for_solution_iterator(
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
 	}
 };
@@ -820,7 +915,9 @@ PYBIND11_MODULE(algorithm, m) {
 	solver.def("solve_indexed_for_alignment", &Solver::solve_indexed_for_alignment);
 	solver.def("solve_indexed_for_alignment_iterator", &Solver::solve_indexed_for_alignment_iterator);
 	solver.def("solve_for_solution", &Solver::solve_for_solution);
+	solver.def("solve_for_solution_iterator", &Solver::solve_for_solution_iterator);
 	solver.def("solve_indexed_for_solution", &Solver::solve_indexed_for_solution);
+	solver.def("solve_indexed_for_solution_iterator", &Solver::solve_indexed_for_solution_iterator);
 
 	py::class_<Alignment, AlignmentRef> alignment(m, "Alignment");
 	alignment.def_property_readonly("score", &Alignment::score);
@@ -839,6 +936,9 @@ PYBIND11_MODULE(algorithm, m) {
 	solution.def_property_readonly("score", &Solution::score);
 	solution.def_property_readonly("alignment", &Solution::alignment);
 	solution.def_property_readonly("algorithm", &Solution::algorithm);
+
+	py::class_<SolutionIterator, SolutionIteratorRef> solution_iterator(m, "SolutionIterator");
+	solution_iterator.def("next", &SolutionIterator::next);
 
 	py::class_<Algorithm, AlgorithmRef> algorithm(m, "Algorithm");
 	algorithm.def_property_readonly("name", &Algorithm::name);

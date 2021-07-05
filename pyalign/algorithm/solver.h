@@ -558,6 +558,17 @@ public:
 	all_layers_accessor all_layers() const {
 		return all_layers_accessor{*m_data.get()};
 	}
+
+	template<typename Solution>
+	void copy_solution_data(
+		const size_t len_s,
+		const size_t len_t,
+		const int i,
+		Solution &solution) {
+
+		solution.set_values(this->all_layers().values(len_s, len_t), i);
+		solution.set_traceback(this->all_layers().traceback(len_s, len_t), i);
+	}
 };
 
 template<typename CellType, typename ProblemType>
@@ -808,7 +819,7 @@ public:
 	}
 
 	template<typename F>
-	inline void iterate(const F &f) {
+	inline void iterate(const F &f) const {
 		const size_t n = m_path.size();
 		for (size_t i = 1; i < n; i++) {
 			f(
@@ -926,7 +937,7 @@ struct build_alignment {
 		}
 
 		inline void copy_to(
-			Alignment &p_alignment) {
+			Alignment &p_alignment) const {
 
 			p_alignment.resize(m_len_s, m_len_t);
 
@@ -1387,6 +1398,10 @@ public:
 	inline auto &iterator(const int p_batch_index) {
 		return m_iterators[p_batch_index];
 	}
+
+	inline const Matrix &matrix() const {
+		return m_matrix;
+	}
 };
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix>
@@ -1545,6 +1560,10 @@ public:
 	inline auto &iterator(const int p_batch_index) {
 		return m_iterators[p_batch_index];
 	}
+
+	inline const Matrix &matrix() const {
+		return m_matrix;
+	}
 };
 
 template<typename Locality>
@@ -1567,8 +1586,17 @@ struct SharedTracebackIterator {
 		const MatrixFactoryRef<CellType, ProblemType> &p_factory,
 		const TracebackStrategy &p_strategy,
 		const LayerMatrix &p_matrix) :
+
 		factory(p_factory),
 		iterators(p_strategy, p_matrix) {
+	}
+
+	auto len_s() const {
+		return iterators.matrix().len_s();
+	}
+
+	auto len_t() const {
+		return iterators.matrix().len_t();
 	}
 };
 
@@ -1585,8 +1613,12 @@ public:
 private:
 	const SharedTracebackIteratorRef<Locality> m_iterators;
 	const int m_batch_index;
-	typename build_alignment<CellType, ProblemType>::
-		template buffered<typename AlignmentFactory::deref_type> m_build;
+
+	typedef typename build_alignment<CellType, ProblemType>::
+		template buffered<typename AlignmentFactory::deref_type>
+		build_alignment_type;
+
+	build_alignment_type m_build;
 
 public:
 	inline AlignmentIterator(
@@ -1605,6 +1637,63 @@ public:
 			return alignment;
 		} else {
 			return AlignmentRef();
+		}
+	}
+};
+
+template<typename AlignmentFactory, typename SolutionFactory, typename Locality>
+class SolutionIterator {
+public:
+	typedef typename Locality::cell_type CellType;
+	typedef typename Locality::problem_type ProblemType;
+	typedef typename AlignmentFactory::ref_type AlignmentRef;
+	typedef typename SolutionFactory::ref_type SolutionRef;
+
+private:
+	const SharedTracebackIteratorRef<Locality> m_iterators;
+	const int m_batch_index;
+
+	typedef build_path<CellType, ProblemType> build_path_type;
+	typedef typename build_alignment<CellType, ProblemType>::
+		template buffered<typename AlignmentFactory::deref_type>
+		build_alignment_type;
+
+	build_multiple<build_path_type, build_alignment_type> m_build;
+
+public:
+	inline SolutionIterator(
+		const SharedTracebackIteratorRef<Locality> &p_iterators,
+		const int p_batch_index) :
+
+		m_iterators(p_iterators),
+		m_batch_index(p_batch_index),
+		m_build(build_path_type(), build_alignment_type()) {
+	}
+
+	SolutionRef next() {
+		auto &it = m_iterators->iterators.iterator(m_batch_index);
+		if (it.next(m_build)) {
+			SolutionRef solution_ref = SolutionFactory::make();
+			auto &solution = SolutionFactory::deref(solution_ref);
+
+			m_iterators->factory->copy_solution_data(
+				m_iterators->len_s(),
+				m_iterators->len_t(),
+				m_batch_index,
+				solution);
+
+			auto alignment = AlignmentFactory::make();
+			m_build.template get<1>().copy_to(AlignmentFactory::deref(alignment));
+			AlignmentFactory::deref(alignment).set_score(m_build.template get<0>().val());
+			solution.set_alignment(alignment);
+
+			solution.set_path(m_build.template get<0>().path());
+
+			//solution.set_algorithm(m_algorithm);
+
+			return solution_ref;
+		} else {
+			return SolutionRef();
 		}
 	}
 };
@@ -2317,14 +2406,11 @@ public:
 		const size_t len_t,
 		std::array<typename AlignmentFactory::ref_type, CellType::batch_size> &alignments) const {
 
-		for (int i = 0; i < CellType::batch_size; i++) {
-			alignments[i] = AlignmentFactory::make();
-		}
-
 		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
 		auto tb = make_traceback_iterator(m_locality, matrix);
 
 		for (int i = 0; i < CellType::batch_size; i++) {
+			alignments[i] = AlignmentFactory::make();
 			auto &alignment = AlignmentFactory::deref(alignments[i]);
 			auto build = typename build_alignment<CellType, ProblemType>::
 				template unbuffered<typename AlignmentFactory::deref_type>(alignment);
@@ -2335,7 +2421,8 @@ public:
 	}
 
 	template<typename AlignmentFactory>
-	std::vector<std::shared_ptr<AlignmentIterator<AlignmentFactory, Locality<CellType, ProblemType>>>> alignment_iterator(
+	std::vector<std::shared_ptr<AlignmentIterator<
+			AlignmentFactory, Locality<CellType, ProblemType>>>> alignment_iterator(
 		const size_t len_s,
 		const size_t len_t) const {
 
@@ -2343,12 +2430,15 @@ public:
 		auto shared_it = std::make_shared<SharedTracebackIterator<
 			Locality<CellType, ProblemType>>>(m_factory, m_locality, matrix);
 
-		std::vector<std::shared_ptr<AlignmentIterator<AlignmentFactory, Locality<CellType, ProblemType>>>> iterators;
+		std::vector<std::shared_ptr<AlignmentIterator<
+			AlignmentFactory, Locality<CellType, ProblemType>>>> iterators;
 		iterators.reserve(CellType::batch_size);
+
 		for (int i = 0; i < CellType::batch_size; i++) {
-			iterators.push_back(std::make_shared<AlignmentIterator<AlignmentFactory, Locality<CellType, ProblemType>>>(
-				shared_it, i
-			));
+			iterators.push_back(std::make_shared<AlignmentIterator<
+				AlignmentFactory, Locality<CellType, ProblemType>>>(
+					shared_it, i
+				));
 		}
 
 		return iterators;
@@ -2360,15 +2450,15 @@ public:
 		const size_t len_t,
 		std::array<typename SolutionFactory::ref_type, CellType::batch_size> &solutions) const {
 
-		for (int i = 0; i < CellType::batch_size; i++) {
-			solutions[i] = SolutionFactory::make();
-		}
-
 		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
 		auto tb = make_traceback_iterator(m_locality, matrix);
 
 		for (int i = 0; i < CellType::batch_size; i++) {
+			solutions[i] = SolutionFactory::make();
 			auto &solution = SolutionFactory::deref(solutions[i]);
+
+			m_factory->copy_solution_data(len_s, len_t, i, solution);
+
 			auto alignment = AlignmentFactory::make();
 
 			typedef build_path<CellType, ProblemType> build_path_type;
@@ -2381,9 +2471,6 @@ public:
 				build_alignment_type(AlignmentFactory::deref(alignment))
 			);
 
-			solution.set_values(m_factory->all_layers().values(len_s, len_t), i);
-			solution.set_traceback(m_factory->all_layers().traceback(len_s, len_t), i);
-
 			const bool tb_good = tb.iterator(i).next(build);
 			if (tb_good) {
 				AlignmentFactory::deref(alignment).set_score(build.template get<0>().val());
@@ -2393,6 +2480,30 @@ public:
 
 			solution.set_algorithm(m_algorithm);
 		}
+	}
+
+	template<typename AlignmentFactory, typename SolutionFactory>
+	std::vector<std::shared_ptr<SolutionIterator<
+			AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>> solution_iterator(
+		const size_t len_s,
+		const size_t len_t) const {
+
+		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
+		auto shared_it = std::make_shared<SharedTracebackIterator<
+			Locality<CellType, ProblemType>>>(m_factory, m_locality, matrix);
+
+		std::vector<std::shared_ptr<SolutionIterator<
+			AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>> iterators;
+		iterators.reserve(CellType::batch_size);
+
+		for (int i = 0; i < CellType::batch_size; i++) {
+			iterators.push_back(std::make_shared<SolutionIterator<
+				AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>(
+					shared_it, i
+				));
+		}
+
+		return iterators;
 	}
 };
 

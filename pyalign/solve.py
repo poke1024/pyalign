@@ -387,7 +387,7 @@ def chunks(items, n):
 		yield items[i:i + n]
 
 
-class AlignmentIterator:
+class Iterator:
 	def __init__(self, problem, solver, iterator):
 		self._problem = problem
 		self._solver = solver
@@ -398,8 +398,15 @@ class AlignmentIterator:
 			x = self._iterator.next()
 			if x is None:
 				break
-			yield Alignment(self._problem, self._solver, x)
+			yield self._element_class(self._problem, self._solver, x)
 
+
+class AlignmentIterator(Iterator):
+	_element_class = Alignment
+
+
+class SolutionIterator(Iterator):
+	_element_class = Solution
 
 
 def solver_variants(prefix):
@@ -409,7 +416,7 @@ def solver_variants(prefix):
 		("alignment", "one"): ("for_alignment", Alignment),
 		("alignment", "all"): ("for_alignment_iterator", AlignmentIterator),
 		("solution", "one"): ("for_solution", Solution),
-		("solution", "all"): ("for_solution_iterator", None)
+		("solution", "all"): ("for_solution_iterator", SolutionIterator)
 	}
 	return dict((k, (f"{prefix}_{v1}", v2)) for k, (v1, v2) in data.items())
 
