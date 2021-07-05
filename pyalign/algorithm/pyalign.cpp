@@ -97,6 +97,19 @@ public:
 
 typedef std::shared_ptr<Alignment> AlignmentRef;
 
+struct SharedAlignment {
+	typedef std::shared_ptr<Alignment> ref_type;
+	typedef Alignment deref_type;
+
+	static inline Alignment &deref(const std::shared_ptr<Alignment> &p_ref) {
+		return *p_ref.get();
+	}
+
+	static inline std::shared_ptr<Alignment> make() {
+		return std::make_shared<Alignment>();
+	}
+};
+
 class AlignmentIterator {
 public:
 	virtual ~AlignmentIterator() {
@@ -109,11 +122,11 @@ typedef std::shared_ptr<AlignmentIterator> AlignmentIteratorRef;
 
 template<typename Locality>
 class AlignmentIteratorImpl : public AlignmentIterator {
-	const std::shared_ptr<pyalign::AlignmentIterator<Alignment, Locality>> m_iterator;
+	const std::shared_ptr<pyalign::AlignmentIterator<pyalign::SharedPtrFactory<Alignment>, Locality>> m_iterator;
 
 public:
 	inline AlignmentIteratorImpl(
-		const std::shared_ptr<pyalign::AlignmentIterator<Alignment, Locality>> &p_iterator) :
+		const std::shared_ptr<pyalign::AlignmentIterator<pyalign::SharedPtrFactory<Alignment>, Locality>> &p_iterator) :
 		m_iterator(p_iterator) {
 	}
 
@@ -137,10 +150,10 @@ public:
 	virtual bool traceback_has_max_degree_1() const = 0;
 	virtual xt::pytensor<Index, 4> traceback_as_matrix() const = 0;
 	virtual py::list traceback_as_edges() const = 0;
-	virtual xt::pytensor<Index, 2> path() const = 0;
-	virtual float score() const = 0;
 	virtual AlgorithmRef algorithm() const = 0;
-	virtual AlignmentRef alignment() const = 0;
+	virtual py::object score() const = 0;
+	virtual py::object alignment() const = 0;
+	virtual py::object path() const = 0;
 };
 
 typedef std::shared_ptr<Solution> SolutionRef;
@@ -152,16 +165,13 @@ public:
 	typedef typename CellType::index_type Index;
 
 private:
-	const pyalign::SolutionRef<CellType, ProblemType> m_solution;
-	AlignmentRef m_alignment;
+	const pyalign::SolutionRef<CellType, ProblemType, pyalign::SharedPtrFactory<Alignment>> m_solution;
 
 public:
 	inline SolutionImpl(
-		const pyalign::SolutionRef<CellType, ProblemType> p_solution,
-		const AlignmentRef &p_alignment) :
+		const pyalign::SolutionRef<CellType, ProblemType, pyalign::SharedPtrFactory<Alignment>> &p_solution) :
 
-		m_solution(p_solution),
-		m_alignment(p_alignment) {
+		m_solution(p_solution) {
 	}
 
 	virtual bool traceback_has_max_degree_1() const override {
@@ -187,20 +197,34 @@ public:
 		return py_edges;
 	}
 
-	virtual xt::pytensor<Index, 2> path() const override {
-		return m_solution->path();
-	}
-
-	virtual float score() const override {
-		return m_solution->score();
-	}
-
 	virtual AlgorithmRef algorithm() const override {
 		return m_solution->algorithm();
 	}
 
-	virtual AlignmentRef alignment() const override {
-		return m_alignment;
+	virtual py::object score() const override {
+		const auto score = m_solution->score();
+		if (score.has_value()) {
+			return py::cast(score.value());
+		} else {
+			return py::none();
+		}
+	}
+
+	virtual py::object alignment() const override {
+		if (m_solution->alignment().has_value()) {
+			return py::cast(m_solution->alignment().value());
+		} else {
+			return py::none();
+		}
+	}
+
+	virtual py::object path() const override {
+		if (m_solution->path().has_value()) {
+			const xt::pytensor<Index, 2> p = m_solution->path().value();
+			return p;
+		} else {
+			return py::none();
+		}
 	}
 };
 
@@ -372,11 +396,7 @@ private:
 			p_pairwise.check();
 			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
 
-			for (int i = 0; i < m_solver.batch_size(); i++) {
-				alignments[i] = std::make_shared<Alignment>();
-			}
-
-			m_solver.alignment(
+			m_solver.template alignment<pyalign::SharedPtrFactory<Alignment>>(
 				p_pairwise.len_s(), p_pairwise.len_t(), alignments);
 		}
 
@@ -395,7 +415,7 @@ private:
 			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
 
 			size_t i = 0;
-			for (auto iterator : m_solver.template alignment_iterator<Alignment>(p_pairwise.len_s(), p_pairwise.len_t())) {
+			for (auto iterator : m_solver.template alignment_iterator<pyalign::SharedPtrFactory<Alignment>>(p_pairwise.len_s(), p_pairwise.len_t())) {
 				iterators.at(i++) = std::make_shared<AlignmentIteratorImpl<typename S::locality_type>>(iterator);
 			}
 		}
@@ -414,25 +434,20 @@ private:
 			p_pairwise.check();
 			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
 
-			std::array<AlignmentRef, CellType::batch_size> alignments;
-			std::array<pyalign::SolutionRef<CellType, ProblemType>, CellType::batch_size> sol0;
+			typedef pyalign::Solution<CellType, ProblemType, pyalign::SharedPtrFactory<Alignment>> SolutionType;
 
-			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
-				alignments[batch_i] = std::make_shared<Alignment>();
-				sol0[batch_i] = std::make_shared<
-					pyalign::Solution<CellType, ProblemType>>();
-			}
+			std::array<std::shared_ptr<SolutionType>, CellType::batch_size> sol0;
 
-			m_solver.solution(
-				p_pairwise.len_s(),
-				p_pairwise.len_t(),
-				alignments,
-				sol0);
+			m_solver.template solution<
+				pyalign::SharedPtrFactory<Alignment>,
+				pyalign::SharedPtrFactory<SolutionType>>(
+					p_pairwise.len_s(),
+					p_pairwise.len_t(),
+					sol0);
 
 			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
 				solutions[batch_i] = std::make_shared<SolutionImpl<CellType, ProblemType>>(
-					sol0[batch_i],
-					alignments[batch_i]);
+					sol0[batch_i]);
 			}
 		}
 

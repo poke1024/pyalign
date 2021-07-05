@@ -44,7 +44,7 @@ int main() {
 		return v;
 	}, a.size(), b.size());
 
-	const auto r = solver.alignment_iterator<Alignment>(a.size(), b.size());
+	const auto r = solver.alignment_iterator<pyalign::SharedPtrFactory<Alignment>>(a.size(), b.size());
 	for (int i = 0; i < r.size(); i++) {
 		auto it = r[i];
 		int j = 0;
