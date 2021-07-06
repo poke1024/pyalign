@@ -22,7 +22,7 @@ In terms of alignment algorithms:
 * supports different gap costs (commonly used ones as well as custom ones)
 * automatically selects best suitable algorithm (e.g. Gotoh)
 * no assumptions on matched items, i.e. not limited to characters
-* supports any given similarity or distance function
+* supports any given similarity or distance function (i.e. can maximize or minimize)
 * can return one as well as *all* optimal alignments and scores
 
 The implementation should be rather fast due to highly optimized code paths
@@ -98,6 +98,15 @@ solver_sol_all.solve(problem)
 
 Here are a few benchmarks. The "pure python" implementation seen in this
 benchmark is found at https://github.com/eseraygun/python-alignment.
+
+The y axis is logarithmic. 1000 μs = 1 / 1000 s.
+
+`+encoded` means using `pyalign.utils.AlphabetProblemFactory` instead of
+the usual `pyalign.utils.SimilarityProblemFactory`.
+
+`+SIMD` means feeding groups of equally-structured aligment problems into
+one `solve` call by using `pyalign.solve.ProblemBatch` - doing this will
+internally make use of SIMD if available.
 
 ![traceback and path](docs/benchmark_10.svg)
 
