@@ -35,4 +35,6 @@ setup(
 	ext_modules=ext_modules,
 	cmdclass={"build_ext": build_ext},
 	install_requires=["pybind11"],
+	test_suite='nose.collector',
+	tests_require=['nose'],
 )

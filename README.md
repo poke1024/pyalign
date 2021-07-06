@@ -151,6 +151,8 @@ Barnes, R. (2020). A Review of the Smith-Waterman GPU Landscape. https://www2.ee
 
 Farrar, M. (2007). Striped Smith-Waterman speeds database searches six times over other SIMD implementations. Bioinformatics, 23(2), 156–161. https://doi.org/10.1093/bioinformatics/btl582
 
+Flouri, T., Kobert, K., Rognes, T., & Stamatakis, A. (2015). Are all global alignment algorithms and implementations correct? [Preprint]. Bioinformatics. https://doi.org/10.1101/031500
+
 Rognes, T. (2011). Faster Smith-Waterman database searches with inter-sequence SIMD parallelisation. BMC Bioinformatics, 12(1), 221. https://doi.org/10.1186/1471-2105-12-221
 
 Rudnicki, W. R., Jankowski, A., Modzelewski, A., Piotrowski, A., & Zadrożny, A. (2009). The new SIMD Implementation of the Smith-Waterman Algorithm on Cell Microprocessor. Fundamenta Informaticae, 96(1–2), 181–194. https://doi.org/10.3233/FI-2009-173
