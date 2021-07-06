@@ -360,6 +360,9 @@ class Goal:
 		else:
 			return Goal(s, ["one", "optimal"])
 
+	def __str__(self):
+		return f"{self._detail}[{', '.join(self._key[1:])}]"
+
 	@property
 	def detail(self):
 		return self._detail
@@ -488,7 +491,7 @@ class IndexedMatrixForm:
 		if not all(p.similarity_lookup_table() is self._sim for p in batch.problems):
 			raise ValueError("similarity table must be identical for all problems in a batch")
 
-		variant = MatrixForm._solvers.get(goal.key)
+		variant = IndexedMatrixForm._solvers.get(goal.key)
 		if variant is None:
 			raise ValueError(f"{goal.detail}[{', '.join(goal.key[1:])}] is currently not supported")
 		self._solve = getattr(solver, variant[0])
@@ -538,6 +541,10 @@ class Solver:
 
 		if max_len_s and max_len_t:
 			self._cache.ensure(max_len_s, max_len_t)
+
+	@property
+	def goal(self):
+		return self._goal
 
 	@property
 	def batch_size(self):

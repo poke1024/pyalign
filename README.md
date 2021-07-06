@@ -84,7 +84,28 @@ solver_sol.solve(problem)
 
 ![traceback and path](docs/traceback.svg)
 
-# Alignment Libraries
+As a final example, here is how to generate an iterator over all optimal
+solutions of a problem:
+
+```
+solver_sol_all = pyalign.solve.GlobalSolver(
+    gap_cost=pyalign.gaps.LinearGapCost(0.2),
+    generate="solution[all, optimal]")
+solver_sol_all.solve(problem)
+```
+
+# Performance
+
+Here are a few benchmarks. The "pure python" implementation seen in this
+benchmark is found at https://github.com/eseraygun/python-alignment.
+
+![traceback and path](docs/benchmark_10.svg)
+
+![traceback and path](docs/benchmark_20.svg)
+
+![traceback and path](docs/benchmark_50.svg)
+
+# Other Alignment Libraries
 
 Here is a short overview of other libraries.
 
@@ -135,6 +156,10 @@ Advances in Mathematics, 20(3), 367–387. https://doi.org/10.1016/0001-8708(76)
 
 Waterman, M. S. (1984). Efficient sequence alignment algorithms. Journal of Theoretical Biology, 108(3), 333–337. https://doi.org/10.1016/S0022-5193(84)80037-5
 
+## Other Algorithms
+
+Chakraborty, A., & Bandyopadhyay, S. (2013). FOGSAA: Fast Optimal Global Sequence Alignment Algorithm. Scientific Reports, 3(1), 1746. https://doi.org/10.1038/srep01746
+
 ## Surveys
 
 Aluru, S. (Ed.). (2005). Handbook of Computational Molecular Biology.
@@ -162,4 +187,3 @@ Rognes, T. (2011). Faster Smith-Waterman database searches with inter-sequence S
 Rudnicki, W. R., Jankowski, A., Modzelewski, A., Piotrowski, A., & Zadrożny, A. (2009). The new SIMD Implementation of the Smith-Waterman Algorithm on Cell Microprocessor. Fundamenta Informaticae, 96(1–2), 181–194. https://doi.org/10.3233/FI-2009-173
 
 Tran, T. T., Liu, Y., & Schmidt, B. (2016). Bit-parallel approximate pattern matching: Kepler GPU versus Xeon Phi. 26th International Symposium on Computer Architecture and High Performance Computing, 54, 128–138. https://doi.org/10.1016/j.parco.2015.11.001
-
