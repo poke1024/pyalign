@@ -9,26 +9,32 @@ be fast and easy to use. At its core, it is an optimizer for finding "optimum
 correspondences between sequences" (Kruskal, 1983) - the main proponents of which
 are alignments and dynamic time warping.
 
-Features:
+General Features:
 
 * easy to install and easy to use
 * robust and efficient implementation of standard algorithms
+* very fast for smaller problem sizes (see below for details)
+* built-in visualization functionality for teaching purposes
+
+In terms of alignment algorithms:
+
 * computes local, global and semiglobal alignments on pairs of sequences
 * supports different gap costs (commonly used ones as well as custom ones)
 * automatically selects best suitable algorithm (e.g. Gotoh)
 * no assumptions on matched items, i.e. not limited to characters
-* supports any given similarity function
-* fast for smaller problem sizes (see below for details)
-* built-in visualization functionality for teaching purposes
+* supports any given similarity or distance function
+* can return one as well as *all* optimal alignments and scores
 
 The implementation should be rather fast due to highly optimized code paths
 for every special case. While it does *not* support GPUs, here are some facts:
 
+* optimized C++ core employing <a href="https://github.com/xtensor-stack/xtensor">xtensor</a>
 * supports SIMD via batching (i.e. simple SIMD parallelism as first
 suggested by Alpern et al. and more recently by Rudnicki et al.)
-* supports multithreading
-* allows preallocation of data structures
-* optimized C++ core employing <a href="https://github.com/xtensor-stack/xtensor">xtensor</a>
+* carefully designed to avoid dynamic memory allocation
+* extensive metaprogramming to provide different optimized code paths for different
+usage patterns - for example, computing "only single score" won't write tracebacks,
+whereas computing "all alignments" will track multiple traceback edges
 
 # Example
 
@@ -93,10 +99,8 @@ Here is a short overview of other libraries.
 
 What you will *not* find in pyalign:
 
-* multiple or all best alignments. At the moment, pyalign only
-returns one best alignment
-* acceleration via SIMD for single computations, see e.g. (Farrar 2007)
-* acceleration via GPU, see e.g. (Barnes, 2020)
+* SIMD acceleration for single pairs of sequences as in e.g. (Farrar 2007)
+* GPU acceleration, see e.g. (Barnes, 2020)
 * approximate or randomized algorithms
 * advanced preprocessing or indexing
 

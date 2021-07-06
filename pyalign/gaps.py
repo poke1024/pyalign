@@ -59,10 +59,9 @@ class ConstantGapCost(GapCost):
 			return {}
 
 	def costs(self, n):
-		c = np.empty((n,), dtype=np.float32)
-		c.fill(self._cost)
-		c[0] = 0
-		return c
+		w = np.full((n,), self._cost, dtype=np.float32)
+		w[0] = 0
+		return w
 
 
 class LinearGapCost(GapCost):
@@ -116,7 +115,7 @@ class AffineGapCost(GapCost):
 
 
 class LogarithmicGapCost(GapCost):
-	""" Models a gap cost \( w_k =  u + v log(k) \). \( w_k \) is the gap
+	""" Models a gap cost \( w_k =  u + v ln(k) \). \( w_k \) is the gap
 	cost at length \( k \). \( u \) and \( v \) are configurable
 	parameters.
 
@@ -132,7 +131,8 @@ class LogarithmicGapCost(GapCost):
 
 	def costs(self, n):
 		assert n > 0
-		w = self._u + self._w * np.log(np.arange(0, n), dtype=np.float32)
+		w = np.full((n,), self._u, dtype=np.float32)
+		w[1:] += self._v * np.log(np.arange(1, n), dtype=np.float32)
 		w[0] = 0
 		return w
 
