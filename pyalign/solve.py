@@ -3,6 +3,7 @@ import numpy as np
 import time
 import contextlib
 import enum
+import re
 
 from cached_property import cached_property
 from functools import lru_cache
@@ -317,28 +318,47 @@ class SolverCache:
 class Goal:
 	details = set(["score", "alignment", "solution"])
 
-	def __init__(self, detail, count):
+	def __init__(self, detail, qualifiers):
 		"""
 		Args:
 			detail (str): one of "score", "alignment", "solution"
-			count (str): how many optimal solutions? either "one" or "all"
+			qualifiers (List[str]): one of "one" or "all", optionally "optimal"
 		"""
 
 		if detail not in Goal.details:
-			raise ValueError(detail)
-		if count not in ("one", "all"):
-			raise ValueError(count)
+			raise ValueError(f"illegal detail specification '{detail}'")
+
+		count = "one"
+		optimal = False
+
+		for q in qualifiers:
+			if q in ("one", "all"):
+				count = q
+			elif q == "optimal":
+				optimal = True
+			else:
+				raise ValueError(f"illegal qualifier '{q}'")
+
+		if count == "one":
+			optimal = True
 
 		self._detail = detail
 		self._count = count
+		self._optimal = optimal
+
+		self._key = (self._detail, self._count,) + (("optimal",) if self._optimal else tuple())
 
 	@staticmethod
 	def from_str(s):
-		if s in Goal.details:
-			return Goal(s, "one")
-		if s in [x + "s" for x in Goal.details]:
-			return Goal(s[:-1], "all")
-		raise ValueError(s)
+		# e.g. "solution[all, optimal]"
+		if "[" in s:
+			m = re.match(r"(?P<head>\w+)\[(?P<qual>[\w\s,]+)\]", s)
+			if m is None:
+				raise ValueError(f"illegal goal specification '{s}'")
+			qualifiers = [re.sub(r"\s", "", q) for q in m.group("qual").split(",")]
+			return Goal(m.group("head"), qualifiers)
+		else:
+			return Goal(s, ["one", "optimal"])
 
 	@property
 	def detail(self):
@@ -347,6 +367,10 @@ class Goal:
 	@property
 	def count(self):
 		return self._count
+
+	@property
+	def key(self):
+		return self._key
 
 
 class NoTimings:
@@ -411,12 +435,12 @@ class SolutionIterator(Iterator):
 
 def solver_variants(prefix):
 	data = {
-		("score", "one"): ("for_score", lambda _1, _2, x: x),
-		("score", "all"): ("for_score", lambda _1, _2, x: x),
-		("alignment", "one"): ("for_alignment", Alignment),
-		("alignment", "all"): ("for_alignment_iterator", AlignmentIterator),
-		("solution", "one"): ("for_solution", Solution),
-		("solution", "all"): ("for_solution_iterator", SolutionIterator)
+		("score", "one", "optimal"): ("for_score", lambda _1, _2, x: x),
+		#("score", "all"): ("for_score", lambda _1, _2, x: x),
+		("alignment", "one", "optimal"): ("for_alignment", Alignment),
+		("alignment", "all", "optimal"): ("for_alignment_iterator", AlignmentIterator),
+		("solution", "one", "optimal"): ("for_solution", Solution),
+		("solution", "all", "optimal"): ("for_solution_iterator", SolutionIterator)
 	}
 	return dict((k, (f"{prefix}_{v1}", v2)) for k, (v1, v2) in data.items())
 
@@ -424,15 +448,15 @@ def solver_variants(prefix):
 class MatrixForm:
 	_solvers = solver_variants("solve")
 
-	def __init__(self, solver, detail, count, batch):
+	def __init__(self, solver, goal, batch):
 		self._solver = solver
 		batch_size = solver.batch_size
 		shape = batch.shape
 		self._matrix = np.empty((shape[0], shape[1], batch_size), dtype=batch.dtype)
 
-		variant = MatrixForm._solvers.get((detail, count))
+		variant = MatrixForm._solvers.get(goal.key)
 		if variant is None:
-			raise ValueError((detail, count))
+			raise ValueError(f"{goal.detail}[{', '.join(goal.key[1:])}] is currently not supported")
 		self._solve = getattr(solver, variant[0])
 		self._construct = variant[1]
 
@@ -452,7 +476,7 @@ class MatrixForm:
 class IndexedMatrixForm:
 	_solvers = solver_variants("solve_indexed")
 
-	def __init__(self, solver, detail, count, batch):
+	def __init__(self, solver, goal, batch):
 		self._solver = solver
 		batch_size = solver.batch_size
 		shape = batch.shape
@@ -464,9 +488,9 @@ class IndexedMatrixForm:
 		if not all(p.similarity_lookup_table() is self._sim for p in batch.problems):
 			raise ValueError("similarity table must be identical for all problems in a batch")
 
-		variant = IndexedMatrixForm._solvers.get((detail, count))
+		variant = MatrixForm._solvers.get(goal.key)
 		if variant is None:
-			raise ValueError((detail, count))
+			raise ValueError(f"{goal.detail}[{', '.join(goal.key[1:])}] is currently not supported")
 		self._solve = getattr(solver, variant[0])
 		self._construct = variant[1]
 
@@ -534,14 +558,12 @@ class Solver:
 		batch_size = solver.batch_size
 		form = batch.form
 
-		detail = self._goal.detail
-		count = self._goal.count
 		result = []
 
 		if form == Form.MATRIX_FORM:
-			form_solver = MatrixForm(solver, detail, count, batch)
+			form_solver = MatrixForm(solver, self._goal, batch)
 		elif form == Form.INDEXED_MATRIX_FORM:
-			form_solver = IndexedMatrixForm(solver, detail, count, batch)
+			form_solver = IndexedMatrixForm(solver, self._goal, batch)
 		else:
 			raise ValueError(form)
 

@@ -70,7 +70,10 @@ It's also possible to extract the traceback matrix and path and generate
 visuals (and thus a detailed rationale for the obtained score and solution):
 
 ```
-solver.solve(problem, "solution")
+solver_sol = pyalign.solve.GlobalSolver(
+    gap_cost=pyalign.gaps.LinearGapCost(0.2),
+    generate="solution")
+solver_sol.solve(problem)
 ```
 
 ![traceback and path](docs/traceback.svg)
