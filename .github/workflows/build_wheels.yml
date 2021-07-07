@@ -10,10 +10,6 @@ jobs:
   build_wheels:
     name: Build wheel for cp${{ matrix.python }}-${{ matrix.platform_id }}-${{ matrix.manylinux_image }}
     runs-on: ${{ matrix.os }}
-    include:
-      - runs-on: ubuntu-latest
-        compiler: gcc
-        gcc: 8
     strategy:
       fail-fast: true
       matrix:
@@ -23,6 +19,8 @@ jobs:
         include:
           - os: ubuntu-latest
             platform_id: manylinux_x86_64
+            compiler: gcc
+            gcc: 8
           - os: macos-latest
             platform_id: macosx_x86_64
 
