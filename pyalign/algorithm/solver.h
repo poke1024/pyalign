@@ -1002,6 +1002,29 @@ public:
 };
 
 template<typename BuildHead, typename... BuildRest>
+class build_multiple<BuildHead, BuildRest...>;
+
+template<int i, typename BuildHead, typename... BuildRest>
+struct getter {
+	const BuildHead &head;
+	const build_multiple<BuildRest...> &rest;
+
+	const auto &get() const {
+		return rest.template get<i-1>();
+	}
+};
+
+template<typename BuildHead, typename... BuildRest>
+struct getter<0, BuildHead, BuildRest...> {
+	const BuildHead &head;
+	const build_multiple<BuildRest...> &rest;
+
+	const auto &get() const {
+		return head;
+	}
+};
+
+template<typename BuildHead, typename... BuildRest>
 class build_multiple<BuildHead, BuildRest...> {
 	BuildHead m_head;
 	build_multiple<BuildRest...> m_rest;
@@ -1062,12 +1085,7 @@ public:
 
 	template<int i>
 	const auto &get() const {
-		return m_rest.template get<i-1>();
-	}
-
-	template<>
-	const auto &get<0>() const {
-		return m_head;
+		return getter<i, BuildHead, BuildRest...>{m_head, m_rest}.get();
 	}
 };
 

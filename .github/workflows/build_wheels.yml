@@ -10,6 +10,10 @@ jobs:
   build_wheels:
     name: Build wheel for cp${{ matrix.python }}-${{ matrix.platform_id }}-${{ matrix.manylinux_image }}
     runs-on: ${{ matrix.os }}
+    include:
+      - runs-on: ubuntu-latest
+        compiler: gcc
+        gcc: 8
     strategy:
       fail-fast: true
       matrix:
