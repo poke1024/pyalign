@@ -19,12 +19,11 @@ jobs:
         include:
           - os: ubuntu-latest
             platform_id: manylinux_x86_64
-            compiler: clang
-            clang: 11
+            compiler: LLVM
+            CC: clang-11
+            CXX: clang++-11
           - os: macos-latest
             platform_id: macosx_x86_64
-            compiler: clang
-            clang: 11
 
     steps:
       - uses: actions/checkout@v2
