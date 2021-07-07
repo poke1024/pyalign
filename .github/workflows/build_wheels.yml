@@ -20,11 +20,11 @@ jobs:
           - os: ubuntu-latest
             platform_id: manylinux_x86_64
             compiler: clang
-            gcc: 11
+            clang: 11
           - os: macos-latest
             platform_id: macosx_x86_64
             compiler: clang
-            gcc: 11
+            clang: 11
 
     steps:
       - uses: actions/checkout@v2
