@@ -1,0 +1,69 @@
+name: Build
+
+on:
+  release:
+    types: [created]
+  # Manual run
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    name: Build wheel for cp${{ matrix.python }}-${{ matrix.platform_id }}-${{ matrix.manylinux_image }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest]  # , windows-latest
+        python: [37, 38, 39]
+        manylinux_image: [manylinux2014]
+        include:
+          - os: ubuntu-latest
+            platform_id: manylinux_x86_64
+          - os: macos-latest
+            platform_id: macosx_x86_64
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: setup python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.7'
+
+      - name: build wheels
+        uses: joerick/cibuildwheel@v1.10.0
+        env:
+          CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
+          CIBW_MANYLINUX_X86_64_IMAGE: ${{ matrix.manylinux_image }}
+          CIBW_ARCHS: "auto64"
+          CIBW_BEFORE_ALL_LINUX: bash scripts/prepare_for_build_linux.sh
+          CIBW_BEFORE_ALL_MACOS: bash scripts/prepare_for_build_macos.sh
+          CIBW_TEST_REQUIRES: nose
+          CIBW_TEST_COMMAND: "nosetests --verbosity=3 pyalign/tests"
+      - name: store artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          path: wheelhouse/*.whl
+
+  build_sdist:
+    name: build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v2
+        name: setup python
+        with:
+          python-version: '3.7'
+
+      - name: install dependencies
+        run: bash scripts/install_sdist_dep.sh
+
+      - name: build sdist
+        run: python setup.py sdist
+
+      - uses: actions/upload-artifact@v2
+        with:
+          path: dist/*.tar.gz

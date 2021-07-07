@@ -1,8 +1,12 @@
 import numpy as np
+import yaml
 
 from pathlib import Path
 from setuptools import setup, find_packages
 from pybind11.setup_helpers import Pybind11Extension, build_ext
+
+with open('environment.yml') as f:
+	required = yaml.safe_load(f.read())['dependencies'][-1]['pip']
 
 src_path = Path('pyalign/algorithm').resolve()
 assert src_path.exists()
@@ -34,7 +38,7 @@ setup(
 	long_description='',
 	ext_modules=ext_modules,
 	cmdclass={"build_ext": build_ext},
-	install_requires=["pybind11"],
+	install_requires=required,
 	test_suite='nose.collector',
 	tests_require=['nose'],
 )
