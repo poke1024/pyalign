@@ -57,7 +57,7 @@ jobs:
           CIBW_BEFORE_ALL_MACOS: bash scripts/prepare_for_build_macos.sh
           CIBW_TEST_REQUIRES: nose
           CIBW_TEST_COMMAND: "nosetests --verbosity=3 pyalign/tests"
-          CIBW_ENVIRONMENT: "CC=clang CXX=clang++"
+          CIBW_ENVIRONMENT: "CC=clang-11 CXX=clang-11++"
       - name: store artifacts
         uses: actions/upload-artifact@v2
         with:
