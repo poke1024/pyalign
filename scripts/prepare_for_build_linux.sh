@@ -1,4 +1,4 @@
-yum install -y git cmake clang-11
+yum install -y git cmake clang
 # specifing a wrong numpy version here will end up in runtime errors like:
 # module compiled against API version 0xe but this version of numpy is 0xd
 pip install "pybind11[global]~=2.6.2" "numpy~=1.19"
