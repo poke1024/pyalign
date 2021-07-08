@@ -28,20 +28,6 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup compiler on Linux
-        run: |
-          sudo apt-get update
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then
-            echo "CC=gcc" >> $GITHUB_ENV
-            echo "CXX=g++" >> $GITHUB_ENV
-          else
-            sudo apt-get install -y clang-11
-            echo "CC=clang-11" >> $GITHUB_ENV
-            echo "CXX=clang-11++" >> $GITHUB_ENV
-          fi
-        if: runner.os == 'Linux'
-        shell: bash
-
       - name: setup python
         uses: actions/setup-python@v2
         with:
