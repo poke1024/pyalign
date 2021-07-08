@@ -23,21 +23,26 @@ if sys.platform == 'darwin':
 		import pybind11.setup_helpers
 		pybind11.setup_helpers.MACOS = False
 
-extra_compile_args = []
-march = os.environ.get("PYALIGN_MARCH")  # e.g. "haswell"
-if march is not None:
-	extra_compile_args.append(f"-march={march}")
 
-ext_modules = [
-	Pybind11Extension(
-		'pyalign.algorithm',
+def mk_ext(name, march):
+	extra_compile_args = []
+	if march is not None:
+		extra_compile_args.append(f"-march={march}")
+
+	return Pybind11Extension(
+		f'pyalign.algorithm.{name}.algorithm',
 		[str(x) for x in sorted(sources)],
 		cxx_std=17,
 		extra_compile_args=extra_compile_args + [
 			"-O3",
 			"-ftemplate-backtrace-limit=0"],
 		include_dirs=[str(x) for x in include_dirs],
-	),
+	)
+
+
+ext_modules = [
+	mk_ext('generic', None),
+	mk_ext('avx2', 'haswell'),
 ]
 
 setup(

@@ -1,9 +1,14 @@
-import pyalign.algorithm
 import numpy as np
 import time
 import contextlib
 import enum
 import re
+
+import cpufeature
+if cpufeature.CPUFeature["AVX2"]:
+	import pyalign.algorithm.avx2.algorithm as algorithm
+else
+	import pyalign.algorithm.generic.algorithm as algorithm
 
 from cached_property import cached_property
 from functools import lru_cache
@@ -160,7 +165,7 @@ class Solution:
 	def values(self):
 		return self._solution.values
 
-	@lru_cache
+	@lru_cache(maxsize=2)
 	def traceback(self, form="matrix"):
 		if form == "matrix":
 			return self._solution.traceback_as_matrix
@@ -309,7 +314,7 @@ class SolverCache:
 		if solver is None:
 			options = self._options.copy()
 			options['batch'] = batch
-			solver = pyalign.algorithm.create_solver(
+			solver = algorithm.create_solver(
 				self._max_lim_s, self._max_lim_t, options)
 			self._solvers[batch] = solver
 		return solver
