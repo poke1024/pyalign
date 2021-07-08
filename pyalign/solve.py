@@ -7,7 +7,7 @@ import re
 import cpufeature
 if cpufeature.CPUFeature["AVX2"]:
 	import pyalign.algorithm.avx2.algorithm as algorithm
-else
+else:
 	import pyalign.algorithm.generic.algorithm as algorithm
 
 from cached_property import cached_property
