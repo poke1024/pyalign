@@ -41,7 +41,7 @@ jobs:
           CIBW_BEFORE_ALL_LINUX: bash scripts/prepare_for_build_linux.sh
           CIBW_BEFORE_ALL_MACOS: bash scripts/prepare_for_build_macos.sh
           CIBW_TEST_REQUIRES: nose
-          CIBW_TEST_COMMAND: "nosetests --verbosity=3 {package}/tests"
+          CIBW_TEST_COMMAND: python scripts/run_tests.py
       - name: store artifacts
         uses: actions/upload-artifact@v2
         with:
