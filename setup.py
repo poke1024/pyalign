@@ -1,5 +1,7 @@
 import numpy as np
 import yaml
+import sys
+import os
 
 from pathlib import Path
 from setuptools import setup, find_packages
@@ -14,6 +16,12 @@ assert src_path.exists()
 sources = [src_path / 'pyalign.cpp']
 
 include_dirs = [Path(np.get_include()), src_path]
+
+if sys.platform == 'darwin':
+	cc = os.environ.get("CC")
+	if cc and cc.startswith("gcc"):
+		import pybind11.setup_helpers
+		pybind11.setup_helpers.MACOS = False
 
 ext_modules = [
 	Pybind11Extension(

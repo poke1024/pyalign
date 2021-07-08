@@ -1300,7 +1300,7 @@ public:
 	}
 
 	inline const T& top() const {
-		return m_data.value();
+		return *m_data;
 	}
 
 	inline void pop() {
@@ -2314,7 +2314,7 @@ public:
 
 	const std::optional<Value> score() const {
 		if (m_alignment.has_value()) {
-			return AlignmentFactory::deref(m_alignment.value()).score();
+			return AlignmentFactory::deref(*m_alignment).score();
 		} else {
 			return std::optional<Value>();
 		}

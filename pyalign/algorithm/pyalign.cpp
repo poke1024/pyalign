@@ -55,20 +55,20 @@ public:
 
 		if (len_s <= len_t) {
 			m_s_to_t = xt::pytensor<Index, 1>();
-			m_s_to_t.value().resize({static_cast<ssize_t>(len_s)});
-			m_s_to_t.value().fill(-1);
+			(*m_s_to_t).resize({static_cast<ssize_t>(len_s)});
+			(*m_s_to_t).fill(-1);
 		} else {
 			m_t_to_s = xt::pytensor<Index, 1>();
-			m_t_to_s.value().resize({static_cast<ssize_t>(len_t)});
-			m_t_to_s.value().fill(-1);
+			(*m_t_to_s).resize({static_cast<ssize_t>(len_t)});
+			(*m_t_to_s).fill(-1);
 		}
 	}
 
 	inline void add_edge(const size_t u, const size_t v) {
 		if (m_s_to_t.has_value()) {
-			m_s_to_t.value()[u] = v;
+			(*m_s_to_t)[u] = v;
 		} else {
-			m_t_to_s.value()[v] = u;
+			(*m_t_to_s)[v] = u;
 		}
 	}
 
@@ -82,16 +82,16 @@ public:
 
 	inline const xt::pytensor<Index, 1> &s_to_t() {
 		if (!m_s_to_t.has_value()) {
-			m_s_to_t = invert<Index>(m_t_to_s.value(), m_len_s);
+			m_s_to_t = invert<Index>(*m_t_to_s, m_len_s);
 		}
-		return m_s_to_t.value();
+		return *m_s_to_t;
 	}
 
 	inline const xt::pytensor<Index, 1> &t_to_s() {
 		if (!m_t_to_s.has_value()) {
-			m_t_to_s = invert<Index>(m_s_to_t.value(), m_len_t);
+			m_t_to_s = invert<Index>(*m_s_to_t, m_len_t);
 		}
-		return m_t_to_s.value();
+		return *m_t_to_s;
 	}
 };
 
@@ -220,7 +220,7 @@ public:
 	virtual py::object score() const override {
 		const auto score = m_solution->score();
 		if (score.has_value()) {
-			return py::cast(score.value());
+			return py::cast(*score);
 		} else {
 			return py::none();
 		}
@@ -228,7 +228,7 @@ public:
 
 	virtual py::object alignment() const override {
 		if (m_solution->alignment().has_value()) {
-			return py::cast(m_solution->alignment().value());
+			return py::cast(*m_solution->alignment());
 		} else {
 			return py::none();
 		}
@@ -236,7 +236,7 @@ public:
 
 	virtual py::object path() const override {
 		if (m_solution->path().has_value()) {
-			const xt::pytensor<Index, 2> p = m_solution->path().value();
+			const xt::pytensor<Index, 2> p = *m_solution->path();
 			return p;
 		} else {
 			return py::none();
@@ -736,8 +736,8 @@ struct AlignmentSolverFactory {
 		if (x_gap_s.linear.has_value() && x_gap_t.linear.has_value()) {
 			return AlignmentSolverFactory::resolve_direction<pyalign::LinearGapCostSolver, Goal, Locality>(
 				p_options,
-				x_gap_s.linear.value(),
-				x_gap_t.linear.value(),
+				*x_gap_s.linear,
+				*x_gap_t.linear,
 				p_max_len_s,
 				p_max_len_t,
 				p_loc_initializers
@@ -745,8 +745,8 @@ struct AlignmentSolverFactory {
 		} else if (x_gap_s.affine.has_value() && x_gap_t.affine.has_value()) {
 			return AlignmentSolverFactory::resolve_direction<pyalign::AffineGapCostSolver, Goal, Locality>(
 				p_options,
-				x_gap_s.affine.value(),
-				x_gap_t.affine.value(),
+				*x_gap_s.affine,
+				*x_gap_t.affine,
 				p_max_len_s,
 				p_max_len_t,
 				p_loc_initializers
