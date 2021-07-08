@@ -1,3 +1,4 @@
+cc --version
 brew install git cmake
 # specifing a wrong numpy version here will end up in runtime errors like:
 # module compiled against API version 0xe but this version of numpy is 0xd
