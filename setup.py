@@ -26,16 +26,21 @@ if sys.platform == 'darwin':
 
 def mk_ext(name, march):
 	extra_compile_args = []
-	if march is not None:
-		extra_compile_args.append(f"-march={march}")
+
+	if os.name == 'nt':
+		pass
+	else:
+		extra_compile_args.extend([
+			"-O3",
+			"-ftemplate-backtrace-limit=0"])
+		if march is not None:
+			extra_compile_args.append(f"-march={march}")
 
 	return Pybind11Extension(
 		f'pyalign.algorithm.{name}.algorithm',
 		[str(x) for x in sorted(sources)],
 		cxx_std=17,
-		extra_compile_args=extra_compile_args + [
-			"-O3",
-			"-ftemplate-backtrace-limit=0"],
+		extra_compile_args=extra_compile_args,
 		include_dirs=[str(x) for x in include_dirs],
 	)
 
