@@ -24,6 +24,11 @@ if lib_name == 'xtensor':
 	cmake_args.append("-DXTENSOR_USE_XSIMD=ON")
 
 if os.name == 'nt':
+	print("python3:", sys.executable)
+
+	import numpy as np
+	print("numpy includes:", np.get_include())
+
 	install_path = home / "xtensor_prefix"
 	install_path.mkdir(exist_ok=True)
 
