@@ -1,10 +1,9 @@
-choco install python --version 3.8.6
+choco install python --version 3.8.6 --no-progress
 export PATH="/c/Python38:/c/Python38/Scripts:$PATH"
-ln -s /c/Python38/python.exe /c/Python38/python3.exe
-ln -s /c/Python38/Scripts/pip3.exe /c/Python38/Scripts/pip.exe
 cc --version
 choco install git cmake
-pip install "pybind11~=2.6.2" "pybind11[global]~=2.6.2" "numpy~=1.19"
+python -m ensurepip
+python -m pip install "pybind11[global]~=2.6.2" "numpy~=1.19"
 python scripts/install_xtensor.py xtl 0.7.2
 python scripts/install_xtensor.py xtensor 0.23.10
 python scripts/install_xtensor.py xsimd 7.4.9
