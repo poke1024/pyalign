@@ -18,10 +18,13 @@ subprocess.check_call(['git', 'checkout', f'tags/{tag_name}', '-b', tag_name], c
 build = home / lib_name / "build"
 build.mkdir()
 
-cmake_args = ["-DXTENSOR_USE_XSIMD=ON"]
+cmake_args = []
+
+if lib_name == 'xtensor':
+	cmake_args.append("-DXTENSOR_USE_XSIMD=ON")
 
 if os.name == 'nt':
-	install_path = home / "xtensor"
+	install_path = home / "xtensor_prefix"
 	install_path.mkdir(exist_ok=True)
 
 	cmake_args.append(f"-DCMAKE_PREFIX_PATH={install_path}")
