@@ -1,6 +1,8 @@
 # specifing a wrong numpy version here will end up in runtime errors like:
 # module compiled against API version 0xe but this version of numpy is 0xd
-pip install "pybind11[global]~=2.6.2" "numpy~=1.19"
+python -m ensurepip
+python -m pip install wheel
+python -m pip install pip install "pybind11[global]~=2.6.2" "numpy~=1.19"
 python ci/install_xtensor.py xtl 0.7.2
 python ci/install_xtensor.py xsimd 7.4.9
 python ci/install_xtensor.py xtensor 0.23.10
