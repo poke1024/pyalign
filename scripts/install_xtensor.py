@@ -17,8 +17,16 @@ subprocess.check_call(['git', 'clone', repo_url], cwd=home)
 subprocess.check_call(['git', 'checkout', f'tags/{tag_name}', '-b', tag_name], cwd=home / lib_name)
 build = home / lib_name / "build"
 build.mkdir()
+
+cmake_args = ["-DXTENSOR_USE_XSIMD=ON"]
+
 if os.name == 'nt':
-	subprocess.check_call(['cmake', '-G', 'MinGW Makefiles', '..'], cwd=build)
-else:
-	subprocess.check_call(['cmake', '..'], cwd=build)
+	install_path = home / "xtensor"
+	install_path.mkdir(exist_ok=True)
+
+	cmake_args.append(f"-DCMAKE_PREFIX_PATH={install_path}")
+	cmake_args.append(f"-DCMAKE_INSTALL_PREFIX={install_path}")
+	cmake_args.extend(['-G', 'MinGW Makefiles'])
+
+subprocess.check_call(['cmake', *cmake_args, '..'], cwd=build)
 subprocess.check_call(['make', 'install'], cwd=build)
