@@ -2,9 +2,14 @@ import numpy as np
 import enum
 
 
+class Form(enum.Enum):
+	MATRIX_FORM = 0
+	INDEXED_MATRIX_FORM = 1
+
+
 class Problem:
 	"""
-	An alignment problem between two sequences.
+	A problem of finding an optimal alignment between two sequences \(s\) and \(t\).
 	"""
 
 	def __init__(self, shape, s=None, t=None, direction="maximize", dtype=np.float32):
@@ -13,14 +18,15 @@ class Problem:
 		Parameters
 		----------
 		shape : tuple
-			The shape \( (n, m) \) of the problem, with n being the length of the first
-			sequence s being aligned, and m being the length of the second sequence t
+			The shape \( (|s|, |t|) \) of the problem
 		s : array_like, optional
-			The actual elements of the first sequence s
+			The actual elements of the first sequence \(s\)
 		t : array_like, optional
-			The actual elements of the second sequence t
+			The actual elements of the second sequence \(t\)
 		direction : {'minimize', 'maximize'}, optional
+			Direction in which to optimize
 		dtype : type, optional
+			dtype used for computing problem affinity (or distance) values
 		"""
 
 		self._shape = tuple(shape)
@@ -37,31 +43,31 @@ class Problem:
 
 	@property
 	def shape(self):
-		"""The problem's shape"""
+		"""problem's shape as \(|s|, |t|\)"""
 
 		return self._shape
 
 	@property
 	def direction(self):
-		"""The problem's direction, i.e. either 'maximize' or 'minimize'"""
+		"""problem's direction, i.e. either 'maximize' or 'minimize'"""
 
 		return self._direction
 
 	@property
 	def dtype(self):
-		"""The dtype used for the problem affinity or distance values"""
+		"""dtype used for computing problem affinity (or distance) values"""
 
 		return self._dtype
 
 	@property
 	def s(self):
-		"""The elements in the first sequence \( s \) or None if not available"""
+		"""elements in the first sequence \( s \) or None if not available"""
 
 		return self._s
 
 	@property
 	def t(self):
-		"""The elements in the second sequence \( t \) or None if not available"""
+		"""elements in the second sequence \( t \) or None if not available"""
 
 		return self._t
 
@@ -69,7 +75,7 @@ class Problem:
 		"""
 		Build a matrix M that describes an alignment problem for the two sequences
 		\( s \) and \( t \). Depending on the Problem's, `direction` \( M_{i, j} \)
-		contains either the affinity or distance between \( s_i \) and \( t_j \).
+		contains either the affinity (or distance) between \( s_i \) and \( t_j \).
 
 		Parameters
 		----------
@@ -94,19 +100,32 @@ class Problem:
 		self.build_matrix(m)
 		return m
 
+	@property
+	def form(self) -> Form:
+		"""the sub form the problem is posed as"""
 
-class Form(enum.Enum):
-	MATRIX_FORM = 0
-	INDEXED_MATRIX_FORM = 1
+		raise NotImplementedError()
 
 
 class MatrixProblem(Problem):
+	"""
+	A Problem that is posed as a matrix \(M\), such that \(M_{i,j}\)
+	is the affinity (or distance) between the sequence elements \(s_i\)
+	and \(t_j\).
+	"""
+
 	@property
 	def form(self):
 		return Form.MATRIX_FORM
 
 
 class IndexedMatrixProblem(Problem):
+	"""
+	A Problem that is posed as a matrix \(M\) and two index vectors
+	\(A, B\) such that \(M_{A_i,B_j}\) is the affinity (or distance)
+	between the sequence elements \(s_i\) and \(t_j\).
+	"""
+
 	def build_matrix(self, out):
 		sim = self.similarity_lookup_table()
 		a = np.empty((self.shape[0],), dtype=np.uint32)

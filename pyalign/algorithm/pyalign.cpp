@@ -14,6 +14,13 @@ typedef int16_t cell_index_t;
 typedef pyalign::cell_type<float, cell_index_t, pyalign::no_batch> cell_type_nobatch;
 typedef pyalign::cell_type<float, cell_index_t, pyalign::machine_batch_size> cell_type_batched;
 
+template<typename T>
+inline void print_debug_info(const char *title, const T& data) {
+#if 0
+	std::cerr << title << ": " << data << std::endl << std::flush;
+#endif
+}
+
 template<typename Index>
 xt::pytensor<Index, 1> invert(
 	const xt::pytensor<Index, 1> &p_source,
@@ -690,6 +697,7 @@ struct AlignmentSolverFactory {
 		const Args&... args) {
 
 		const std::string direction = p_options["direction"].cast<std::string>();
+		print_debug_info("direction: ", direction);
 
 		if (direction == "maximize") {
 			typedef pyalign::problem_type<Goal, pyalign::direction::maximize> ProblemType;
@@ -715,6 +723,8 @@ struct AlignmentSolverFactory {
 
 		const py::object gap_cost = p_options.contains("gap_cost") ?
 			p_options["gap_cost"] : py::none().cast<py::object>();
+
+		print_debug_info("gap cost", "");
 
 		py::object gap_s = py::none();
 		py::object gap_t = py::none();
@@ -774,6 +784,7 @@ struct AlignmentSolverFactory {
 
 		const std::string locality_name = p_options.contains("locality") ?
 			p_options["locality"].cast<std::string>() : "local";
+		print_debug_info("locality", locality_name);
 
 		if (locality_name == "local") {
 			return resolve_gap_type<Goal, pyalign::Local>(
@@ -815,6 +826,9 @@ SolverRef create_alignment_solver(
 	const auto detail = goal.attr("detail").cast<std::string>();
 	const auto count = goal.attr("count").cast<std::string>();
 
+	print_debug_info("detail", detail);
+	print_debug_info("count", count);
+
 	if (count == "one") {
 		if (detail == "score") {
 			return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::optimal_score>(
@@ -850,6 +864,7 @@ SolverRef create_dtw_solver(
 	const py::dict &p_options) {
 
 	const std::string direction = p_options["direction"].cast<std::string>();
+	print_debug_info("direction", direction);
 
 	if (direction == "maximize") {
 		typedef pyalign::problem_type<
@@ -881,6 +896,9 @@ SolverRef create_solver(
 
 	const std::string solver = p_options["solver"].cast<py::str>();
 	const bool batch = p_options["batch"].cast<bool>();
+
+	print_debug_info("solver", solver);
+	print_debug_info("batch", batch);
 
 	if (solver == "alignment") {
 		if (batch) {
