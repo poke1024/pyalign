@@ -3,12 +3,14 @@ import time
 import contextlib
 import enum
 import re
+import os
 
-import cpufeature
-if cpufeature.CPUFeature["AVX2"]:
-	import pyalign.algorithm.avx2.algorithm as algorithm
-else:
-	import pyalign.algorithm.generic.algorithm as algorithm
+if os.environ.get('PYALIGN_PDOC') is None:
+	import cpufeature
+	if cpufeature.CPUFeature["AVX2"]:
+		import pyalign.algorithm.avx2.algorithm as algorithm
+	else:
+		import pyalign.algorithm.generic.algorithm as algorithm
 
 from cached_property import cached_property
 from functools import lru_cache
