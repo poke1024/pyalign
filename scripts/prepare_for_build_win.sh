@@ -2,7 +2,7 @@
 #export PATH="/c/Python38:/c/Python38/Scripts:$PATH"
 cc --version
 choco install git cmake
-#python -m ensurepip
+python -m ensurepip
 python -m pip install "pybind11[global]~=2.6.2" "numpy~=1.19"
 #pip install "pybind11[global]~=2.6.2" "numpy~=1.19"
 python scripts/install_xtensor.py xtl 0.7.2
