@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import os
 import pathlib
 import pybind11
 
@@ -16,5 +17,8 @@ subprocess.check_call(['git', 'clone', repo_url], cwd=home)
 subprocess.check_call(['git', 'checkout', f'tags/{tag_name}', '-b', tag_name], cwd=home / lib_name)
 build = home / lib_name / "build"
 build.mkdir()
-subprocess.check_call(['cmake', '..'], cwd=build)
+if os.name == 'nt':
+	subprocess.check_call(['cmake', '-G', 'MinGW Makefiles', '..'], cwd=build)
+else:
+	subprocess.check_call(['cmake', '..'], cwd=build)
 subprocess.check_call(['make', 'install'], cwd=build)
