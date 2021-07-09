@@ -1,3 +1,3 @@
 cc --version
 brew install git cmake
-scripts/prepare_for_build.sh
+ci/prepare_for_build.sh

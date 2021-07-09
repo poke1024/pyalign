@@ -2,4 +2,4 @@
 #scl enable devtoolset-9 bash
 cc --version
 yum install -y git cmake
-scripts/prepare_for_build.sh
+ci/prepare_for_build.sh
