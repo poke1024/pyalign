@@ -27,8 +27,8 @@ if os.name == 'nt':
 	install_path = home / "xtensor_prefix"
 	install_path.mkdir(exist_ok=True)
 
-	cmake_args.append("-Dxtl_DIR={home}/xtl/build")
-	cmake_args.append("-Dxtensor_DIR={home}/xtensor/build")
+	cmake_args.append(f"-Dxtl_DIR={home}/xtl/build")
+	cmake_args.append(f"-Dxtensor_DIR={home}/xtensor/build")
 
 	cmake_args.append(f"-DCMAKE_PREFIX_PATH={install_path}")
 	cmake_args.append(f"-DCMAKE_INSTALL_PREFIX={install_path}")
