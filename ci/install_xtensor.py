@@ -24,7 +24,9 @@ if lib_name == 'xtensor':
 	cmake_args.append("-DXTENSOR_USE_XSIMD=ON")
 
 if os.name == 'nt':
-	print("python3:", sys.executable)
+	print("PYTHON:", sys.executable)
+	print("PYTHONPATH:", os.environ.get('PYTHONPATH'))
+	print("PATH:", os.environ.get('PATH'))
 
 	import numpy as np
 	print("numpy includes:", np.get_include())
