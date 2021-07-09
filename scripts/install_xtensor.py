@@ -29,6 +29,7 @@ if os.name == 'nt':
 
 	cmake_args.append(f"-Dxtl_DIR={home}/xtl/build")
 	cmake_args.append(f"-Dxtensor_DIR={home}/xtensor/build")
+	cmake_args.append(f"-Dxsimd_DIR={home}/xsimd/build")
 
 	cmake_args.append(f"-DCMAKE_PREFIX_PATH={install_path}")
 	cmake_args.append(f"-DCMAKE_INSTALL_PREFIX={install_path}")
