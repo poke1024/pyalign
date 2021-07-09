@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import pyalign.utils
+import pyalign.problem
 import pyalign.gaps
 
 import string
@@ -44,12 +44,12 @@ class PyAlignImplementation(Aligner):
 
 	def prepare(self, a, b):
 		if not self._encoded:
-			pf = pyalign.utils.SimilarityProblemFactory(
-				pyalign.utils.Binary(eq=1, ne=-1))
+			pf = pyalign.problem.SimilarityProblemFactory(
+				pyalign.problem.Binary(eq=1, ne=-1))
 		else:
-			pf = pyalign.utils.AlphabetProblemFactory(
-				pyalign.utils.Binary(eq=1, ne=-1),
-				pyalign.utils.Encoder(string.ascii_uppercase[:4]))
+			pf = pyalign.problem.AlphabetProblemFactory(
+				pyalign.problem.Binary(eq=1, ne=-1),
+				pyalign.problem.Encoder(string.ascii_uppercase[:4]))
 
 		self._solver = pyalign.solve.LocalSolver(
 			gap_cost=pyalign.gaps.LinearGapCost(1),

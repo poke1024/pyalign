@@ -1,14 +1,14 @@
 from pyalign.tests import TestCase
 
-import pyalign.utils
+import pyalign.problem
 import pyalign.solve
 import pyalign.gaps
 
 
 class TestBatch(TestCase):
 	def test_simd(self):
-		pf = pyalign.utils.SimilarityProblemFactory(
-			pyalign.utils.Binary(eq=1, ne=-1))
+		pf = pyalign.problem.SimilarityProblemFactory(
+			pyalign.problem.Binary(eq=1, ne=-1))
 
 		solver = pyalign.solve.GlobalSolver(
 			gap_cost=pyalign.gaps.LinearGapCost(2),

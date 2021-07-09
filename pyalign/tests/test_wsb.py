@@ -1,6 +1,6 @@
 from pyalign.tests import TestCase
 
-import pyalign.utils
+import pyalign.problem
 import pyalign.solve
 import pyalign.gaps
 
@@ -10,8 +10,8 @@ class TestWatermanSmithBeyer(TestCase):
 		# test case is taken from default settings (for logarithmic gap settings) at
 		# http://rna.informatik.uni-freiburg.de/Teaching/index.jsp?toolName=Waterman-Smith-Beyer
 
-		pf = pyalign.utils.SimilarityProblemFactory(
-			pyalign.utils.Binary(eq=1, ne=-1))
+		pf = pyalign.problem.SimilarityProblemFactory(
+			pyalign.problem.Binary(eq=1, ne=-1))
 		problem = pf.new_problem("CG", "CCGA")
 
 		solver = pyalign.solve.GlobalSolver(

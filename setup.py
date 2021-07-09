@@ -46,14 +46,22 @@ def mk_ext(name, march):
 
 
 ext_modules = [
-	mk_ext('generic', None),
-	mk_ext('avx2', 'haswell'),
+	mk_ext('generic', None)
 ]
+
+
+if os.environ.get("PYALIGN_NO_SIMD") is not None:
+	pass
+else:
+	ext_modules.append(mk_ext('avx2', 'haswell'))
+
+
 
 setup(
 	name='pyalign',
 	version='0.1',
-	packages=find_packages(include=['pyalign', 'pyalign.utils', 'pyalign.tests']),
+	packages=find_packages(include=[
+		'pyalign', 'pyalign.problem', 'pyalign.util', 'pyalign.tests']),
 	license='GPLv2',
 	author='Bernhard Liebl',
 	author_email='liebl@informatik.uni-leipzig.de',

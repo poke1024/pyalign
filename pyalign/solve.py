@@ -1,141 +1,25 @@
 import numpy as np
 import time
 import contextlib
-import enum
 import re
 import os
 
 if os.environ.get('PYALIGN_PDOC') is None:
 	import cpufeature
 	if cpufeature.CPUFeature["AVX2"]:
-		import pyalign.algorithm.avx2.algorithm as algorithm
+		try:
+			import pyalign.algorithm.avx2.algorithm as algorithm
+		except ImportError:
+			import pyalign.algorithm.generic.algorithm as algorithm
 	else:
 		import pyalign.algorithm.generic.algorithm as algorithm
 
 from cached_property import cached_property
 from functools import lru_cache
 from pathlib import Path
+
 from .gaps import GapCost, ConstantGapCost
-
-
-class Problem:
-	def __init__(self, shape, s=None, t=None, direction="maximize", dtype=np.float32):
-		self._shape = tuple(shape)
-		self._direction = direction
-		self._dtype = dtype
-
-		if s is not None and shape[0] != len(s):
-			raise ValueError(f"sequence s [{len(s)}] does not match matrix shape {shape}")
-		if t is not None and shape[1] != len(t):
-			raise ValueError(f"sequence t [{len(t)}] does not match matrix shape {shape}")
-
-		self._s = s
-		self._t = t
-
-	@property
-	def shape(self):
-		return self._shape
-
-	@property
-	def direction(self):
-		return self._direction
-
-	@property
-	def dtype(self):
-		return self._dtype
-
-	@property
-	def s(self):
-		return self._s
-
-	@property
-	def t(self):
-		return self._t
-
-	def build_matrix(self, out):
-		"""
-		Build a matrix M that describes an alignment problem for two sequences \( s \) and \( t \).
-		\( M_{i, j} \) contains the similarity between \( s_i \) and \( t_j \).
-		"""
-		raise NotImplementedError()
-
-	@property
-	def matrix(self):
-		m = np.empty(self.shape, dtype=self._dtype)
-		self.build_matrix(m)
-		return m
-
-
-class Form(enum.Enum):
-	MATRIX_FORM = 0
-	INDEXED_MATRIX_FORM = 1
-
-
-class MatrixProblem(Problem):
-	@property
-	def form(self):
-		return Form.MATRIX_FORM
-
-
-class IndexedMatrixProblem(Problem):
-	def build_matrix(self, out):
-		sim = self.similarity_lookup_table()
-		a = np.empty((self.shape[0],), dtype=np.uint32)
-		b = np.empty((self.shape[1],), dtype=np.uint32)
-		self.build_index_sequences(a, b)
-		out[:, :] = sim[np.ix_(a, b)]
-
-	def similarity_lookup_table(self):
-		raise NotImplementedError()
-
-	def build_index_sequences(self, a, b):
-		raise NotImplementedError()
-
-	@property
-	def form(self):
-		return Form.INDEXED_MATRIX_FORM
-
-
-class ProblemBatch:
-	def __init__(self, problems):
-		self._problems = problems
-
-		self._shape = problems[0].shape
-		if not all(p.shape == self._shape for p in problems):
-			raise ValueError("problems in a batch need to have same shape")
-
-		self._direction = problems[0].direction
-		if not all(p.direction == self._direction for p in problems):
-			raise ValueError("problems in a batch need to have same direction")
-
-		self._dtype = problems[0].dtype
-		if not all(p.dtype == self._dtype for p in problems):
-			raise ValueError("problems in a batch need to have same dtype")
-
-		self._form = Form(min(p.form.value for p in problems))
-
-	def __len__(self):
-		return len(self._problems)
-
-	@property
-	def problems(self):
-		return self._problems
-
-	@property
-	def shape(self):
-		return self._shape
-
-	@property
-	def direction(self):
-		return self._direction
-
-	@property
-	def dtype(self):
-		return self._dtype
-
-	@property
-	def form(self):
-		return self._form
+from .problem import ProblemBatch, Form
 
 
 class Solution:
@@ -186,7 +70,7 @@ class Solution:
 
 	def display(self, layer=0):
 		import bokeh.io
-		from .utils.plot import TracebackPlotFactory
+		from pyalign.io.plot import TracebackPlotFactory
 		f = TracebackPlotFactory(
 			self._solution, self._problem, layer=layer)
 		bokeh.io.show(f.create())
@@ -196,7 +80,7 @@ class Solution:
 
 	def export_image(self, path):
 		import bokeh.io
-		from .utils.plot import TracebackPlotFactory
+		from pyalign.io.plot import TracebackPlotFactory
 		f = TracebackPlotFactory(self._solution, self._problem)
 		path = Path(path)
 		if path.suffix == ".svg":
@@ -206,6 +90,10 @@ class Solution:
 
 
 class Alignment:
+	"""
+	A specific alignment that is part of a solution.
+	"""
+
 	def __init__(self, problem, solver, alignment):
 		self._problem = problem
 		self._solver = solver
@@ -605,6 +493,10 @@ class Solver:
 
 
 class LocalSolver(Solver):
+	"""
+	A local solver, i.e. one that will be a Needleman-Wunsch solver in many cases.
+	"""
+
 	def __init__(self, gap_cost: GapCost = None, **kwargs):
 		super().__init__(solver="alignment", locality="local", gap_cost=gap_cost, **kwargs)
 
