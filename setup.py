@@ -61,7 +61,7 @@ setup(
 	name='pyalign',
 	version='0.1',
 	packages=find_packages(include=[
-		'pyalign', 'pyalign.problem', 'pyalign.util', 'pyalign.tests']),
+		'pyalign', 'pyalign.problem', 'pyalign.io', 'pyalign.tests']),
 	license='GPLv2',
 	author='Bernhard Liebl',
 	author_email='liebl@informatik.uni-leipzig.de',

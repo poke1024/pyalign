@@ -10,8 +10,9 @@ class TestSmithWaterman(TestCase):
 		# test case is taken from default settings at
 		# http://rna.informatik.uni-freiburg.de/Teaching/index.jsp?toolName=Smith-Waterman
 
-		pf = pyalign.problem.SimilarityProblemFactory(
-			pyalign.problem.Binary(eq=1, ne=-1))
+		pf = pyalign.problem.ProblemFactory(
+			pyalign.problem.Binary(eq=1, ne=-1),
+			direction="maximize")
 		problem = pf.new_problem("AATCG", "AACG")
 
 		solver = pyalign.solve.LocalSolver(

@@ -10,8 +10,9 @@ class TestWatermanSmithBeyer(TestCase):
 		# test case is taken from default settings (for logarithmic gap settings) at
 		# http://rna.informatik.uni-freiburg.de/Teaching/index.jsp?toolName=Waterman-Smith-Beyer
 
-		pf = pyalign.problem.SimilarityProblemFactory(
-			pyalign.problem.Binary(eq=1, ne=-1))
+		pf = pyalign.problem.ProblemFactory(
+			pyalign.problem.Binary(eq=1, ne=-1),
+			direction="maximize")
 		problem = pf.new_problem("CG", "CCGA")
 
 		solver = pyalign.solve.GlobalSolver(

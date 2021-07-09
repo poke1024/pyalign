@@ -10,8 +10,9 @@ class TestGotoh(TestCase):
 		# the following problem is taken from the slides
 		# about Gotoh by Rolf Backofen.
 
-		pf = pyalign.problem.DistanceProblemFactory(
-			pyalign.problem.Binary(eq=0, ne=1))
+		pf = pyalign.problem.ProblemFactory(
+			pyalign.problem.Binary(eq=0, ne=1),
+			direction="minimize")
 
 		solver = pyalign.solve.GlobalSolver(
 			gap_cost=pyalign.gaps.AffineGapCost(4, 1),

@@ -10,8 +10,9 @@ class TestNeedlemanWunsch(TestCase):
 		# test case is taken from default settings at
 		# http://rna.informatik.uni-freiburg.de/Teaching/index.jsp?toolName=Needleman-Wunsch
 
-		pf = pyalign.problem.SimilarityProblemFactory(
-			pyalign.problem.Binary(eq=1, ne=-1))
+		pf = pyalign.problem.ProblemFactory(
+			pyalign.problem.Binary(eq=1, ne=-1),
+			direction="maximize")
 		problem = pf.new_problem("AATCG", "AACG")
 
 		solver = pyalign.solve.GlobalSolver(

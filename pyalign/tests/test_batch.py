@@ -7,8 +7,9 @@ import pyalign.gaps
 
 class TestBatch(TestCase):
 	def test_simd(self):
-		pf = pyalign.problem.SimilarityProblemFactory(
-			pyalign.problem.Binary(eq=1, ne=-1))
+		pf = pyalign.problem.ProblemFactory(
+			pyalign.problem.Binary(eq=1, ne=-1),
+			direction="maximize")
 
 		solver = pyalign.solve.GlobalSolver(
 			gap_cost=pyalign.gaps.LinearGapCost(2),
