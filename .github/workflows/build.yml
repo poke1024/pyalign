@@ -32,8 +32,6 @@ jobs:
             platform_id: manylinux_x86_64
           - os: macos-latest
             platform_id: macosx_x86_64
-          - os: windows-latest
-            platform_id: win_amd64
 
     steps:
       - uses: actions/checkout@v2
