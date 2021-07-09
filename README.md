@@ -41,12 +41,15 @@ whereas computing "all alignments" will track multiple traceback edges
 Running
 
 ```
-import pyalign.utils
+import pyalign.problem
 import pyalign.solve
 import pyalign.gaps
 
-pf = pyalign.utils.SimilarityProblemFactory(pyalign.utils.Binary(eq=1, ne=-1))
-solver = pyalign.solve.GlobalSolver(gap_cost=pyalign.gaps.LinearGapCost(0.2))
+pf = pyalign.problem.ProblemFactory(
+    pyalign.problem.Binary(eq=1, ne=-1),
+    direction="maximize")
+solver = pyalign.solve.GlobalSolver(
+    gap_cost=pyalign.gaps.LinearGapCost(0.2))
 problem = pf.new_problem("INDUSTRY", "INTEREST")
 alignment = solver.solve(problem)
 alignment
