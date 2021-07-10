@@ -104,12 +104,12 @@ benchmark is found at https://github.com/eseraygun/python-alignment.
 
 The y axis is logarithmic. 1000 μs = 1 / 1000 s.
 
-`+encoded` means using `pyalign.utils.AlphabetProblemFactory` instead of
-the usual `pyalign.utils.SimilarityProblemFactory`.
+`+alphabet` means using `pyalign.utils.AlphabetProblemFactory` instead of
+the usual `pyalign.utils.ProblemFactory`.
 
-`+SIMD` means feeding groups of equally-structured aligment problems into
+`+AVX2` means feeding groups of equally-structured aligment problems into
 one `solve` call by using `pyalign.solve.ProblemBatch` - doing this will
-internally make use of SIMD if available.
+internally make use of AVX2 SIMD operations if available.
 
 ![traceback and path](docs/benchmark_10.svg)
 
