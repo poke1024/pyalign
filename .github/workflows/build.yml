@@ -12,6 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     env:
+      CIBW_ENVIRONMENT: "PYALIGN_PREBUILT_MARCH='1'"
       CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
       CIBW_MANYLINUX_X86_64_IMAGE: ${{ matrix.manylinux_image }}
       CIBW_ARCHS: "auto64"

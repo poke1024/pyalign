@@ -1,18 +1,10 @@
 import numpy as np
 import time
 import contextlib
+import importlib
 import re
 import os
-
-if os.environ.get('PYALIGN_PDOC') is None:
-	import cpufeature
-	if cpufeature.CPUFeature["AVX2"]:
-		try:
-			import pyalign.algorithm.avx2.algorithm as algorithm
-		except ImportError:
-			import pyalign.algorithm.generic.algorithm as algorithm
-	else:
-		import pyalign.algorithm.generic.algorithm as algorithm
+import logging
 
 from cached_property import cached_property
 from functools import lru_cache
@@ -20,6 +12,34 @@ from pathlib import Path
 
 from .gaps import GapCost, ConstantGapCost
 from .problem import ProblemBatch, Form
+
+
+def has_avx2():
+	import cpufeature
+	return cpufeature.CPUFeature["AVX2"]
+
+
+def import_algorithm():
+	if os.environ.get('PYALIGN_PDOC') is not None:
+		return None
+
+	candidates = (
+		('native', lambda: True),
+		('avx2', has_avx2),
+		('generic', lambda: True)
+	)
+
+	for name, check in candidates:
+		module_name = f"pyalign.algorithm.{name}"
+		if importlib.util.find_spec(module_name) is not None:
+			if check():
+				logging.info(f"running in {name} mode.")
+				return importlib.import_module(module_name + ".algorithm")
+
+	raise RuntimeError("no suitable c++ core found")
+
+
+algorithm = import_algorithm()
 
 
 class Solution:
@@ -406,6 +426,10 @@ class IndexedMatrixForm:
 
 
 class Solver:
+	"""
+	A solver that obtains solutions to alignment problems.
+	"""
+
 	def __init__(
 		self, gap_cost: GapCost = None, direction="maximize", generate="alignment", **kwargs):
 
@@ -439,10 +463,15 @@ class Solver:
 
 	@property
 	def goal(self):
+		"""the solver's goal"""
 		return self._goal
 
 	@property
 	def batch_size(self):
+		"""
+		the solver's optimal batch size, i.e. the number of alignment pairs
+		that can get processed in a single SIMD call on this machine.
+		"""
 		return self._cache.get(1, 1, batch=True).batch_size
 
 	def timings(self):
@@ -494,7 +523,8 @@ class Solver:
 
 class LocalSolver(Solver):
 	"""
-	A local solver, i.e. one that will be a Needleman-Wunsch solver in many cases.
+	A solver that obtains optimal local alignments. For linear gap costs,
+	this conforms to the results obtained with the Smith-Waterman algorithm.
 	"""
 
 	def __init__(self, gap_cost: GapCost = None, **kwargs):
@@ -502,15 +532,29 @@ class LocalSolver(Solver):
 
 
 class GlobalSolver(Solver):
+	"""
+	A solver that obtains optimal global alignments. For linear gap costs,
+	this conforms to the results obtained with the Needleman-Wunsch algorithm.
+	"""
+
 	def __init__(self, gap_cost: GapCost = None, **kwargs):
 		super().__init__(solver="alignment", locality="global", gap_cost=gap_cost, **kwargs)
 
 
 class SemiglobalSolver(Solver):
+	"""
+	A solver that obtains optimal semiglobal alignments.
+	"""
+
 	def __init__(self, gap_cost: GapCost = None, **kwargs):
 		super().__init__(solver="alignment", locality="semiglobal", gap_cost=gap_cost, **kwargs)
 
 
 class ElasticSolver(Solver):
+	"""
+	A solver that uses dynamic time warping (DTW) to find the optimal solution of
+	an elastic alignment problem.
+	"""
+
 	def __init__(self, **kwargs):
 		super().__init__(solver="dtw", **kwargs)

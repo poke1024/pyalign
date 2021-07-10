@@ -1,5 +1,5 @@
 """
-A package enabling easy, efficient, and general computation of alignments in Python.
+Fast and Versatile Alignments for Python.
 """
 
 __pdoc__ = {

@@ -44,7 +44,7 @@ class PyAlignImplementation(Aligner):
 
 	def prepare(self, a, b):
 		if not self._encoded:
-			pf = pyalign.problem.SimilarityProblemFactory(
+			pf = pyalign.problem.ProblemFactory(
 				pyalign.problem.Binary(eq=1, ne=-1))
 		else:
 			pf = pyalign.problem.AlphabetProblemFactory(
@@ -75,7 +75,7 @@ class PyAlignImplementation(Aligner):
 	def name(self):
 		terms = ["pyalign"]
 		if self._encoded:
-			terms.append("encoded")
+			terms.append("alphabet")
 		if self._batch:
 			terms.append("SIMD")
 		return " +".join(terms)
