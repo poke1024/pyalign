@@ -62,7 +62,7 @@ setup(
 	version='0.2.1',
 	packages=find_packages(include=[
 		'pyalign',
-		'pyalign.algorithm',
+		#'pyalign.algorithm',
 		'pyalign.problem',
 		'pyalign.io',
 		'pyalign.tests']),
