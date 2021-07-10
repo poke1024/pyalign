@@ -89,7 +89,7 @@ solver_sol = pyalign.solve.GlobalSolver(
 solver_sol.solve(problem)
 ```
 
-![traceback and path](docs/traceback.svg)
+![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/traceback.svg)
 
 As a final example, here is how to generate an iterator over all optimal
 solutions of a problem:
@@ -115,11 +115,11 @@ the usual `pyalign.utils.ProblemFactory`.
 one `solve` call by using `pyalign.solve.ProblemBatch` - doing this will
 internally make use of AVX2 SIMD operations if available.
 
-![traceback and path](docs/benchmark_10.svg)
+![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/benchmark_10.svg)
 
-![traceback and path](docs/benchmark_20.svg)
+![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/benchmark_20.svg)
 
-![traceback and path](docs/benchmark_50.svg)
+![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/benchmark_50.svg)
 
 # Other Alignment Libraries
 
