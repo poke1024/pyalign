@@ -58,7 +58,6 @@ jobs:
       - name: store artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ matrix.os }}-whl
           path: wheelhouse/*.whl
 
   build_sdist:

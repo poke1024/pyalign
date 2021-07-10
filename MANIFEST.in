@@ -1,1 +1,2 @@
 include environment.yml
+recursive-include pyalign/algorithm *
