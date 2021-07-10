@@ -62,7 +62,7 @@ setup(
 	version='0.2.1',
 	packages=find_packages(include=[
 		'pyalign',
-		#'pyalign.algorithm',
+		'pyalign.algorithm',
 		'pyalign.problem',
 		'pyalign.io',
 		'pyalign.tests']),
@@ -78,5 +78,5 @@ setup(
 	description='Fast and Versatile Alignments for Python',
 	long_description=long_description,
 	long_description_content_type='text/markdown',
-	include_package_data=True,
+	#include_package_data=True,
 )
