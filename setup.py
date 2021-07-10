@@ -59,7 +59,7 @@ with open(script_dir / 'README.md') as f:
 
 setup(
 	name='pyalign',
-	version='0.1',
+	version='0.2',
 	packages=find_packages(include=[
 		'pyalign', 'pyalign.problem', 'pyalign.io', 'pyalign.tests']),
 	python_requires='>=3.8',
@@ -73,5 +73,5 @@ setup(
 	tests_require=['nose'],
 	description='Fast and Versatile Alignments for Python',
 	long_description=long_description,
-    long_description_content_type='text/markdown',
+	long_description_content_type='text/markdown',
 )

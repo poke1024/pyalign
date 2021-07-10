@@ -77,7 +77,11 @@ class PyAlignImplementation(Aligner):
 		if self._encoded:
 			terms.append("alphabet")
 		if self._batch:
-			terms.append("SIMD")
+			batch_size = self._solver.batch_size
+			if batch_size == 8:
+				terms.append("AVX2")
+			else:
+				raise RuntimeError(f"unexpected batch_size {batch_size}")
 		return " +".join(terms)
 
 
@@ -231,5 +235,5 @@ def benchmark(num_runs=1000, seq_len=20):
 
 if __name__ == "__main__":
 	benchmark(seq_len=10)
-	#benchmark(seq_len=20)
-	#benchmark(seq_len=50)
+	benchmark(seq_len=20)
+	benchmark(seq_len=50)
