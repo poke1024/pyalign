@@ -292,44 +292,54 @@ public:
 	virtual int batch_size() const = 0;
 
 	virtual xt::pytensor<float, 1> solve_for_score(
-		const xt::pytensor<float, 3> &p_similarity) const = 0;
+		const xt::pytensor<float, 3> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
 
 	virtual xt::pytensor<float, 1> solve_indexed_for_score(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity) const = 0;
+		const xt::pytensor<float, 2> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_for_alignment(
-		const xt::pytensor<float, 3> &p_similarity) const = 0;
+		const xt::pytensor<float, 3> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_for_alignment_iterator(
-		const xt::pytensor<float, 3> &p_similarity) const = 0;
+		const xt::pytensor<float, 3> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_indexed_for_alignment(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity) const = 0;
+		const xt::pytensor<float, 2> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_indexed_for_alignment_iterator(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity) const = 0;
+		const xt::pytensor<float, 2> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_for_solution(
-		const xt::pytensor<float, 3> &p_similarity) const = 0;
+		const xt::pytensor<float, 3> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_for_solution_iterator(
-		const xt::pytensor<float, 3> &p_similarity) const = 0;
+		const xt::pytensor<float, 3> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_indexed_for_solution(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity) const = 0;
+		const xt::pytensor<float, 2> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_indexed_for_solution_iterator(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity) const = 0;
+		const xt::pytensor<float, 2> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
 };
 
 typedef std::shared_ptr<Solver> SolverRef;
@@ -365,20 +375,30 @@ py::tuple to_tuple(const std::array<T, N> &obj) {
 template<typename CellType>
 struct matrix_form {
 	typedef typename CellType::index_type Index;
+	typedef typename CellType::index_vec_type IndexVec;
 	typedef typename CellType::value_vec_type ValueVec;
 
 	const xt::pytensor<float, 3> &m_similarity;
+	const xt::pytensor<uint16_t, 2> &m_length;
 
 	inline void check() const {
 		check_batch_size(m_similarity.shape(2), CellType::batch_size);
 	}
 
-	inline size_t len_s() const {
+	inline size_t batch_len_s() const {
 		return m_similarity.shape(0);
 	}
 
-	inline size_t len_t() const {
+	inline size_t batch_len_t() const {
 		return m_similarity.shape(1);
+	}
+
+	inline IndexVec len_s() const {
+		return m_length(0);
+	}
+
+	inline IndexVec len_t() const {
+		return m_length(1);
 	}
 
 	inline ValueVec operator()(const Index i, const Index j) const {
@@ -390,11 +410,13 @@ struct matrix_form {
 template<typename CellType>
 struct indexed_matrix_form {
 	typedef typename CellType::index_type Index;
+	typedef typename CellType::index_vec_type IndexVec;
 	typedef typename CellType::value_vec_type ValueVec;
 
 	const xt::pytensor<uint32_t, 2> &m_a;
 	const xt::pytensor<uint32_t, 2> &m_b;
 	const xt::pytensor<float, 2> &m_similarity;
+	const xt::pytensor<uint16_t, 2> &m_length;
 
 	inline void check() const {
 		check_batch_size(m_a.shape(0), CellType::batch_size);
@@ -408,12 +430,20 @@ struct indexed_matrix_form {
 		}
 	}
 
-	inline size_t len_s() const {
+	inline size_t batch_len_s() const {
 		return m_a.shape(1);
 	}
 
-	inline size_t len_t() const {
+	inline size_t batch_len_t() const {
 		return m_b.shape(1);
+	}
+
+	inline IndexVec len_s() const {
+		return m_length(0);
+	}
+
+	inline IndexVec len_t() const {
+		return m_length(1);
 	}
 
 	inline ValueVec operator()(const Index i, const Index j) const {
@@ -440,7 +470,7 @@ private:
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
-			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
+			m_solver.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
 			scores = m_solver.score(p_pairwise.len_s(), p_pairwise.len_t());
 		}
 
@@ -456,7 +486,7 @@ private:
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
-			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
+			m_solver.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
 
 			m_solver.template alignment<pyalign::SharedPtrFactory<Alignment>>(
 				p_pairwise.len_s(), p_pairwise.len_t(), alignments);
@@ -474,7 +504,7 @@ private:
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
-			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
+			m_solver.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
 
 			size_t i = 0;
 			for (auto iterator : m_solver.template alignment_iterator<pyalign::SharedPtrFactory<Alignment>>(
@@ -495,7 +525,7 @@ private:
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
-			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
+			m_solver.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
 
 			std::array<std::shared_ptr<NativeSolution<CellType, ProblemType>>, CellType::batch_size> sol0;
 
@@ -524,7 +554,7 @@ private:
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
-			m_solver.solve(p_pairwise, p_pairwise.len_s(), p_pairwise.len_t());
+			m_solver.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
 
 			size_t i = 0;
 			for (auto iterator : m_solver.template solution_iterator<
@@ -559,83 +589,93 @@ public:
 	}
 
 	virtual xt::pytensor<float, 1> solve_for_score(
-		const xt::pytensor<float, 3> &p_similarity) const override {
+		const xt::pytensor<float, 3> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const override {
 
 		return _solve_for_score(
-			matrix_form<CellType>{p_similarity});
+			matrix_form<CellType>{p_similarity, p_length});
 	}
 
 	virtual xt::pytensor<float, 1> solve_indexed_for_score(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity) const override {
+		const xt::pytensor<float, 2> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const override {
 
 		return _solve_for_score(
-			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
+			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_for_alignment(
-		const xt::pytensor<float, 3> &p_similarity) const override {
+		const xt::pytensor<float, 3> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const override {
 
 		return _solve_for_alignment(
-			matrix_form<CellType>{p_similarity});
+			matrix_form<CellType>{p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_for_alignment_iterator(
-		const xt::pytensor<float, 3> &p_similarity) const override {
+		const xt::pytensor<float, 3> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const override {
 
 		return _solve_for_alignment_iterator(
-			matrix_form<CellType>{p_similarity});
+			matrix_form<CellType>{p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_indexed_for_alignment(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity) const override {
+		const xt::pytensor<float, 2> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const override {
 
 		return _solve_for_alignment(
-			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
+			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_indexed_for_alignment_iterator(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity) const override {
+		const xt::pytensor<float, 2> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const override {
 
 		return _solve_for_alignment_iterator(
-			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
+			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_for_solution(
-		const xt::pytensor<float, 3> &p_similarity) const override {
+		const xt::pytensor<float, 3> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const override {
 
 		return _solve_for_solution(
-			matrix_form<CellType>{p_similarity});
+			matrix_form<CellType>{p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_for_solution_iterator(
-		const xt::pytensor<float, 3> &p_similarity) const override {
+		const xt::pytensor<float, 3> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const override {
 
 		return _solve_for_solution_iterator(
-			matrix_form<CellType>{p_similarity});
+			matrix_form<CellType>{p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_indexed_for_solution(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity) const override {
+		const xt::pytensor<float, 2> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const override {
 
 		return _solve_for_solution(
-			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
+			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_indexed_for_solution_iterator(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity) const override {
+		const xt::pytensor<float, 2> &p_similarity,
+		const xt::pytensor<uint16_t, 2> &p_length) const override {
 
 		return _solve_for_solution_iterator(
-			indexed_matrix_form<CellType>{p_a, p_b, p_similarity});
+			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
 };
 

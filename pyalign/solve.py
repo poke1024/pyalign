@@ -372,6 +372,10 @@ class MatrixForm:
 		shape = batch.shape
 		self._matrix = np.empty((shape[0], shape[1], batch_size), dtype=batch.dtype)
 
+		self._len = np.empty((2, batch_size), dtype=np.uint16)
+		self._len[0, :].fill(shape[0])
+		self._len[1, :].fill(shape[1])
+
 		variant = MatrixForm._solvers.get(goal.key)
 		if variant is None:
 			raise ValueError(f"{goal.detail}[{', '.join(goal.key[1:])}] is currently not supported")
@@ -385,7 +389,7 @@ class MatrixForm:
 			p.build_matrix(matrix[:, :, k])
 
 	def solve(self, problems):
-		r = self._solve(self._matrix)
+		r = self._solve(self._matrix, self._len)
 		return [
 			self._construct(problem, self._solver, x)
 			for problem, x in zip(problems, r)]
@@ -401,6 +405,10 @@ class IndexedMatrixForm:
 
 		self._a = np.empty((batch_size, shape[0]), dtype=np.uint32)
 		self._b = np.empty((batch_size, shape[1]), dtype=np.uint32)
+
+		self._len = np.empty((2, batch_size), dtype=np.uint16)
+		self._len[0, :].fill(shape[0])
+		self._len[1, :].fill(shape[1])
 
 		self._sim = batch.problems[0].similarity_lookup_table()
 		if not all(p.similarity_lookup_table() is self._sim for p in batch.problems):
@@ -419,7 +427,7 @@ class IndexedMatrixForm:
 			p.build_index_sequences(a[k, :], b[k, :])
 
 	def solve(self, problems):
-		r = self._solve(self._a, self._b, self._sim)
+		r = self._solve(self._a, self._b, self._sim, self._len)
 		return [
 			self._construct(problem, self._solver, x)
 			for problem, x in zip(problems, r)]

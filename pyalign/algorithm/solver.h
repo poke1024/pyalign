@@ -2355,6 +2355,7 @@ public:
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::value_vec_type ValueVec;
 	typedef typename CellType::index_type Index;
+	typedef typename CellType::index_vec_type IndexVec;
 	typedef typename ProblemType::direction_type Direction;
 	typedef Locality<CellType, ProblemType> locality_type;
 
@@ -2403,15 +2404,16 @@ public:
 	}
 
 	inline ValueVec score(
-		const size_t len_s,
-		const size_t len_t) const {
-
-		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
-		auto tb = make_traceback_iterator(m_locality, matrix);
+		const IndexVec &len_s,
+		const IndexVec &len_t) const {
 
 		ValueVec scores;
 		build_val<CellType, ProblemType> val_only;
+
 		for (int i = 0; i < CellType::batch_size; i++) {
+			auto matrix = m_factory->template make<matrix_name::D>(len_s(i), len_t(i));
+			auto tb = make_traceback_iterator(m_locality, matrix);
+
 			const bool tb_good = tb.iterator(i).next(val_only);
 			scores(i) = tb_good ? val_only.val() : Direction::template worst_val<Value>();
 		}
@@ -2420,14 +2422,13 @@ public:
 
 	template<typename AlignmentFactory>
 	inline void alignment(
-		const size_t len_s,
-		const size_t len_t,
+		const IndexVec &len_s,
+		const IndexVec &len_t,
 		std::array<typename AlignmentFactory::ref_type, CellType::batch_size> &alignments) const {
 
-		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
-		auto tb = make_traceback_iterator(m_locality, matrix);
-
 		for (int i = 0; i < CellType::batch_size; i++) {
+			auto matrix = m_factory->template make<matrix_name::D>(len_s(i), len_t(i));
+			auto tb = make_traceback_iterator(m_locality, matrix);
 			alignments[i] = AlignmentFactory::make();
 			auto &alignment = AlignmentFactory::deref(alignments[i]);
 			auto build = typename build_alignment<CellType, ProblemType>::
@@ -2441,18 +2442,18 @@ public:
 	template<typename AlignmentFactory>
 	std::vector<std::shared_ptr<AlignmentIterator<
 			AlignmentFactory, Locality<CellType, ProblemType>>>> alignment_iterator(
-		const size_t len_s,
-		const size_t len_t) const {
-
-		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
-		auto shared_it = std::make_shared<SharedTracebackIterator<
-			Locality<CellType, ProblemType>>>(m_factory, m_locality, matrix);
+		const IndexVec &len_s,
+		const IndexVec &len_t) const {
 
 		std::vector<std::shared_ptr<AlignmentIterator<
 			AlignmentFactory, Locality<CellType, ProblemType>>>> iterators;
 		iterators.reserve(CellType::batch_size);
 
 		for (int i = 0; i < CellType::batch_size; i++) {
+			auto matrix = m_factory->template make<matrix_name::D>(len_s(i), len_t(i));
+			auto shared_it = std::make_shared<SharedTracebackIterator<
+				Locality<CellType, ProblemType>>>(m_factory, m_locality, matrix);
+
 			iterators.push_back(std::make_shared<AlignmentIterator<
 				AlignmentFactory, Locality<CellType, ProblemType>>>(
 					shared_it, i
@@ -2464,18 +2465,18 @@ public:
 
 	template<typename AlignmentFactory, typename SolutionFactory>
 	void solution(
-		const size_t len_s,
-		const size_t len_t,
+		const IndexVec &len_s,
+		const IndexVec &len_t,
 		std::array<typename SolutionFactory::ref_type, CellType::batch_size> &solutions) const {
 
-		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
-		auto tb = make_traceback_iterator(m_locality, matrix);
-
 		for (int i = 0; i < CellType::batch_size; i++) {
+			auto matrix = m_factory->template make<matrix_name::D>(len_s(i), len_t(i));
+			auto tb = make_traceback_iterator(m_locality, matrix);
+
 			solutions[i] = SolutionFactory::make();
 			auto &solution = SolutionFactory::deref(solutions[i]);
 
-			m_factory->copy_solution_data(len_s, len_t, i, solution);
+			m_factory->copy_solution_data(len_s(i), len_t(i), i, solution);
 
 			auto alignment = AlignmentFactory::make();
 
@@ -2503,18 +2504,18 @@ public:
 	template<typename AlignmentFactory, typename SolutionFactory>
 	std::vector<std::shared_ptr<SolutionIterator<
 			AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>> solution_iterator(
-		const size_t len_s,
-		const size_t len_t) const {
-
-		auto matrix = m_factory->template make<matrix_name::D>(len_s, len_t);
-		auto shared_it = std::make_shared<SharedTracebackIterator<
-			Locality<CellType, ProblemType>>>(m_factory, m_locality, matrix);
+		const IndexVec &len_s,
+		const IndexVec &len_t) const {
 
 		std::vector<std::shared_ptr<SolutionIterator<
 			AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>> iterators;
 		iterators.reserve(CellType::batch_size);
 
 		for (int i = 0; i < CellType::batch_size; i++) {
+			auto matrix = m_factory->template make<matrix_name::D>(len_s(i), len_t(i));
+			auto shared_it = std::make_shared<SharedTracebackIterator<
+				Locality<CellType, ProblemType>>>(m_factory, m_locality, matrix);
+
 			iterators.push_back(std::make_shared<SolutionIterator<
 				AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>(
 					shared_it, i
