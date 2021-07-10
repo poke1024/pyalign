@@ -44,7 +44,7 @@ whereas computing "all alignments" will track multiple traceback edges
 
 Running
 
-```
+```python
 import pyalign.problem
 import pyalign.solve
 import pyalign.gaps
@@ -69,20 +69,20 @@ IN  TEREST
 
 Of course you can also extract the actual score:
 
-```
+```python
 alignment.score
 ```
 
 as
 
-```
+```python
 2.4
 ```
 
 It's also possible to extract the traceback matrix and path and generate
 visuals (and thus a detailed rationale for the obtained score and solution):
 
-```
+```python
 solver_sol = pyalign.solve.GlobalSolver(
     gap_cost=pyalign.gaps.LinearGapCost(0.2),
     generate="solution")
@@ -94,7 +94,7 @@ solver_sol.solve(problem)
 As a final example, here is how to generate an iterator over all optimal
 solutions of a problem:
 
-```
+```python
 solver_sol_all = pyalign.solve.GlobalSolver(
     gap_cost=pyalign.gaps.LinearGapCost(0.2),
     generate="solution[all, optimal]")
