@@ -108,11 +108,11 @@ benchmark is found at https://github.com/eseraygun/python-alignment.
 
 The y axis is logarithmic. 1000 μs = 1 / 1000 s.
 
-`+alphabet` means using `pyalign.utils.AlphabetProblemFactory` instead of
-the usual `pyalign.utils.ProblemFactory`.
+`+alphabet` means using `pyalign.problem.AlphabetProblemFactory` instead of
+the simpler `pyalign.problem.ProblemFactory`.
 
 `+AVX2` means feeding groups of equally-structured aligment problems into
-one `solve` call by using `pyalign.solve.ProblemBatch` - doing this will
+one `solve` call by using `pyalign.problem.ProblemBatch` - doing this will
 internally make use of AVX2 SIMD operations if available.
 
 ![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/benchmark_10.svg)
