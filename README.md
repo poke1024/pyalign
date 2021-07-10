@@ -36,6 +36,10 @@ suggested by Alpern et al. and more recently by Rudnicki et al.)
 usage patterns - for example, computing "only single score" won't write tracebacks,
 whereas computing "all alignments" will track multiple traceback edges
 
+# Installation
+
+`pip install pyalign`
+
 # Example
 
 Running

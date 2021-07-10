@@ -59,9 +59,13 @@ with open(script_dir / 'README.md') as f:
 
 setup(
 	name='pyalign',
-	version='0.2',
+	version='0.2.1',
 	packages=find_packages(include=[
-		'pyalign', 'pyalign.problem', 'pyalign.io', 'pyalign.tests']),
+		'pyalign',
+		'pyalign.algorithm',
+		'pyalign.problem',
+		'pyalign.io',
+		'pyalign.tests']),
 	python_requires='>=3.8',
 	license='GPLv2',
 	author='Bernhard Liebl',
@@ -74,4 +78,5 @@ setup(
 	description='Fast and Versatile Alignments for Python',
 	long_description=long_description,
 	long_description_content_type='text/markdown',
+	include_package_data=True,
 )
