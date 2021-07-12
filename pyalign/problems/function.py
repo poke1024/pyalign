@@ -3,25 +3,7 @@ import numpy as np
 from typing import Dict
 
 
-class Encoder:
-	def __init__(self, alphabet):
-		self._alphabet = set(alphabet)
-		self._ids = dict((k, i) for i, k in enumerate(self._alphabet))
-
-	def encode(self, s, out=None):
-		ids = self._ids
-		if out is None:
-			return [ids[x] for x in s]
-		else:
-			for i, x in enumerate(s):
-				out[i] = ids[x]
-
-	@property
-	def alphabet(self):
-		return self._alphabet
-
-
-class Operator:
+class Function:
 	def get(self, u, v):
 		raise NotImplementedError()
 
@@ -32,7 +14,7 @@ class Operator:
 		raise NotImplementedError()
 
 
-class Coalesced(Operator):
+class Coalesced(Function):
 	def __init__(self, *ops):
 		self._ops = ops
 
@@ -48,7 +30,7 @@ class Coalesced(Operator):
 			op.build_matrix(encoder, matrix)
 
 
-class Pairwise(Operator):
+class Dict(Function):
 	def __init__(self, pairs: Dict):
 		self._dict = pairs
 
@@ -62,7 +44,7 @@ class Pairwise(Operator):
 			matrix[j, i] = w
 
 
-class Binary(Operator):
+class Equality(Function):
 	def __init__(self, eq=1, ne=-1):
 		self._eq = eq
 		self._ne = ne

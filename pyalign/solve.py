@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from .gaps import GapCost, ConstantGapCost
-from .problem import ProblemBatch, Form
+from .problems import ProblemBatch, Form
 
 
 def has_avx2():

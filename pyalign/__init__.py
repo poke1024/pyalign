@@ -9,4 +9,4 @@ __pdoc__ = {
 
 from .gaps import *
 from .solve import *
-from .problem import *
+from .problems import *

@@ -1,6 +1,6 @@
 from pyalign.tests import TestCase
 
-import pyalign.problem
+import pyalign.problems
 import pyalign.solve
 import pyalign.gaps
 
@@ -10,8 +10,8 @@ class TestNeedlemanWunsch(TestCase):
 		# test case is taken from default settings at
 		# http://rna.informatik.uni-freiburg.de/Teaching/index.jsp?toolName=Needleman-Wunsch
 
-		pf = pyalign.problem.ProblemFactory(
-			pyalign.problem.Binary(eq=1, ne=-1),
+		pf = pyalign.problems.general(
+			pyalign.problems.Equality(eq=1, ne=-1),
 			direction="maximize")
 		problem = pf.new_problem("AATCG", "AACG")
 

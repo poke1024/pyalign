@@ -1,5 +1,8 @@
-from pyalign.problem.instance import MatrixProblem, IndexedMatrixProblem
-from pyalign.problem.function import *
+from pyalign.problems.instance import MatrixProblem, IndexedMatrixProblem
+from pyalign.problems.function import *
+from pyalign.problems.function import Function
+
+from typing import Sequence
 
 
 class Problem(MatrixProblem):
@@ -23,26 +26,26 @@ class ProblemFactory:
 	\(f(x, y)\).
 	"""
 
-	def __init__(self, f: callable, direction="maximize", dtype=np.float32):
+	def __init__(self, w: callable, direction="maximize", dtype=np.float32):
 		"""
 
 		Parameters
 		----------
-		f : callable
-			binary function \(f(x, y)\) that returns a measure of affinity (or
-			distance) between two arbitrary elements (e.g. characters) \(x\) and
-			\(y\).
+		w : callable
+			\(w(x, y)\) that gives a measure of affinity (or distance) between
+			two arbitrary elements (e.g. characters) \(x\) and \(y\).
 		direction : {'minimize', 'maximize'}
-			direction of problems created by this factory
+			direction of problems created by this factory, i.e. whether
+			\(w\) gives affinity or distance
 		dtype : type
 			dtype of values returned by \(f\)
 		"""
 
-		if f is None and direction == "minimize":
+		if w is None and direction == "minimize":
 			from scipy.spatial.distance import euclidean
-			f = euclidean
+			w = euclidean
 
-		self._f = f
+		self._w = w
 		self._direction = direction
 		self._dtype = dtype
 
@@ -63,9 +66,12 @@ class ProblemFactory:
 		"""
 
 		return Problem(
-			self._f, s, t,
+			self._w, s, t,
 			direction=self._direction,
 			dtype=self._dtype)
+
+
+general = ProblemFactory
 
 
 class AlphabetProblem(IndexedMatrixProblem):
@@ -83,6 +89,24 @@ class AlphabetProblem(IndexedMatrixProblem):
 		encoder.encode(self._t, out=b)
 
 
+class Encoder:
+	def __init__(self, alphabet):
+		self._alphabet = tuple(set(alphabet))
+		self._ids = dict((k, i) for i, k in enumerate(self._alphabet))
+
+	def encode(self, s, out=None):
+		ids = self._ids
+		if out is None:
+			return [ids[x] for x in s]
+		else:
+			for i, x in enumerate(s):
+				out[i] = ids[x]
+
+	@property
+	def alphabet(self):
+		return self._alphabet
+
+
 class AlphabetProblemFactory:
 	"""
 	A factory for alignment problems involving sequences \(s, t\) that can be
@@ -90,25 +114,32 @@ class AlphabetProblemFactory:
 	\Omega\), \(∀j: t_j \in \Omega\).
 	"""
 
-	def __init__(self, f: callable, encoder: Encoder, direction="maximize", dtype=np.float32):
+	def __init__(self, alphabet: Sequence, w: callable, direction="maximize", dtype=np.float32):
 		"""
 		Parameters
 		----------
-		f : callable
-			binary function \(f\) such that \(f(E(x), E(y))\) is a measure of
-			affinity (or distance) between two items \(x, y\)
-		encoder : Encoder
-			Encoder \(E\) that gives \(E: \Omega → \mathbb{N}\)
+		alphabet : Sequence
+			fixed alphabet \Omega
+		w : callable
+			\(w(x, y)\) that gives a measure of affinity (or distance) between
+			two arbitrary elements (e.g. characters) \(x\) and \(y\).
 		direction : {'minimize', 'maximize'}
-			direction of problems created by this factory
+			direction of problems created by this factory, i.e. whether
+			\(w\) gives affinity or distance
 		dtype
 			dtype of values returned by \(f\)
 		"""
 
-		self._encoder = encoder
-		n = len(encoder.alphabet)
+		self._encoder = Encoder(alphabet)
+		ordered_alphabet = self._encoder.alphabet
+		n = len(ordered_alphabet)
 		self._matrix = np.empty((n, n), dtype=np.float32)
-		f.build_matrix(encoder, self._matrix)
+		if isinstance(w, Function):
+			w.build_matrix(self._encoder, self._matrix)
+		else:
+			for i, x in enumerate(ordered_alphabet):
+				for j, y in enumerate(ordered_alphabet):
+					self._matrix[i, j] = w(i, j)
 		self._direction = direction
 		self._dtype = dtype
 
@@ -116,3 +147,6 @@ class AlphabetProblemFactory:
 		return AlphabetProblem(
 			self._matrix, self._encoder, (len(s), len(t)), s, t,
 			direction=self._direction, dtype=self._dtype)
+
+
+alphabetic = AlphabetProblemFactory

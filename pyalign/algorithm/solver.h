@@ -116,16 +116,17 @@ public:
 class exceeded_implementation_length : public exceeded_length {
 	const std::string m_err;
 
-	static std::string to_text(const size_t p_len, const size_t p_max) {
+	static std::string to_text(const char *p_name, const size_t p_len, const size_t p_max) {
 		std::stringstream err;
 		err << "requested maximum length " << p_len <<
+			" for " << p_name <<
 			" exceeds maximum supported sequence length in this implementation " << p_max;
 		return err.str();
 	}
 
 public:
-	exceeded_implementation_length(const size_t p_len, const size_t p_max) :
-		exceeded_length(p_len, p_max), m_err(to_text(p_len, p_max)) {
+	exceeded_implementation_length(const char *p_name, const size_t p_len, const size_t p_max) :
+		exceeded_length(p_len, p_max), m_err(to_text(p_name, p_len, p_max)) {
 	}
 
 	virtual char const *what() const noexcept {
@@ -136,16 +137,16 @@ public:
 class exceeded_configured_length : public exceeded_length {
 	const std::string m_err;
 
-	static std::string to_text(const size_t p_len, const size_t p_max) {
+	static std::string to_text(const char *p_name, const size_t p_len, const size_t p_max) {
 		std::stringstream err;
-		err << "sequence of length " << p_len <<
+		err << "sequence " << p_name << " of length " << p_len <<
 			" exceeds configured maximum length " << p_max;
 		return err.str();
 	}
 
 public:
-	exceeded_configured_length(const size_t p_len, const size_t p_max) :
-		exceeded_length(p_len, p_max), m_err(to_text(p_len, p_max)) {
+	exceeded_configured_length(const char *p_name, const size_t p_len, const size_t p_max) :
+		exceeded_length(p_len, p_max), m_err(to_text(p_name, p_len, p_max)) {
 	}
 
 	virtual char const *what() const noexcept {
@@ -474,16 +475,21 @@ protected:
 	const size_t m_max_len_t;
 	const uint16_t m_layer_count;
 
-	inline void check_size_against_max(const size_t p_len, const size_t p_max) const {
+	inline void check_size_against_max(
+		const char *p_name,
+		const size_t p_len,
+		const size_t p_max) const {
 		if (p_len > p_max) {
-			throw exceeded_configured_length(p_len, p_max);
+			throw exceeded_configured_length(p_name, p_len, p_max);
 		}
 	}
 
-	inline void check_size_against_implementation_limit(const size_t p_len) const {
+	inline void check_size_against_implementation_limit(
+		const char *p_name,
+		const size_t p_len) const {
 		const size_t max = size_t(std::numeric_limits<Index>::max()) >> 1;
 		if (p_len > max) {
-			throw exceeded_implementation_length(p_len, max);
+			throw exceeded_implementation_length(p_name, p_len, max);
 		}
 	}
 
@@ -498,8 +504,8 @@ public:
 		m_max_len_t(p_max_len_t),
 		m_layer_count(p_layer_count) {
 
-		check_size_against_implementation_limit(p_max_len_s);
-		check_size_against_implementation_limit(p_max_len_t);
+		check_size_against_implementation_limit("s", p_max_len_s);
+		check_size_against_implementation_limit("t", p_max_len_t);
 
 		m_data->values.resize({
 			p_layer_count,
@@ -695,8 +701,8 @@ MatrixFactory<CellType, ProblemType>::make(
 	if (Layer >= m_layer_count) {
 		throw std::invalid_argument("layer index exceeds layer count");
 	}
-	check_size_against_max(len_s, m_max_len_s);
-	check_size_against_max(len_t, m_max_len_t);
+	check_size_against_max("s", len_s, m_max_len_s);
+	check_size_against_max("t", len_t, m_max_len_t);
 	return Matrix<CellType, ProblemType>(*this, len_s, len_t, Layer);
 }
 

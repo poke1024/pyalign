@@ -1,6 +1,6 @@
 from pyalign.tests import TestCase
 
-import pyalign.problem
+import pyalign.problems
 import pyalign.solve
 import pyalign.gaps
 
@@ -10,8 +10,8 @@ class TestGotoh(TestCase):
 		# the following problem is taken from the slides
 		# about Gotoh by Rolf Backofen.
 
-		pf = pyalign.problem.ProblemFactory(
-			pyalign.problem.Binary(eq=0, ne=1),
+		pf = pyalign.problems.general(
+			pyalign.problems.Equality(eq=0, ne=1),
 			direction="minimize")
 
 		solver = pyalign.solve.GlobalSolver(

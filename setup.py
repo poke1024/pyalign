@@ -63,7 +63,8 @@ setup(
 	packages=find_packages(include=[
 		'pyalign',
 		'pyalign.algorithm',
-		'pyalign.problem',
+		'pyalign.problems',
+		'pyalign.gaps',
 		'pyalign.io',
 		'pyalign.tests']),
 	python_requires='>=3.8',

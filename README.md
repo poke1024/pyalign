@@ -45,12 +45,12 @@ whereas computing "all alignments" will track multiple traceback edges
 Running
 
 ```python
-import pyalign.problem
+import pyalign.problems
 import pyalign.solve
 import pyalign.gaps
 
-pf = pyalign.problem.ProblemFactory(
-    pyalign.problem.Binary(eq=1, ne=-1),
+pf = pyalign.problems.ProblemFactory(
+    pyalign.problems.Binary(eq=1, ne=-1),
     direction="maximize")
 solver = pyalign.solve.GlobalSolver(
     gap_cost=pyalign.gaps.LinearGapCost(0.2))

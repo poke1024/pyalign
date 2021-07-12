@@ -21,6 +21,11 @@ inline void print_debug_info(const char *title, const T& data) {
 #endif
 }
 
+struct MaxLength {
+	size_t s;
+	size_t t;
+};
+
 template<typename Index>
 xt::pytensor<Index, 1> invert(
 	const xt::pytensor<Index, 1> &p_source,
@@ -383,6 +388,13 @@ struct matrix_form {
 
 	inline void check() const {
 		check_batch_size(m_similarity.shape(2), CellType::batch_size);
+
+		if (m_length.shape(0) != 2 || m_length.shape(1) != CellType::batch_size) {
+			std::ostringstream err;
+			err << "m_length has shape (" << m_length.shape(0) << ", " <<
+				m_length.shape(1) << "), expected (2, " << CellType::batch_size << ")";
+			throw std::invalid_argument(err.str());
+		}
 	}
 
 	inline size_t batch_len_s() const {
@@ -394,11 +406,11 @@ struct matrix_form {
 	}
 
 	inline IndexVec len_s() const {
-		return m_length(0);
+		return xt::view(m_length, 0, xt::all());
 	}
 
 	inline IndexVec len_t() const {
-		return m_length(1);
+		return xt::view(m_length, 1, xt::all());
 	}
 
 	inline ValueVec operator()(const Index i, const Index j) const {
@@ -428,6 +440,13 @@ struct indexed_matrix_form {
 		if (xt::amax(m_b)() >= m_similarity.shape(1)) {
 			throw std::invalid_argument("out of bounds index in b");
 		}
+
+		if (m_length.shape(0) != 2 || m_length.shape(1) != CellType::batch_size) {
+			std::ostringstream err;
+			err << "m_length has shape (" << m_length.shape(0) << ", " <<
+				m_length.shape(1) << "), expected (2, " << CellType::batch_size << ")";
+			throw std::invalid_argument(err.str());
+		}
 	}
 
 	inline size_t batch_len_s() const {
@@ -439,11 +458,11 @@ struct indexed_matrix_form {
 	}
 
 	inline IndexVec len_s() const {
-		return m_length(0);
+		return xt::view(m_length, 0, xt::all());
 	}
 
 	inline IndexVec len_t() const {
-		return m_length(1);
+		return xt::view(m_length, 1, xt::all());
 	}
 
 	inline ValueVec operator()(const Index i, const Index j) const {
@@ -758,8 +777,7 @@ struct AlignmentSolverFactory {
 	static SolverRef resolve_gap_type(
 		const py::dict &p_options,
 		const LocalityInitializers &p_loc_initializers,
-		const size_t p_max_len_s,
-		const size_t p_max_len_t) {
+		const MaxLength &p_max_len) {
 
 		const py::object gap_cost = p_options.contains("gap_cost") ?
 			p_options["gap_cost"] : py::none().cast<py::object>();
@@ -791,8 +809,8 @@ struct AlignmentSolverFactory {
 				p_options,
 				*x_gap_s.linear,
 				*x_gap_t.linear,
-				p_max_len_s,
-				p_max_len_t,
+				p_max_len.s,
+				p_max_len.t,
 				p_loc_initializers
 			);
 		} else if (x_gap_s.affine.has_value() && x_gap_t.affine.has_value()) {
@@ -800,8 +818,8 @@ struct AlignmentSolverFactory {
 				p_options,
 				*x_gap_s.affine,
 				*x_gap_t.affine,
-				p_max_len_s,
-				p_max_len_t,
+				p_max_len.s,
+				p_max_len.t,
 				p_loc_initializers
 			);
 		} else {
@@ -809,8 +827,8 @@ struct AlignmentSolverFactory {
 				p_options,
 				to_gap_tensor_factory(gap_s),
 				to_gap_tensor_factory(gap_t),
-				p_max_len_s,
-				p_max_len_t,
+				p_max_len.s,
+				p_max_len.t,
 				p_loc_initializers
 			);
 		}
@@ -819,8 +837,7 @@ struct AlignmentSolverFactory {
 	template<typename Goal>
 	static SolverRef resolve_locality(
 		const py::dict &p_options,
-		const size_t p_max_len_s,
-		const size_t p_max_len_t) {
+		const MaxLength &p_max_len) {
 
 		const std::string locality_name = p_options.contains("locality") ?
 			p_options["locality"].cast<std::string>() : "local";
@@ -830,24 +847,21 @@ struct AlignmentSolverFactory {
 			return resolve_gap_type<Goal, pyalign::Local>(
 				p_options,
 				pyalign::LocalInitializers(),
-				p_max_len_s,
-				p_max_len_t);
+				p_max_len);
 
 		} else if (locality_name == "global") {
 
 			return resolve_gap_type<Goal, pyalign::Global>(
 				p_options,
 				pyalign::GlobalInitializers(),
-				p_max_len_s,
-				p_max_len_t);
+				p_max_len);
 
 		} else if (locality_name == "semiglobal") {
 
 			return resolve_gap_type<Goal, pyalign::Semiglobal>(
 				p_options,
 				pyalign::SemiglobalInitializers(),
-				p_max_len_s,
-				p_max_len_t);
+				p_max_len);
 
 		} else {
 
@@ -858,8 +872,7 @@ struct AlignmentSolverFactory {
 
 template<typename CellType>
 SolverRef create_alignment_solver(
-	const size_t p_max_len_s,
-	const size_t p_max_len_t,
+	const MaxLength &p_max_len,
 	const py::dict &p_options) {
 
 	const auto goal = p_options["goal"];
@@ -873,13 +886,11 @@ SolverRef create_alignment_solver(
 		if (detail == "score") {
 			return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::optimal_score>(
 				p_options,
-				p_max_len_s,
-				p_max_len_t);
+				p_max_len);
 		} else if (detail == "alignment" || detail == "solution") {
 			return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::one_optimal_alignment>(
 				p_options,
-				p_max_len_s,
-				p_max_len_t);
+				p_max_len);
 		} else {
 			throw std::invalid_argument(detail);
 		}
@@ -887,8 +898,7 @@ SolverRef create_alignment_solver(
 		if (detail == "alignment" || detail == "solution") {
 			return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::all_optimal_alignments>(
 				p_options,
-				p_max_len_s,
-				p_max_len_t);
+				p_max_len);
 		} else {
 			throw std::invalid_argument(detail);
 		}
@@ -899,8 +909,7 @@ SolverRef create_alignment_solver(
 
 template<typename CellType>
 SolverRef create_dtw_solver(
-	const size_t p_max_len_s,
-	const size_t p_max_len_t,
+	const MaxLength &p_max_len,
 	const py::dict &p_options) {
 
 	const std::string direction = p_options["direction"].cast<std::string>();
@@ -913,8 +922,8 @@ SolverRef create_dtw_solver(
 		return std::make_shared<SolverImpl<CellType, ProblemType,
 			pyalign::DynamicTimeSolver<CellType, ProblemType>>>(
 				p_options,
-				p_max_len_s,
-				p_max_len_t);
+				p_max_len.s,
+				p_max_len.t);
 	} else if (direction == "minimize") {
 		typedef pyalign::problem_type<
 			pyalign::goal::one_optimal_alignment,
@@ -922,8 +931,8 @@ SolverRef create_dtw_solver(
 		return std::make_shared<SolverImpl<CellType, ProblemType,
 			pyalign::DynamicTimeSolver<CellType, ProblemType>>>(
 				p_options,
-				p_max_len_s,
-				p_max_len_t);
+				p_max_len.s,
+				p_max_len.t);
 	} else {
 		throw std::invalid_argument(direction);
 	}
@@ -934,6 +943,8 @@ SolverRef create_solver(
 	const size_t p_max_len_t,
 	const py::dict &p_options) {
 
+	const auto max_len = MaxLength{p_max_len_s, p_max_len_t};
+
 	const std::string solver = p_options["solver"].cast<py::str>();
 	const bool batch = p_options["batch"].cast<bool>();
 
@@ -943,18 +954,18 @@ SolverRef create_solver(
 	if (solver == "alignment") {
 		if (batch) {
 			return create_alignment_solver<cell_type_batched>(
-				p_max_len_s, p_max_len_t, p_options);
+				max_len, p_options);
 		} else {
 			return create_alignment_solver<cell_type_nobatch>(
-				p_max_len_s, p_max_len_t, p_options);
+				max_len, p_options);
 		}
 	} else if (solver == "dtw") {
 		if (batch) {
 			return create_dtw_solver<cell_type_batched>(
-				p_max_len_s, p_max_len_t, p_options);
+				max_len, p_options);
 		} else {
 			return create_dtw_solver<cell_type_nobatch>(
-				p_max_len_s, p_max_len_t, p_options);
+				max_len, p_options);
 		}
 	} else {
 		throw std::invalid_argument(solver);
