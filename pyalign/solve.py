@@ -2,7 +2,7 @@ import numpy as np
 import time
 import contextlib
 import importlib
-import re
+import typing
 import os
 import logging
 
@@ -198,6 +198,10 @@ class Alignment:
 		self.print()
 
 
+class Score:
+	pass
+
+
 def next_power_of_2(x):
 	return 1 if x == 0 else 2 ** (x - 1).bit_length()
 
@@ -232,57 +236,35 @@ class SolverCache:
 		return solver
 
 
-class Goal:
-	details = set(["score", "alignment", "solution"])
+class Codomain:
+	_1 = set([Score, Alignment, Solution])
+	_n = dict([(typing.Iterator[x], x) for x in [Score, Alignment, Solution]])
 
-	def __init__(self, detail, qualifiers):
-		"""
-		Args:
-			detail (str): one of "score", "alignment", "solution"
-			qualifiers (List[str]): one of "one" or "all", optionally "optimal"
-		"""
-
-		if detail not in Goal.details:
-			raise ValueError(f"illegal detail specification '{detail}'")
-
-		count = "one"
-		optimal = False
-
-		for q in qualifiers:
-			if q in ("one", "all"):
-				count = q
-			elif q == "optimal":
-				optimal = True
-			else:
-				raise ValueError(f"illegal qualifier '{q}'")
-
-		if count == "one":
-			optimal = True
-
-		self._detail = detail
-		self._count = count
-		self._optimal = optimal
-
-		self._key = (self._detail, self._count,) + (("optimal",) if self._optimal else tuple())
-
-	@staticmethod
-	def from_str(s):
-		# e.g. "solution[all, optimal]"
-		if "[" in s:
-			m = re.match(r"(?P<head>\w+)\[(?P<qual>[\w\s,]+)\]", s)
-			if m is None:
-				raise ValueError(f"illegal goal specification '{s}'")
-			qualifiers = [re.sub(r"\s", "", q) for q in m.group("qual").split(",")]
-			return Goal(m.group("head"), qualifiers)
+	def __init__(self, type):
+		if type in Codomain._1:
+			self._base_type = type
+			self._count = "one"
+			self._optimal = True
 		else:
-			return Goal(s, ["one", "optimal"])
+			base = Codomain._n.get(type)
+			if base is None:
+				raise ValueError(f"illegal codomain type '{type}'")
+			self._base_type = base
+			self._count = "all"
+			self._optimal = True
+
+		self._key = (self.detail, self.count,) + (("optimal",) if self._optimal else tuple())
+
+	@property
+	def type(self):
+		return self._type
 
 	def __str__(self):
-		return f"{self._detail}[{', '.join(self._key[1:])}]"
+		return str(self.type)
 
 	@property
 	def detail(self):
-		return self._detail
+		return self._base_type.__name__.lower()
 
 	@property
 	def count(self):
@@ -368,7 +350,7 @@ def solver_variants(prefix):
 class MatrixForm:
 	_solvers = solver_variants("solve")
 
-	def __init__(self, solver, goal, batch):
+	def __init__(self, solver, codomain, batch):
 		self._solver = solver
 		batch_size = solver.batch_size
 		shape = batch.shape
@@ -378,9 +360,9 @@ class MatrixForm:
 		self._len[0, :].fill(shape[0])
 		self._len[1, :].fill(shape[1])
 
-		variant = MatrixForm._solvers.get(goal.key)
+		variant = MatrixForm._solvers.get(codomain.key)
 		if variant is None:
-			raise ValueError(f"{goal.detail}[{', '.join(goal.key[1:])}] is currently not supported")
+			raise ValueError(f"codomain {codomain} is currently not supported")
 		self._solve = getattr(solver, variant[0])
 		self._construct = variant[1]
 
@@ -400,7 +382,7 @@ class MatrixForm:
 class IndexedMatrixForm:
 	_solvers = solver_variants("solve_indexed")
 
-	def __init__(self, solver, goal, batch):
+	def __init__(self, solver, codomain, batch):
 		self._solver = solver
 		batch_size = solver.batch_size
 		shape = batch.shape
@@ -416,9 +398,9 @@ class IndexedMatrixForm:
 		if not all(p.similarity_lookup_table() is self._sim for p in batch.problems):
 			raise ValueError("similarity table must be identical for all problems in a batch")
 
-		variant = IndexedMatrixForm._solvers.get(goal.key)
+		variant = IndexedMatrixForm._solvers.get(codomain.key)
 		if variant is None:
-			raise ValueError(f"{goal.detail}[{', '.join(goal.key[1:])}] is currently not supported")
+			raise ValueError(f"codomain {codomain} is currently not supported")
 		self._solve = getattr(solver, variant[0])
 		self._construct = variant[1]
 
@@ -441,23 +423,21 @@ class Solver:
 	"""
 
 	def __init__(
-		self, gap_cost: GapCost = None, generate="alignment", **kwargs):
+		self, gap_cost: GapCost = None, codomain=Solution, **kwargs):
 
-		if generate is None:
-			goal = Goal("alignment", False)
-		elif isinstance(generate, str):
-			goal = Goal.from_str(generate)
+		if codomain is None:
+			codomain_obj = Codomain(Solution)
 		else:
-			raise ValueError(generate)
+			codomain_obj = Codomain(codomain)
 
 		if gap_cost is None:
 			gap_cost = ConstantGapCost(0)
 
-		self._goal = goal
+		self._codomain = codomain_obj
 
 		self._options = dict(
 			gap_cost=gap_cost,
-			goal=goal,
+			goal=self._codomain,
 			**kwargs)
 
 		self._cache = SolverCache(self._options)
@@ -469,10 +449,16 @@ class Solver:
 		if max_len_s and max_len_t:
 			self._cache.ensure(max_len_s, max_len_t)
 
+	def to_codomain(self, codomain):
+		kwargs = self._options.copy()
+		del kwargs['goal']
+		kwargs['codomain'] = codomain
+		return Solver(**kwargs)
+
 	@property
-	def goal(self):
-		"""the solver's goal"""
-		return self._goal
+	def codomain(self):
+		"""the solver's codomain"""
+		return self._codomain.type
 
 	@property
 	def batch_size(self):
@@ -496,9 +482,9 @@ class Solver:
 		result = []
 
 		if form == Form.MATRIX_FORM:
-			form_solver = MatrixForm(solver, self._goal, batch)
+			form_solver = MatrixForm(solver, self._codomain, batch)
 		elif form == Form.INDEXED_MATRIX_FORM:
-			form_solver = IndexedMatrixForm(solver, self._goal, batch)
+			form_solver = IndexedMatrixForm(solver, self._codomain, batch)
 		else:
 			raise ValueError(form)
 
