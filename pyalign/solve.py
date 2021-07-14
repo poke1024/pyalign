@@ -218,11 +218,13 @@ class SolverCache:
 			self._max_lim_t = lim_t
 			self._solvers = {}
 
-	def get(self, len_s, len_t, batch):
+	def get(self, len_s, len_t, direction, batch):
 		self.ensure(len_s, len_t)
-		solver = self._solvers.get(batch)
+		key = (direction, batch)
+		solver = self._solvers.get(key)
 		if solver is None:
 			options = self._options.copy()
+			options['direction'] = direction
 			options['batch'] = batch
 			solver = algorithm.create_solver(
 				self._max_lim_s, self._max_lim_t, options)
@@ -439,7 +441,7 @@ class Solver:
 	"""
 
 	def __init__(
-		self, gap_cost: GapCost = None, direction="maximize", generate="alignment", **kwargs):
+		self, gap_cost: GapCost = None, generate="alignment", **kwargs):
 
 		if generate is None:
 			goal = Goal("alignment", False)
@@ -451,12 +453,10 @@ class Solver:
 		if gap_cost is None:
 			gap_cost = ConstantGapCost(0)
 
-		self._direction = direction
 		self._goal = goal
 
 		self._options = dict(
 			gap_cost=gap_cost,
-			direction=direction,
 			goal=goal,
 			**kwargs)
 
@@ -480,20 +480,16 @@ class Solver:
 		the solver's optimal batch size, i.e. the number of alignment pairs
 		that can get processed in a single SIMD call on this machine.
 		"""
-		return self._cache.get(1, 1, batch=True).batch_size
+		return self._cache.get(1, 1, direction='maximize', batch=True).batch_size
 
 	def timings(self):
 		return Timings(self)
 
 	def solve_batch(self, batch):
-		if batch.direction != self._direction:
-			raise ValueError(
-				f"problem given is '{batch.direction}', "
-				f"but solver is configured to '{self._direction}'")
-
 		is_batch = len(batch) > 1
 		shape = batch.shape
-		solver = self._cache.get(shape[0], shape[1], batch=is_batch)
+		solver = self._cache.get(
+			shape[0], shape[1], direction=batch.direction, batch=is_batch)
 		batch_size = solver.batch_size
 		form = batch.form
 
