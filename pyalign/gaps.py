@@ -25,7 +25,7 @@ class GapCost:
 
 	def plot(self, n=None, backend="bokeh"):
 		if n is None:
-			n = 10
+			n = 5
 
 		if backend == "bokeh":
 			import bokeh.plotting
@@ -35,6 +35,7 @@ class GapCost:
 			p.title = self.title
 			p.xaxis.axis_label = 'gap length'
 			p.yaxis.axis_label = 'cost'
+			p.xaxis.ticker = np.arange(n)
 			p.toolbar_location = None
 			bokeh.plotting.show(p)
 		elif backend == "matplotlib":
@@ -67,7 +68,7 @@ class GapCost:
 
 	def _ipython_display_(self):
 		# see https://ipython.readthedocs.io/en/stable/config/integrating.html
-		self.plot(10)
+		self.plot(5)
 
 
 class ConstantGapCost(GapCost):
