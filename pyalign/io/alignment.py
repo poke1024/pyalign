@@ -1,8 +1,26 @@
-def to_html(x):
-	pass
+import collections.abc
 
 
+def _seq_type(x):
+	if isinstance(x, str):
+		return 'text'
+	elif isinstance(x, collections.abc.Sequence):
+		if all(isinstance(y, str) for y in x):
+			return 'text'
+		elif all(hasattr(y, '_repr_html_') for y in x):
+			return 'html'
+		else:
+			return None
+	else:
+		return None
 
+
+def det_seq_type(s, t):
+	seq_type = _seq_type(s)
+	if seq_type != _seq_type(t):
+		return None
+	else:
+		return seq_type
 
 
 class Formatter:
@@ -62,14 +80,16 @@ class Formatter:
 		if s is None or t is None:
 			return None
 
-		# if not all(isinstance(x, str) for x in (s, t)):
+		seq_type = det_seq_type(s, t)
 
-		if all(isinstance(x, str) for x in s) and all(isinstance(x, str) for x in t):
+		if seq_type == "text":
 			upper, edges, lower = self._rows(s, t)
-		else:
+		elif seq_type == "html":
 			upper, edges, lower = self._rows(
 				[x._repr_html_() for x in s],
 				[x._repr_html_() for x in t])
+		else:
+			return None
 
 		upper = "".join([f"<td>{x}</td>" for x in upper])
 		edges = "".join([f'<td style="text-align: center;">{x}</td>' for x in edges])
@@ -91,7 +111,7 @@ class Formatter:
 		if s is None or t is None:
 			return None
 
-		if not all(isinstance(x, str) for x in (s, t)):
+		if det_seq_type(s, t) != "text":
 			return None
 
 		upper, edges, lower = self._rows(s, t)
