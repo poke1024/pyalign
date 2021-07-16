@@ -407,6 +407,10 @@ class Solver:
 		if max_len_s and max_len_t:
 			self._cache.ensure(max_len_s, max_len_t)
 
+	@property
+	def gap_cost(self):
+		return self._options["gap_cost"]
+
 	def to_codomain(self, codomain):
 		kwargs = self._options.copy()
 		del kwargs['goal']

@@ -13,9 +13,8 @@ class GapCost:
 	def costs(self, n):
 		raise NotImplementedError
 
-	def _plot(self, ax, n):
+	def _plot_matplotlib(self, ax, n):
 		from matplotlib.ticker import MaxNLocator
-
 		c = self.costs(n)
 		ax.plot(c)
 		ax.set_xlabel('gap length')
@@ -24,13 +23,28 @@ class GapCost:
 		ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 		ax.grid()
 
-	def plot(self, n):
-		import matplotlib.pyplot as plt
+	def plot(self, n=None, backend="bokeh"):
+		if n is None:
+			n = 10
 
-		fig, ax = plt.subplots(1, 1, figsize=(12, 3))
-		self._plot(ax, n)
-		fig.tight_layout()
-		fig.show()
+		if backend == "bokeh":
+			import bokeh.plotting
+			p = bokeh.plotting.figure(plot_width=600, plot_height=200)
+			c = self.costs(n)
+			p.line(np.arange(n), c, line_width=2)
+			p.title = self.title
+			p.xaxis.axis_label = 'gap length'
+			p.yaxis.axis_label = 'cost'
+			p.toolbar_location = None
+			bokeh.plotting.show(p)
+		elif backend == "matplotlib":
+			import matplotlib.pyplot as plt
+			fig, ax = plt.subplots(1, 1, figsize=(12, 3))
+			self._plot_matplotlib(ax, n)
+			fig.tight_layout()
+			fig.show()
+		else:
+			raise ValueError(backend)
 
 	def plot_to_image(self, fig, ax, n, format='png'):
 		"""
@@ -42,7 +56,7 @@ class GapCost:
 
 		import io
 
-		self._plot(ax, n)
+		self._plot_matplotlib(ax, n)
 		buf = io.BytesIO()
 		fig.tight_layout()
 		fig.savefig(buf, format=format)
@@ -53,7 +67,7 @@ class GapCost:
 
 	def _ipython_display_(self):
 		# see https://ipython.readthedocs.io/en/stable/config/integrating.html
-		self.plot(50)
+		self.plot(10)
 
 
 class ConstantGapCost(GapCost):
@@ -63,11 +77,11 @@ class ConstantGapCost(GapCost):
 	"""
 
 	def __init__(self, u):
-		self._cost = u
+		self._u = u
 		assert u >= 0
 
 	def to_special_case(self):
-		if self._cost == 0:
+		if self._u == 0:
 			return {
 				'linear': 0
 			}
@@ -75,9 +89,13 @@ class ConstantGapCost(GapCost):
 			return {}
 
 	def costs(self, n):
-		w = np.full((n,), self._cost, dtype=np.float32)
+		w = np.full((n,), self._u, dtype=np.float32)
 		w[0] = 0
 		return w
+
+	@property
+	def title(self):
+		return f"w(k) = {self._u:.1f}, w(0) = 0"
 
 
 class LinearGapCost(GapCost):
@@ -104,6 +122,10 @@ class LinearGapCost(GapCost):
 
 	def costs(self, n):
 		return np.linspace(0., (n - 1) * self._u, n, dtype=np.float32)
+
+	@property
+	def title(self):
+		return f"w(k) = {self._u:.1f} * k"
 
 
 class AffineGapCost(GapCost):
@@ -133,6 +155,10 @@ class AffineGapCost(GapCost):
 		w[0] = 0
 		return w
 
+	@property
+	def title(self):
+		return f"w(k) = {self._u:.1f} + {self._v:.1f} * k, w(0) = 0"
+
 
 class LogarithmicGapCost(GapCost):
 	""" A gap cost \( w_k =  u + v ln(k) \). \( w_k \) is the gap
@@ -158,6 +184,10 @@ class LogarithmicGapCost(GapCost):
 		w[0] = 0
 		return w
 
+	@property
+	def title(self):
+		return f"w(k) = {self._u:.1f} + {self._v:.1f} * ln(k), w(0) = 0"
+
 
 class ExponentialGapCost(GapCost):
 	"""
@@ -178,6 +208,10 @@ class ExponentialGapCost(GapCost):
 			c[i] = 1 - (self._u ** -(i * self._v))
 		return c
 
+	@property
+	def title(self):
+		return f"w(k) = 1 - {self._u:.1f}^(-k * {self._v:.1f})"
+
 
 class UserFuncGapCost(GapCost):
 	"""
@@ -193,6 +227,10 @@ class UserFuncGapCost(GapCost):
 		for i in range(1, n):
 			c[i] = self._costs_fn(i)
 		return c
+
+	@property
+	def title(self):
+		return f"w(k) = {self._costs_fn}, w(0) = 0"
 
 
 def smooth_gap_cost(k):
