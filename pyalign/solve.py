@@ -5,6 +5,7 @@ import importlib
 import typing
 import os
 import logging
+import pyalign.io.alignment
 
 from cached_property import cached_property
 from functools import lru_cache
@@ -124,6 +125,10 @@ class Alignment:
 		return self._problem
 
 	@property
+	def solver(self):
+		return self._solver
+
+	@property
 	def score(self):
 		return self._alignment.score
 
@@ -142,60 +147,14 @@ class Alignment:
 		return np.column_stack([i, s_to_t[i]])
 
 	def print(self):
-		s = self._problem.s
-		t = self._problem.t
+		formatter = pyalign.io.alignment.Formatter(self)
+		text = formatter.text
+		if text is not None:
+			print(text)
 
-		if s is None or t is None:
-			return
-
-		upper = []
-		edges = []
-		lower = []
-		last_x = -1
-
-		is_elastic = self._solver.options["solver"] == "dtw"
-
-		for i, x in enumerate(self.s_to_t):
-			if x < 0:
-				if not is_elastic:
-					upper.append(s[i])
-					edges.append(" ")
-					lower.append(" ")
-				else:
-					upper.append(s[i])
-					edges.append(" ")
-					lower.append(t[max(last_x, 0)])
-			else:
-				for j in range(last_x + 1, x):
-					if not is_elastic:
-						upper.append(" ")
-						edges.append(" ")
-						lower.append(t[j])
-					else:
-						upper.append(s[i])
-						edges.append(" ")
-						lower.append(t[j])
-				upper.append(s[i])
-				edges.append("|")
-				lower.append(t[x])
-				last_x = x
-
-		for j in range(last_x + 1, len(t)):
-			if not is_elastic:
-				upper.append(" ")
-				edges.append(" ")
-				lower.append(t[j])
-			else:
-				upper.append(s[-1])
-				edges.append(" ")
-				lower.append(t[j])
-
-		print("".join(upper))
-		print("".join(edges))
-		print("".join(lower))
-
-	def _ipython_display_(self):
-		self.print()
+	def _repr_html_(self):
+		formatter = pyalign.io.alignment.Formatter(self)
+		return formatter.html
 
 
 class Score:
@@ -429,7 +388,6 @@ class Solver:
 			codomain_obj = Codomain(Solution)
 		else:
 			codomain_obj = Codomain(codomain)
-
 		if gap_cost is None:
 			gap_cost = ConstantGapCost(0)
 
