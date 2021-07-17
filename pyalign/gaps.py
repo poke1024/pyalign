@@ -32,11 +32,19 @@ class GapCost:
 			p = bokeh.plotting.figure(plot_width=600, plot_height=200)
 			c = self.costs(n)
 			p.line(np.arange(n), c, line_width=2)
+
 			p.title = self.title
 			p.xaxis.axis_label = 'gap length'
 			p.yaxis.axis_label = 'cost'
 			p.xaxis.ticker = np.arange(n)
 			p.toolbar_location = None
+
+			if np.amax(c) < 1:
+				p.y_range.end = 1
+			p.ray(
+				x=[0], y=[1], length=0, angle=[0], color="black",
+				line_width=1, line_dash='dotted')
+
 			bokeh.plotting.show(p)
 		elif backend == "matplotlib":
 			import matplotlib.pyplot as plt

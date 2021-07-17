@@ -96,9 +96,9 @@ class Formatter:
 		lower = "".join([f"<td>{x}</td>" for x in lower])
 
 		return f"""
-			<table>
+			<table style="border-collapse: collapse; border-spacing:0;">
 			<tr>{upper}</tr>
-			<tr>{edges}</tr>
+			<tr style="background-color: #F0F0F0; padding:0;">{edges}</tr>
 			<tr>{lower}</tr>
 			</table>
 			"""
