@@ -1,4 +1,5 @@
 from pyalign.tests import TestCase
+from typing import Iterator
 
 import pyalign.problems
 import pyalign.solve
@@ -13,14 +14,13 @@ class TestBatch(TestCase):
 
 		solver = pyalign.solve.GlobalSolver(
 			gap_cost=pyalign.gaps.LinearGapCost(2),
-			direction="maximize",
-			generate="alignment[all, optimal]")
+			codomain=Iterator[pyalign.solve.Alignment])
 
-		alignments = solver.solve(pyalign.solve.ProblemBatch([
+		alignments = solver.solve([
 			pf.new_problem("AATCG", "AACG"),
 			pf.new_problem("AATGC", "AACG"),
 			pf.new_problem("AATCG", "AGTT")
-		]))
+		])
 
 		self._check_alignments(
 			alignments[0],

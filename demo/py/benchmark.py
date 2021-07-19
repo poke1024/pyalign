@@ -3,6 +3,7 @@
 
 import pyalign.problems
 import pyalign.gaps
+import pyalign.solve
 
 import string
 import random
@@ -15,7 +16,16 @@ import json
 
 from tqdm import tqdm
 from pathlib import Path
+from typing import Iterator
 
+
+codomain_names = {
+	str(pyalign.solve.Score): "score",
+	str(pyalign.solve.Alignment): "alignment",
+	str(pyalign.solve.Solution): "solution",
+	str(Iterator[pyalign.solve.Alignment]): "all alignments",
+	str(Iterator[pyalign.solve.Solution]): "all solutions"
+}
 
 class Aligner:
 	def prepare(self, a, b):
@@ -34,8 +44,8 @@ class Aligner:
 
 
 class PyAlignImplementation(Aligner):
-	def __init__(self, goal="alignment", encoded=False, batch=False):
-		self._goal = goal
+	def __init__(self, codomain=pyalign.solve.Alignment, encoded=False, batch=False):
+		self._codomain = codomain
 		self._encoded = encoded
 		self._batch = batch
 		self._solver = None
@@ -53,16 +63,15 @@ class PyAlignImplementation(Aligner):
 
 		self._solver = pyalign.solve.LocalSolver(
 			gap_cost=pyalign.gaps.LinearGapCost(1),
-			direction="maximize",
-			generate=self._goal)
+			codomain=self._codomain)
 
 		if not self._batch:
 			self._problem = pf.new_problem(a, b)
 			self._num_problems = 1
 		else:
 			self._num_problems = self._solver.batch_size
-			self._problem = pyalign.solve.ProblemBatch([
-				pf.new_problem(a, b) for _ in range(self._num_problems)])
+			self._problem = [
+				pf.new_problem(a, b) for _ in range(self._num_problems)]
 
 	def solve(self):
 		return self._solver.solve(self._problem)
@@ -146,22 +155,22 @@ def benchmark(num_runs=1000, seq_len=20):
 	a = random_seq(seq_len)  # "DDAAABDBADDBADBDBABB"
 	b = random_seq(seq_len)  # "AADCCCCACBADCDACDBCA"
 
-	goals = [
-		"score[one, optimal]",
-		"alignment[one, optimal]",
-		"solution[one, optimal]",
-		"alignment[all, optimal]",
-		"solution[all, optimal]"
+	codomains = [
+		pyalign.solve.Score,
+		pyalign.solve.Alignment,
+		pyalign.solve.Solution,
+		Iterator[pyalign.solve.Alignment],
+		Iterator[pyalign.solve.Solution]
 	]
 
 	def aligners():
-		yield "score[one, optimal]", PurePythonImplementation(backtrace=False)
-		yield "alignment[one, optimal]", PurePythonImplementation(backtrace=True)
+		yield str(pyalign.solve.Score), PurePythonImplementation(backtrace=False)
+		yield str(pyalign.solve.Alignment), PurePythonImplementation(backtrace=True)
 		for batch in (False, True):
 			for encoded in (False, True):
-				for goal in goals:
-					yield goal, PyAlignImplementation(
-						goal, encoded=encoded, batch=batch)
+				for codomain in codomains:
+					yield str(codomain), PyAlignImplementation(
+						codomain, encoded=encoded, batch=batch)
 
 	path = Path(f"runtimes_{seq_len}.json")
 	if path.exists():
@@ -171,13 +180,13 @@ def benchmark(num_runs=1000, seq_len=20):
 		runtimes_μs = collections.defaultdict(dict)
 		μs_to_ns = 1000
 
-		for goal, aligner in tqdm(list(aligners())):
+		for codomain, aligner in tqdm(list(aligners())):
 			aligner.prepare(a, b)
 			t0 = time.perf_counter_ns()
 			for _ in range(num_runs):
 				aligner.solve()
 			t1 = time.perf_counter_ns()
-			runtimes_μs[goal][aligner.name] = (t1 - t0) // (μs_to_ns * num_runs * aligner.num_problems)
+			runtimes_μs[codomain][aligner.name] = (t1 - t0) // (μs_to_ns * num_runs * aligner.num_problems)
 
 		with open(path, "w") as f:
 			f.write(json.dumps(runtimes_μs))
@@ -189,7 +198,7 @@ def benchmark(num_runs=1000, seq_len=20):
 			return 2 + len(s)
 
 	variants = set()
-	for goal, times in runtimes_μs.items():
+	for codomain, times in runtimes_μs.items():
 		for k in times.keys():
 			variants.add(k)
 	variants = sorted(list(variants), key=variant_sort_order)
@@ -197,10 +206,10 @@ def benchmark(num_runs=1000, seq_len=20):
 	y = dict()
 	for variant in variants:
 		y[variant] = []
-		for goal in goals:
-			y[variant].append(runtimes_μs[goal].get(variant, np.nan))
+		for codomain in codomains:
+			y[variant].append(runtimes_μs[str(codomain)].get(variant, np.nan))
 
-	x = np.arange(0, len(goals) * len(variants), len(variants))  # the label locations
+	x = np.arange(0, len(codomains) * len(variants), len(variants))  # the label locations
 	width = 0.9
 	x_c = x - ((len(variants) - 1) / 2) * width
 
@@ -220,7 +229,7 @@ def benchmark(num_runs=1000, seq_len=20):
 	ax.yaxis.set_minor_locator(FixedLocator([15, 25, 50, 100, 150, 250, 500]))
 
 	ax.set_xticks(x)
-	ax.set_xticklabels([s.replace("[", "\n[") for s in goals])
+	ax.set_xticklabels([codomain_names[str(s)] for s in codomains])
 
 	ax.legend(loc="upper right")
 	plt.xticks(rotation=45)
@@ -235,5 +244,5 @@ def benchmark(num_runs=1000, seq_len=20):
 
 if __name__ == "__main__":
 	benchmark(seq_len=10)
-	benchmark(seq_len=20)
-	benchmark(seq_len=50)
+	#benchmark(seq_len=20)
+	#benchmark(seq_len=50)

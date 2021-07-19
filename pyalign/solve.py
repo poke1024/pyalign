@@ -10,9 +10,10 @@ import pyalign.io.alignment
 from cached_property import cached_property
 from functools import lru_cache
 from pathlib import Path
+from collections.abc import Sequence
 
 from .gaps import GapCost, ConstantGapCost
-from .problems import ProblemBatch, Form
+from .problems import ProblemBag, Form
 
 
 def has_avx2():
@@ -162,7 +163,7 @@ class Score:
 
 
 def next_power_of_2(x):
-	return 1 if x == 0 else 2 ** (x - 1).bit_length()
+	return 1 if x == 0 else 2 ** (int(x) - 1).bit_length()
 
 
 class SolverCache:
@@ -309,15 +310,12 @@ def solver_variants(prefix):
 class MatrixForm:
 	_solvers = solver_variants("solve")
 
-	def __init__(self, solver, codomain, batch):
+	def __init__(self, solver, codomain, bag):
 		self._solver = solver
 		batch_size = solver.batch_size
-		shape = batch.shape
-		self._matrix = np.empty((shape[0], shape[1], batch_size), dtype=batch.dtype)
-
-		self._len = np.empty((2, batch_size), dtype=np.uint16)
-		self._len[0, :].fill(shape[0])
-		self._len[1, :].fill(shape[1])
+		max_shape = bag.max_shape
+		self._matrix = np.empty((max_shape[0], max_shape[1], batch_size), dtype=bag.dtype)
+		self._len = np.zeros((2, batch_size), dtype=np.uint16)
 
 		variant = MatrixForm._solvers.get(codomain.key)
 		if variant is None:
@@ -325,36 +323,44 @@ class MatrixForm:
 		self._solve = getattr(solver, variant[0])
 		self._construct = variant[1]
 
-	def prepare(self, problems):
-		matrix = self._matrix
+	def prepare(self, batch):
+		shape = batch.shape
+		matrix = self._matrix[:shape[0], :shape[1], :]
+		p_len = self._len
 
-		for k, p in enumerate(problems):
+		for k, p in enumerate(batch.problems):
 			p.build_matrix(matrix[:, :, k])
 
-	def solve(self, problems):
-		r = self._solve(self._matrix, self._len)
+			p_shape = p.shape
+			p_len[0, k] = p_shape[0]
+			p_len[1, k] = p_shape[1]
+
+	def solve(self, batch):
+		shape = batch.shape
+		matrix = self._matrix[:shape[0], :shape[1], :]
+
+		r = self._solve(matrix, self._len)
+		c = self._construct
+
 		return [
-			self._construct(problem, self._solver, x)
-			for problem, x in zip(problems, r)]
+			c(problem, self._solver, x)
+			for problem, x in zip(batch.problems, r)]
 
 
 class IndexedMatrixForm:
 	_solvers = solver_variants("solve_indexed")
 
-	def __init__(self, solver, codomain, batch):
+	def __init__(self, solver, codomain, bag):
 		self._solver = solver
 		batch_size = solver.batch_size
-		shape = batch.shape
+		max_shape = bag.max_shape
 
-		self._a = np.empty((batch_size, shape[0]), dtype=np.uint32)
-		self._b = np.empty((batch_size, shape[1]), dtype=np.uint32)
+		self._a = np.empty((batch_size, max_shape[0]), dtype=np.uint32)
+		self._b = np.empty((batch_size, max_shape[1]), dtype=np.uint32)
+		self._len = np.zeros((2, batch_size), dtype=np.uint16)
 
-		self._len = np.empty((2, batch_size), dtype=np.uint16)
-		self._len[0, :].fill(shape[0])
-		self._len[1, :].fill(shape[1])
-
-		self._sim = batch.problems[0].similarity_lookup_table()
-		if not all(p.similarity_lookup_table() is self._sim for p in batch.problems):
+		self._sim = bag.problems[0].similarity_lookup_table()
+		if not all(p.similarity_lookup_table() is self._sim for p in bag.problems):
 			raise ValueError("similarity table must be identical for all problems in a batch")
 
 		variant = IndexedMatrixForm._solvers.get(codomain.key)
@@ -363,17 +369,33 @@ class IndexedMatrixForm:
 		self._solve = getattr(solver, variant[0])
 		self._construct = variant[1]
 
-	def prepare(self, problems):
+	def prepare(self, batch):
+		shape = batch.shape
 		a = self._a
 		b = self._b
-		for k, p in enumerate(problems):
-			p.build_index_sequences(a[k, :], b[k, :])
+		p_len = self._len
 
-	def solve(self, problems):
-		r = self._solve(self._a, self._b, self._sim, self._len)
+		for k, p in enumerate(batch.problems):
+			p.build_index_sequences(
+				a[k, :shape[0]],
+				b[k, :shape[1]])
+
+			p_shape = p.shape
+			p_len[0, k] = p_shape[0]
+			p_len[1, k] = p_shape[1]
+
+	def solve(self, batch):
+		shape = batch.shape
+
+		r = self._solve(
+			self._a[:, :shape[0]],
+			self._b[:, :shape[1]],
+			self._sim, self._len)
+		c = self._construct
+
 		return [
-			self._construct(problem, self._solver, x)
-			for problem, x in zip(problems, r)]
+			c(problem, self._solver, x)
+			for problem, x in zip(batch.problems, r)]
 
 
 class Solver:
@@ -433,44 +455,47 @@ class Solver:
 	def timings(self):
 		return Timings(self)
 
-	def solve_batch(self, batch):
-		is_batch = len(batch) > 1
-		shape = batch.shape
+	def _solve_bag(self, bag):
+		max_shape = bag.max_shape
 		solver = self._cache.get(
-			shape[0], shape[1], direction=batch.direction, batch=is_batch)
+			max_shape[0], max_shape[1],
+			direction=bag.direction,
+			batch=len(bag) > 1)
 		batch_size = solver.batch_size
-		form = batch.form
-
-		result = []
+		form = bag.form
+		problems = bag.problems
 
 		if form == Form.MATRIX_FORM:
-			form_solver = MatrixForm(solver, self._codomain, batch)
+			form_solver = MatrixForm(
+				solver, self._codomain, bag)
 		elif form == Form.INDEXED_MATRIX_FORM:
-			form_solver = IndexedMatrixForm(solver, self._codomain, batch)
+			form_solver = IndexedMatrixForm(
+				solver, self._codomain, bag)
 		else:
 			raise ValueError(form)
 
-		for i in range(0, len(batch), batch_size):
-			problems_chunk = batch.problems[i:i + batch_size]
+		result = [None] * len(problems)
 
+		for batch in bag.batches(batch_size):
 			with self._timings.measure("prepare"):
-				form_solver.prepare(problems_chunk)
+				form_solver.prepare(batch)
 
 			with self._timings.measure("solve"):
-				result.extend(form_solver.solve(problems_chunk))
+				for i, r in zip(batch.indices, form_solver.solve(batch)):
+					result[i] = r
 
 		return result
 
-	def solve_problem(self, problem):
-		batch = ProblemBatch([problem])
-		result = self.solve_batch(batch)
+	def _solve_problem(self, problem):
+		batch = ProblemBag([problem])
+		result = self._solve_bag(batch)
 		return result[0]
 
 	def solve(self, x):
-		if isinstance(x, ProblemBatch):
-			return self.solve_batch(x)
+		if isinstance(x, Sequence):
+			return self._solve_bag(ProblemBag(list(x)))
 		else:
-			return self.solve_problem(x)
+			return self._solve_problem(x)
 
 
 class LocalSolver(Solver):

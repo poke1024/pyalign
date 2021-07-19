@@ -1,10 +1,18 @@
 import numpy as np
 import enum
 
+from pymorton import interleave2
+
 
 class Form(enum.Enum):
 	MATRIX_FORM = 0
 	INDEXED_MATRIX_FORM = 1
+
+
+class Task:
+	def __init__(self, code, index):
+		self.code = code
+		self.index = index
 
 
 class Problem:
@@ -145,6 +153,28 @@ class IndexedMatrixProblem(Problem):
 
 
 class ProblemBatch:
+	def __init__(self, problems, indices, master_shape):
+		shapes = np.array([p.shape for p in problems])
+		self._max_shape = (np.max(shapes[:, 0]), np.max(shapes[:, 1]))
+
+		self._shape = master_shape
+		self._problems = problems
+		self._indices = indices
+
+	@property
+	def shape(self):
+		return self._shape
+
+	@property
+	def problems(self):
+		return self._problems
+
+	@property
+	def indices(self):
+		return self._indices
+
+
+class ProblemBag:
 	def __init__(self, problems):
 		self._problems = problems
 
@@ -162,6 +192,9 @@ class ProblemBatch:
 
 		self._form = Form(min(p.form.value for p in problems))
 
+		shapes = np.array([p.shape for p in problems])
+		self._max_shape = (np.max(shapes[:, 0]), np.max(shapes[:, 1]))
+
 	def __len__(self):
 		return len(self._problems)
 
@@ -170,8 +203,8 @@ class ProblemBatch:
 		return self._problems
 
 	@property
-	def shape(self):
-		return self._shape
+	def max_shape(self):
+		return self._max_shape
 
 	@property
 	def direction(self):
@@ -184,3 +217,44 @@ class ProblemBatch:
 	@property
 	def form(self):
 		return self._form
+
+	def batches(self, batch_size):
+		bag_problems = self._problems
+
+		tasks = [
+			Task(interleave2(*p.shape), i) for i, p in enumerate(bag_problems)]
+
+		sorted_i = sorted(
+			np.arange(len(tasks)),
+			key=lambda i: tasks[i].code)
+
+		while True:
+			while sorted_i and tasks[sorted_i[-1]].index is None:
+				sorted_i.pop()
+
+			if not sorted_i:
+				break
+
+			task = tasks[sorted_i.pop()]
+			master_shape = bag_problems[task.index].shape
+			indices = [task.index]
+
+			k = 1
+			while k <= len(sorted_i):
+				i = sorted_i[-k]
+				k += 1
+
+				task = tasks[i]
+				if task.index is None:
+					continue
+
+				s = bag_problems[task.index].shape
+				if s[0] <= master_shape[0] and s[1] <= master_shape[1]:
+					indices.append(task.index)
+					task.index = None
+
+					if len(indices) == batch_size:
+						break
+
+			yield ProblemBatch(
+				[bag_problems[i] for i in indices], indices, master_shape)

@@ -1,4 +1,5 @@
 from pyalign.tests import TestCase
+from typing import Iterator
 
 import pyalign.problems
 import pyalign.solve
@@ -16,8 +17,7 @@ class TestGotoh(TestCase):
 
 		solver = pyalign.solve.GlobalSolver(
 			gap_cost=pyalign.gaps.AffineGapCost(4, 1),
-			direction="minimize",
-			generate="alignment[all, optimal]")
+			codomain=Iterator[pyalign.solve.Alignment])
 
 		problem = pf.new_problem("CC", "ACCT")
 		alignments = solver.solve(problem)

@@ -1,4 +1,5 @@
 from pyalign.tests import TestCase
+from typing import Iterator
 
 import pyalign.problems
 import pyalign.solve
@@ -17,8 +18,7 @@ class TestWatermanSmithBeyer(TestCase):
 
 		solver = pyalign.solve.GlobalSolver(
 			gap_cost=pyalign.gaps.LogarithmicGapCost(3, 1),
-			direction="maximize",
-			generate="alignment[all, optimal]")
+			codomain=Iterator[pyalign.solve.Alignment])
 
 		alignments = list(solver.solve(problem))
 

@@ -17,8 +17,7 @@ class TestNeedlemanWunsch(TestCase):
 
 		solver = pyalign.solve.GlobalSolver(
 			gap_cost=pyalign.gaps.LinearGapCost(2),
-			direction="maximize",
-			generate="alignment")
+			codomain=pyalign.solve.Alignment)
 
 		alignment = solver.solve(problem)
 
