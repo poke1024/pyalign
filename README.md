@@ -1,6 +1,10 @@
 # pyalign
 
-Try it out: [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/poke1024/pyalign-demo/HEAD?filepath=example.ipynb)
+Try it out and learn the details:
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/poke1024/pyalign-demo/HEAD?filepath=example.ipynb)
+
+<hr>
 
 Alignments have been a staple algorithm in bioinformatics for decades now,
 but most packages implementing tend to be either easy to use and slow, or
