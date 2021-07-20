@@ -217,40 +217,46 @@ class ProblemBag:
 	def batches(self, batch_size):
 		bag_problems = self._problems
 
-		tasks = [
-			Task(interleave2(*p.shape), i) for i, p in enumerate(bag_problems)]
+		if batch_size == 1:
+			for i, p in enumerate(bag_problems):
+				yield ProblemBatch([p], [i], p.shape)
+		else:
+			tasks = [
+				Task(interleave2(*p.shape), i) for i, p in enumerate(bag_problems)]
 
-		sorted_i = sorted(
-			np.arange(len(tasks)),
-			key=lambda i: tasks[i].code)
+			sorted_i = sorted(
+				np.arange(len(tasks)),
+				key=lambda i: tasks[i].code)
 
-		while True:
-			while sorted_i and tasks[sorted_i[-1]].index is None:
-				sorted_i.pop()
+			while True:
+				while sorted_i and tasks[sorted_i[-1]].index is None:
+					sorted_i.pop()
 
-			if not sorted_i:
-				break
+				if not sorted_i:
+					break
 
-			task = tasks[sorted_i.pop()]
-			master_shape = bag_problems[task.index].shape
-			indices = [task.index]
+				task = tasks[sorted_i.pop()]
+				master_shape = bag_problems[task.index].shape
+				indices = [task.index]
 
-			k = 1
-			while k <= len(sorted_i):
-				i = sorted_i[-k]
-				k += 1
+				k = 1
+				while k <= len(sorted_i):
+					i = sorted_i[-k]
+					k += 1
 
-				task = tasks[i]
-				if task.index is None:
-					continue
+					task = tasks[i]
+					if task.index is None:
+						continue
 
-				s = bag_problems[task.index].shape
-				if s[0] <= master_shape[0] and s[1] <= master_shape[1]:
-					indices.append(task.index)
-					task.index = None
+					s = bag_problems[task.index].shape
+					if s[0] <= master_shape[0] and s[1] <= master_shape[1]:
+						indices.append(task.index)
+						task.index = None
 
-					if len(indices) == batch_size:
-						break
+						if len(indices) == batch_size:
+							break
 
-			yield ProblemBatch(
-				[bag_problems[i] for i in indices], indices, master_shape)
+				yield ProblemBatch(
+					[bag_problems[i] for i in indices],
+					indices,
+					master_shape)

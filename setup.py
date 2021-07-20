@@ -59,7 +59,7 @@ with open(script_dir / 'README.md') as f:
 
 setup(
 	name='pyalign',
-	version='0.2.2',
+	version='0.3',
 	packages=find_packages(include=[
 		'pyalign',
 		'pyalign.algorithm',

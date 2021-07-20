@@ -244,5 +244,5 @@ def benchmark(num_runs=1000, seq_len=20):
 
 if __name__ == "__main__":
 	benchmark(seq_len=10)
-	#benchmark(seq_len=20)
-	#benchmark(seq_len=50)
+	benchmark(seq_len=20)
+	benchmark(seq_len=50)
