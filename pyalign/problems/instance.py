@@ -178,17 +178,13 @@ class ProblemBag:
 	def __init__(self, problems):
 		self._problems = problems
 
-		self._shape = problems[0].shape
-		if not all(p.shape == self._shape for p in problems):
-			raise ValueError("problems in a batch need to have same shape")
-
 		self._direction = problems[0].direction
 		if not all(p.direction == self._direction for p in problems):
-			raise ValueError("problems in a batch need to have same direction")
+			raise ValueError("problems in a bag need to have same direction")
 
 		self._dtype = problems[0].dtype
 		if not all(p.dtype == self._dtype for p in problems):
-			raise ValueError("problems in a batch need to have same dtype")
+			raise ValueError("problems in a bag need to have same dtype")
 
 		self._form = Form(min(p.form.value for p in problems))
 
