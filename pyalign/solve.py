@@ -198,22 +198,25 @@ class SolverCache:
 
 class Codomain:
 	_1 = set([Score, Alignment, Solution])
-	_n = dict([(typing.Iterator[x], x) for x in [Score, Alignment, Solution]])
+	_n = dict(
+		[(typing.Iterator[x], (x, "all", "iterator")) for x in [Score, Alignment, Solution]] +
+		[(typing.List[x], (x, "all", "list")) for x in [Score, Alignment, Solution]]
+	)
 
 	def __init__(self, type):
 		if type in Codomain._1:
 			self._base_type = type
 			self._count = "one"
+			container_type = None
 			self._optimal = True
 		else:
-			base = Codomain._n.get(type)
+			base, self._count, container_type = Codomain._n.get(type)
 			if base is None:
 				raise ValueError(f"illegal codomain type '{type}'")
 			self._base_type = base
-			self._count = "all"
 			self._optimal = True
 
-		self._key = (self.detail, self.count,) + (("optimal",) if self._optimal else tuple())
+		self._key = (self.detail, self.count, container_type) + (("optimal",) if self._optimal else tuple())
 
 	@property
 	def type(self):
@@ -295,15 +298,30 @@ class SolutionIterator(Iterator):
 	_element_class = Solution
 
 
+def make_list_factory(iterator):
+	def to_list(*args, **kwargs):
+		return list(iterator(*args, **kwargs))
+
+	return to_list
+
+
 def solver_variants(prefix):
 	data = {
-		("score", "one", "optimal"): ("for_score", lambda _1, _2, x: x),
-		#("score", "all"): ("for_score", lambda _1, _2, x: x),
-		("alignment", "one", "optimal"): ("for_alignment", Alignment),
-		("alignment", "all", "optimal"): ("for_alignment_iterator", AlignmentIterator),
-		("solution", "one", "optimal"): ("for_solution", Solution),
-		("solution", "all", "optimal"): ("for_solution_iterator", SolutionIterator)
+		("score", "one", None, "optimal"): ("for_score", lambda _1, _2, x: x),
+
+		("alignment", "one", None, "optimal"): ("for_alignment", Alignment),
+		("alignment", "all", "iterator", "optimal"): (
+			"for_alignment_iterator", AlignmentIterator),
+		("alignment", "all", "list", "optimal"): (
+			"for_alignment_iterator", make_list_factory(AlignmentIterator)),
+
+		("solution", "one", None, "optimal"): ("for_solution", Solution),
+		("solution", "all", "iterator", "optimal"): (
+			"for_solution_iterator", SolutionIterator),
+		("solution", "all", "list", "optimal"): (
+			"for_solution_iterator", make_list_factory(SolutionIterator))
 	}
+
 	return dict((k, (f"{prefix}_{v1}", v2)) for k, (v1, v2) in data.items())
 
 
