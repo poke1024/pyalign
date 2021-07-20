@@ -332,7 +332,7 @@ class MatrixForm:
 		self._solver = solver
 		batch_size = solver.batch_size
 		max_shape = bag.max_shape
-		self._matrix = np.empty((max_shape[0], max_shape[1], batch_size), dtype=bag.dtype)
+		self._matrix = np.zeros((max_shape[0], max_shape[1], batch_size), dtype=bag.dtype)
 		self._len = np.zeros((2, batch_size), dtype=np.uint16)
 
 		variant = MatrixForm._solvers.get(codomain.key)
@@ -373,8 +373,8 @@ class IndexedMatrixForm:
 		batch_size = solver.batch_size
 		max_shape = bag.max_shape
 
-		self._a = np.empty((batch_size, max_shape[0]), dtype=np.uint32)
-		self._b = np.empty((batch_size, max_shape[1]), dtype=np.uint32)
+		self._a = np.zeros((batch_size, max_shape[0]), dtype=np.uint32)
+		self._b = np.zeros((batch_size, max_shape[1]), dtype=np.uint32)
 		self._len = np.zeros((2, batch_size), dtype=np.uint16)
 
 		self._sim = bag.problems[0].similarity_lookup_table()
