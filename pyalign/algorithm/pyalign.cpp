@@ -21,6 +21,206 @@ inline void print_debug_info(const char *title, const T& data) {
 #endif
 }
 
+inline xt::pytensor<float, 1> zero_gap_tensor(const size_t p_len) {
+	xt::pytensor<float, 1> w;
+	w.resize({static_cast<ssize_t>(p_len)});
+	w.fill(0);
+	return w;
+}
+
+inline pyalign::GapTensorFactory<float> to_gap_tensor_factory(const py::object &p_gap) {
+	if (p_gap.is_none()) {
+		return zero_gap_tensor;
+	} else {
+		auto f = p_gap.attr("costs").cast<std::function<xt::pytensor<float, 1>(size_t)>>();
+		return [f] (const size_t n) {
+			py::gil_scoped_acquire acquire;
+			return f(n).cast<xt::xtensor<float, 1>>();
+		};
+	}
+}
+
+struct GapCostOptions {
+	inline GapCostOptions(const py::object &p_gap) {
+		if (p_gap.is_none()) {
+			linear = 0.0f;
+		} else {
+	        const py::dict cost = p_gap.attr("to_special_case")().cast<py::dict>();
+
+	        if (cost.contains("affine")) {
+	            // we flip u and v here:
+				//
+	            // * we get (u, v) that specifies w(k) = u + v k, which is the formulation in
+	            // pyalign.gaps (in accordance with Stojmirović et al. and others)
+	            // * AffineCost takes (u, v) as w(k) = u k + v, which is Gotoh's formulation
+
+	            auto affine_tuple = cost["affine"].cast<py::tuple>();
+				affine = pyalign::AffineCost<float>(
+					affine_tuple[1].cast<float>(),
+					affine_tuple[0].cast<float>()
+				);
+
+	        } else if (cost.contains("linear")) {
+	            linear = cost["linear"].cast<float>();
+	        } else {
+	            general = to_gap_tensor_factory(p_gap);
+	        }
+	    }
+	}
+
+	std::optional<float> linear;
+	std::optional<pyalign::AffineCost<float>> affine;
+	std::optional<pyalign::GapTensorFactory<float>> general;
+};
+
+inline auto to_gap_cost_options(const py::object p_gap_cost) {
+	py::object gap_s = py::none();
+	py::object gap_t = py::none();
+
+	if (py::isinstance<py::dict>(p_gap_cost)) {
+		const py::dict gap_cost_dict = p_gap_cost.cast<py::dict>();
+
+		if (gap_cost_dict.contains("s")) {
+			gap_s = gap_cost_dict["s"];
+		}
+		if (gap_cost_dict.contains("t")) {
+			gap_t = gap_cost_dict["t"];
+		}
+	} else {
+		gap_s = p_gap_cost;
+		gap_t = p_gap_cost;
+	}
+
+	return std::make_pair<GapCostOptions>(
+		GapCostOptions(gap_s),
+		GapCostOptions(gap_t)
+	);
+}
+
+class GapCosts {
+	const std::pair<GapCostOptions, GapCostOptions> m_options;
+
+public:
+	inline GapCosts(const py::object p_gap_cost) : m_options(
+		to_gap_cost_options(p_gap_cost)) {
+	}
+
+	const GapCostOptions &s() const {
+		return std::get<0>(m_options);
+	}
+
+	const GapCostOptions &t() const {
+		return std::get<1>(m_options);
+	}
+};
+
+class Options {
+public:
+	enum struct Type {
+		ALIGNMENT,
+		DTW
+	};
+
+	enum struct Direction {
+		MINIMIZE,
+		MAXIMIZE
+	};
+
+private:
+	const py::dict m_options;
+	const Type m_type;
+	const bool m_batch;
+	const Direction m_direction;
+
+public:
+	inline Options(
+		const py::dict &p_options) :
+
+		m_options(p_options),
+		m_type(p_options["solver"].cast<Type>()),
+		m_batch(p_options["batch"].cast<bool>()),
+		m_direction(p_options["direction"].cast<Direction>()) {
+	}
+
+	virtual ~Options() {
+	}
+
+	inline py::dict to_dict() {
+		return m_options;
+	}
+
+	inline Type type() const {
+		return m_type;
+	}
+
+	inline bool batch() const {
+		return m_batch;
+	}
+
+	inline Direction direction() const {
+		return m_direction;
+	}
+};
+
+typedef std::shared_ptr<Options> OptionsRef;
+
+class AlignmentOptions : public Options {
+public:
+	enum struct Detail {
+		SCORE,
+		ALIGNMENT,
+		SOLUTION
+	};
+
+	enum struct Count {
+		ONE,
+		ALL
+	};
+
+	enum struct Locality {
+		LOCAL,
+		GLOBAL,
+		SEMIGLOBAL
+	};
+
+private:
+	const Detail m_detail;
+	const Count m_count;
+	const Locality m_locality;
+	const GapCosts m_gap_costs;
+
+public:
+	inline AlignmentOptions(
+		const py::dict &p_options) :
+
+		Options(p_options),
+		m_detail(p_options["codomain"].attr("detail").cast<Detail>()),
+		m_count(p_options["codomain"].attr("count").cast<Count>()),
+		m_locality(p_options.contains("locality") ?
+			p_options["locality"].cast<Locality>() : Locality::LOCAL),
+		m_gap_costs(p_options.contains("gap_cost") ?
+			p_options["gap_cost"] : py::none().cast<py::object>()) {
+	}
+
+	inline Detail detail() const {
+		return m_detail;
+	}
+
+	inline Count count() const {
+		return m_count;
+	}
+
+	inline Locality locality() const {
+		return m_locality;
+	}
+
+	inline const GapCosts &gap_costs() const {
+		return m_gap_costs;
+	}
+};
+
+typedef std::shared_ptr<AlignmentOptions> AlignmentOptionsRef;
+
 struct MaxLength {
 	size_t s;
 	size_t t;
@@ -292,7 +492,7 @@ public:
 	virtual inline ~Solver() {
 	}
 
-	virtual const py::dict &options() const = 0;
+	virtual py::dict options() const = 0;
 
 	virtual int batch_size() const = 0;
 
@@ -477,7 +677,7 @@ struct indexed_matrix_form {
 template<typename CellType, typename ProblemType, typename S>
 class SolverImpl : public Solver {
 private:
-	const py::dict m_options;
+	const OptionsRef m_options;
 	S m_solver;
 
 	template<typename Pairwise>
@@ -594,13 +794,13 @@ public:
 	typedef typename CellType::value_vec_type ValueVec;
 
 	template<typename... Args>
-	inline SolverImpl(const py::dict &p_options, const Args&... args) :
+	inline SolverImpl(const OptionsRef &p_options, const Args&... args) :
 		m_options(p_options),
 		m_solver(args...) {
 	}
 
-	virtual const py::dict &options() const override {
-		return m_options;
+	virtual py::dict options() const override {
+		return m_options->to_dict();
 	}
 
 	virtual int batch_size() const override {
@@ -696,54 +896,10 @@ public:
 		return _solve_for_solution_iterator(
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
-};
 
-inline xt::pytensor<float, 1> zero_gap_tensor(const size_t p_len) {
-	xt::pytensor<float, 1> w;
-	w.resize({static_cast<ssize_t>(p_len)});
-	w.fill(0);
-	return w;
-}
-
-inline pyalign::GapTensorFactory<float> to_gap_tensor_factory(const py::object &p_gap) {
-	if (p_gap.is_none()) {
-		return zero_gap_tensor;
-	} else {
-		auto f = p_gap.attr("costs").cast<std::function<xt::pytensor<float, 1>(size_t)>>();
-		return [f] (const size_t n) {
-			return f(n).cast<xt::xtensor<float, 1>>();
-		};
+	const S &solver() const {
+		return m_solver;
 	}
-}
-
-struct GapCostSpecialCases {
-	inline GapCostSpecialCases(const py::object &p_gap) {
-		if (p_gap.is_none()) {
-			linear = 0.0f;
-		} else {
-	        const py::dict cost = p_gap.attr("to_special_case")().cast<py::dict>();
-
-	        if (cost.contains("affine")) {
-	            // we flip u and v here:
-				//
-	            // * we get (u, v) that specifies w(k) = u + v k, which is the formulation in
-	            // pyalign.gaps (in accordance with Stojmirović et al. and others)
-	            // * AffineCost takes (u, v) as w(k) = u k + v, which is Gotoh's formulation
-
-	            auto affine_tuple = cost["affine"].cast<py::tuple>();
-				affine = pyalign::AffineCost<float>(
-					affine_tuple[1].cast<float>(),
-					affine_tuple[0].cast<float>()
-				);
-
-	        } else if (cost.contains("linear")) {
-	            linear = cost["linear"].cast<float>();
-	        }
-	    }
-	}
-
-	std::optional<float> linear;
-	std::optional<pyalign::AffineCost<float>> affine;
 };
 
 template<typename CellType>
@@ -752,72 +908,53 @@ struct AlignmentSolverFactory {
 	template<template<typename, typename, template<typename, typename> class Locality> class AlignmentSolver,
 		typename Goal, template<typename, typename> class Locality, typename... Args>
 	static SolverRef resolve_direction(
-		const py::dict &p_options,
+		const AlignmentOptionsRef &p_options,
 		const Args&... args) {
 
-		const std::string direction = p_options["direction"].cast<std::string>();
-		print_debug_info("direction: ", direction);
+		switch (p_options->direction()) {
+			case Options::Direction::MAXIMIZE: {
+				typedef pyalign::problem_type<Goal, pyalign::direction::maximize> ProblemType;
+				return std::make_shared<SolverImpl<CellType, ProblemType,
+					AlignmentSolver<CellType, ProblemType, Locality>>>(
+						p_options, args...);
+			} break;
 
-		if (direction == "maximize") {
-			typedef pyalign::problem_type<Goal, pyalign::direction::maximize> ProblemType;
-			return std::make_shared<SolverImpl<CellType, ProblemType,
-				AlignmentSolver<CellType, ProblemType, Locality>>>(
-					p_options, args...);
-		} else if (direction == "minimize") {
-			typedef pyalign::problem_type<Goal, pyalign::direction::minimize> ProblemType;
-			return std::make_shared<SolverImpl<CellType, ProblemType,
-				AlignmentSolver<CellType, ProblemType, Locality>>>(
-					p_options, args...);
-		} else {
-			throw std::invalid_argument(direction);
+			case Options::Direction::MINIMIZE: {
+				typedef pyalign::problem_type<Goal, pyalign::direction::minimize> ProblemType;
+				return std::make_shared<SolverImpl<CellType, ProblemType,
+					AlignmentSolver<CellType, ProblemType, Locality>>>(
+						p_options, args...);
+			} break;
+
+			default: {
+				throw std::invalid_argument("illegal direction");
+			} break;
 		}
 	}
 
 	template<typename Goal, template<typename, typename> class Locality, typename LocalityInitializers>
 	static SolverRef resolve_gap_type(
-		const py::dict &p_options,
+		const AlignmentOptionsRef &p_options,
 		const LocalityInitializers &p_loc_initializers,
 		const MaxLength &p_max_len) {
 
-		const py::object gap_cost = p_options.contains("gap_cost") ?
-			p_options["gap_cost"] : py::none().cast<py::object>();
+		const auto &gap_s = p_options->gap_costs().s();
+		const auto &gap_t = p_options->gap_costs().t();
 
-		print_debug_info("gap cost", "");
-
-		py::object gap_s = py::none();
-		py::object gap_t = py::none();
-
-		if (py::isinstance<py::dict>(gap_cost)) {
-			const py::dict gap_cost_dict = gap_cost.cast<py::dict>();
-
-			if (gap_cost_dict.contains("s")) {
-				gap_s = gap_cost_dict["s"];
-			}
-			if (gap_cost_dict.contains("t")) {
-				gap_t = gap_cost_dict["t"];
-			}
-		} else {
-			gap_s = gap_cost;
-			gap_t = gap_cost;
-		}
-
-		const GapCostSpecialCases x_gap_s(gap_s);
-		const GapCostSpecialCases x_gap_t(gap_t);
-
-		if (x_gap_s.linear.has_value() && x_gap_t.linear.has_value()) {
+		if (gap_s.linear.has_value() && gap_t.linear.has_value()) {
 			return AlignmentSolverFactory::resolve_direction<pyalign::LinearGapCostSolver, Goal, Locality>(
 				p_options,
-				*x_gap_s.linear,
-				*x_gap_t.linear,
+				*gap_s.linear,
+				*gap_t.linear,
 				p_max_len.s,
 				p_max_len.t,
 				p_loc_initializers
 			);
-		} else if (x_gap_s.affine.has_value() && x_gap_t.affine.has_value()) {
+		} else if (gap_s.affine.has_value() && gap_t.affine.has_value()) {
 			return AlignmentSolverFactory::resolve_direction<pyalign::AffineGapCostSolver, Goal, Locality>(
 				p_options,
-				*x_gap_s.affine,
-				*x_gap_t.affine,
+				*gap_s.affine,
+				*gap_t.affine,
 				p_max_len.s,
 				p_max_len.t,
 				p_loc_initializers
@@ -825,8 +962,8 @@ struct AlignmentSolverFactory {
 		} else {
 			return AlignmentSolverFactory::resolve_direction<pyalign::GeneralGapCostSolver, Goal, Locality>(
 				p_options,
-				to_gap_tensor_factory(gap_s),
-				to_gap_tensor_factory(gap_t),
+				*gap_s.general,
+				*gap_s.general,
 				p_max_len.s,
 				p_max_len.t,
 				p_loc_initializers
@@ -836,36 +973,34 @@ struct AlignmentSolverFactory {
 
 	template<typename Goal>
 	static SolverRef resolve_locality(
-		const py::dict &p_options,
+		const AlignmentOptionsRef &p_options,
 		const MaxLength &p_max_len) {
 
-		const std::string locality_name = p_options.contains("locality") ?
-			p_options["locality"].cast<std::string>() : "local";
-		print_debug_info("locality", locality_name);
+		switch (p_options->locality()) {
+			case AlignmentOptions::Locality::LOCAL: {
+				return resolve_gap_type<Goal, pyalign::Local>(
+					p_options,
+					pyalign::LocalInitializers(),
+					p_max_len);
+			} break;
 
-		if (locality_name == "local") {
-			return resolve_gap_type<Goal, pyalign::Local>(
-				p_options,
-				pyalign::LocalInitializers(),
-				p_max_len);
+			case AlignmentOptions::Locality::GLOBAL: {
+				return resolve_gap_type<Goal, pyalign::Global>(
+					p_options,
+					pyalign::GlobalInitializers(),
+					p_max_len);
+			} break;
 
-		} else if (locality_name == "global") {
+			case AlignmentOptions::Locality::SEMIGLOBAL: {
+				return resolve_gap_type<Goal, pyalign::Semiglobal>(
+					p_options,
+					pyalign::SemiglobalInitializers(),
+					p_max_len);
+			} break;
 
-			return resolve_gap_type<Goal, pyalign::Global>(
-				p_options,
-				pyalign::GlobalInitializers(),
-				p_max_len);
-
-		} else if (locality_name == "semiglobal") {
-
-			return resolve_gap_type<Goal, pyalign::Semiglobal>(
-				p_options,
-				pyalign::SemiglobalInitializers(),
-				p_max_len);
-
-		} else {
-
-			throw std::invalid_argument(locality_name);
+			default: {
+				throw std::invalid_argument("invalid locality");
+			} break;
 		}
 	}
 };
@@ -873,102 +1008,130 @@ struct AlignmentSolverFactory {
 template<typename CellType>
 SolverRef create_alignment_solver(
 	const MaxLength &p_max_len,
-	const py::dict &p_options) {
+	const AlignmentOptionsRef &p_options) {
 
-	const auto goal = p_options["goal"];
-	const auto detail = goal.attr("detail").cast<std::string>();
-	const auto count = goal.attr("count").cast<std::string>();
+	switch (p_options->count()) {
+		case AlignmentOptions::Count::ONE: {
 
-	print_debug_info("detail", detail);
-	print_debug_info("count", count);
+			switch (p_options->detail()) {
+				case AlignmentOptions::Detail::SCORE: {
+					return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::optimal_score>(
+						p_options,
+						p_max_len);
+				} break;
 
-	if (count == "one") {
-		if (detail == "score") {
-			return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::optimal_score>(
-				p_options,
-				p_max_len);
-		} else if (detail == "alignment" || detail == "solution") {
-			return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::one_optimal_alignment>(
-				p_options,
-				p_max_len);
-		} else {
-			throw std::invalid_argument(detail);
-		}
-	} else if (count == "all") {
-		if (detail == "alignment" || detail == "solution") {
-			return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::all_optimal_alignments>(
-				p_options,
-				p_max_len);
-		} else {
-			throw std::invalid_argument(detail);
-		}
-	} else {
-		throw std::invalid_argument(count);
+				case AlignmentOptions::Detail::ALIGNMENT:
+				case AlignmentOptions::Detail::SOLUTION: {
+					return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::one_optimal_alignment>(
+						p_options,
+						p_max_len);
+				} break;
+
+				default: {
+					throw std::invalid_argument("invalid detail");
+				} break;
+			}
+		} break;
+
+		case AlignmentOptions::Count::ALL: {
+
+			switch (p_options->detail()) {
+
+				case AlignmentOptions::Detail::SCORE:
+				case AlignmentOptions::Detail::ALIGNMENT:
+				case AlignmentOptions::Detail::SOLUTION: {
+					return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::all_optimal_alignments>(
+						p_options,
+						p_max_len);
+				} break;
+
+				default: {
+					throw std::invalid_argument("invalid detail");
+				} break;
+
+			} break;
+
+		} break;
+
+		default: {
+			throw std::invalid_argument("invalid count");
+		} break;
 	}
 }
 
 template<typename CellType>
 SolverRef create_dtw_solver(
 	const MaxLength &p_max_len,
-	const py::dict &p_options) {
+	const OptionsRef &p_options) {
 
-	const std::string direction = p_options["direction"].cast<std::string>();
-	print_debug_info("direction", direction);
+	switch (p_options->direction()) {
+		case Options::Direction::MAXIMIZE: {
+			typedef pyalign::problem_type<
+				pyalign::goal::one_optimal_alignment,
+				pyalign::direction::maximize> ProblemType;
+			return std::make_shared<SolverImpl<CellType, ProblemType,
+				pyalign::DynamicTimeSolver<CellType, ProblemType>>>(
+					p_options,
+					p_max_len.s,
+					p_max_len.t);
+		} break;
 
-	if (direction == "maximize") {
-		typedef pyalign::problem_type<
-			pyalign::goal::one_optimal_alignment,
-			pyalign::direction::maximize> ProblemType;
-		return std::make_shared<SolverImpl<CellType, ProblemType,
-			pyalign::DynamicTimeSolver<CellType, ProblemType>>>(
-				p_options,
-				p_max_len.s,
-				p_max_len.t);
-	} else if (direction == "minimize") {
-		typedef pyalign::problem_type<
-			pyalign::goal::one_optimal_alignment,
-			pyalign::direction::minimize> ProblemType;
-		return std::make_shared<SolverImpl<CellType, ProblemType,
-			pyalign::DynamicTimeSolver<CellType, ProblemType>>>(
-				p_options,
-				p_max_len.s,
-				p_max_len.t);
-	} else {
-		throw std::invalid_argument(direction);
+		case Options::Direction::MINIMIZE: {
+			typedef pyalign::problem_type<
+				pyalign::goal::one_optimal_alignment,
+				pyalign::direction::minimize> ProblemType;
+			return std::make_shared<SolverImpl<CellType, ProblemType,
+				pyalign::DynamicTimeSolver<CellType, ProblemType>>>(
+					p_options,
+					p_max_len.s,
+					p_max_len.t);
+		} break;
+
+		default: {
+			throw std::invalid_argument("illegal direction");
+		} break;
 	}
 }
 
 SolverRef create_solver(
 	const size_t p_max_len_s,
 	const size_t p_max_len_t,
-	const py::dict &p_options) {
+	const OptionsRef &p_options) {
 
 	const auto max_len = MaxLength{p_max_len_s, p_max_len_t};
 
-	const std::string solver = p_options["solver"].cast<py::str>();
-	const bool batch = p_options["batch"].cast<bool>();
+	switch (p_options->type()) {
+		case Options::Type::ALIGNMENT: {
+			if (p_options->batch()) {
+				return create_alignment_solver<cell_type_batched>(
+					max_len, std::dynamic_pointer_cast<AlignmentOptions>(p_options));
+			} else {
+				return create_alignment_solver<cell_type_nobatch>(
+					max_len, std::dynamic_pointer_cast<AlignmentOptions>(p_options));
+			}
+		} break;
 
-	print_debug_info("solver", solver);
-	print_debug_info("batch", batch);
+		case Options::Type::DTW: {
+			if (p_options->batch()) {
+				return create_dtw_solver<cell_type_batched>(
+					max_len, p_options);
+			} else {
+				return create_dtw_solver<cell_type_nobatch>(
+					max_len, p_options);
+			}
+		} break;
 
-	if (solver == "alignment") {
-		if (batch) {
-			return create_alignment_solver<cell_type_batched>(
-				max_len, p_options);
-		} else {
-			return create_alignment_solver<cell_type_nobatch>(
-				max_len, p_options);
-		}
-	} else if (solver == "dtw") {
-		if (batch) {
-			return create_dtw_solver<cell_type_batched>(
-				max_len, p_options);
-		} else {
-			return create_dtw_solver<cell_type_nobatch>(
-				max_len, p_options);
-		}
+		default: {
+			throw std::invalid_argument("illegal solver type");
+		} break;
+	}
+}
+
+OptionsRef create_options(const py::dict &p_options) {
+	if (p_options["solver"].cast<Options::Type>() == Options::Type::ALIGNMENT) {
+		return std::make_shared<AlignmentOptions>(p_options);
 	} else {
-		throw std::invalid_argument(solver);
+		return std::make_shared<Options>(p_options);
 	}
 }
 
@@ -1016,4 +1179,31 @@ PYBIND11_MODULE(algorithm, m) {
 	algorithm.def_property_readonly("name", &Algorithm::name);
 	algorithm.def_property_readonly("runtime", &Algorithm::runtime);
 	algorithm.def_property_readonly("memory", &Algorithm::memory);
+
+	py::class_<Options, OptionsRef> options(m, "Options");
+	py::class_<AlignmentOptions, Options, AlignmentOptionsRef>
+		alignment_options(m, "AlignmentOptions");
+	m.def("create_options", &create_options);
+
+	py::enum_<Options::Type>(m, "Type")
+        .value("ALIGNMENT", Options::Type::ALIGNMENT)
+        .value("DTW", Options::Type::DTW);
+
+	py::enum_<Options::Direction>(m, "Direction")
+        .value("MINIMIZE", Options::Direction::MINIMIZE)
+        .value("MAXIMIZE", Options::Direction::MAXIMIZE);
+
+	py::enum_<AlignmentOptions::Detail>(m, "Detail")
+        .value("SCORE", AlignmentOptions::Detail::SCORE)
+        .value("ALIGNMENT", AlignmentOptions::Detail::ALIGNMENT)
+        .value("SOLUTION", AlignmentOptions::Detail::SOLUTION);
+
+	py::enum_<AlignmentOptions::Count>(m, "Count")
+        .value("ONE", AlignmentOptions::Count::ONE)
+        .value("ALL", AlignmentOptions::Count::ALL);
+
+	py::enum_<AlignmentOptions::Locality>(m, "Locality")
+        .value("LOCAL", AlignmentOptions::Locality::LOCAL)
+        .value("GLOBAL", AlignmentOptions::Locality::GLOBAL)
+        .value("SEMIGLOBAL", AlignmentOptions::Locality::SEMIGLOBAL);
 }

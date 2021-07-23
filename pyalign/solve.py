@@ -186,13 +186,19 @@ class SolverCache:
 		self.ensure(len_s, len_t)
 		key = (direction, batch)
 		solver = self._solvers.get(key)
+
 		if solver is None:
 			options = self._options.copy()
-			options['direction'] = direction
+			options['direction'] = algorithm.Direction.__members__[direction.upper()]
 			options['batch'] = batch
+
+			parsed_options = algorithm.create_options(options)
+
 			solver = algorithm.create_solver(
-				self._max_lim_s, self._max_lim_t, options)
+				self._max_lim_s, self._max_lim_t, parsed_options)
+
 			self._solvers[batch] = solver
+
 		return solver
 
 
@@ -204,6 +210,8 @@ class Codomain:
 	)
 
 	def __init__(self, type):
+		self._type = type
+
 		if type in Codomain._1:
 			self._base_type = type
 			self._count = "one"
@@ -227,11 +235,11 @@ class Codomain:
 
 	@property
 	def detail(self):
-		return self._base_type.__name__.lower()
+		return algorithm.Detail.__members__[self._base_type.__name__.upper()]
 
 	@property
 	def count(self):
-		return self._count
+		return algorithm.Count.__members__[self._count.upper()]
 
 	@property
 	def key(self):
@@ -307,18 +315,19 @@ def make_list_factory(iterator):
 
 def solver_variants(prefix):
 	data = {
-		("score", "one", None, "optimal"): ("for_score", lambda _1, _2, x: x),
+		(algorithm.Detail.SCORE, algorithm.Count.ONE, None, "optimal"): (
+			"for_score", lambda _1, _2, x: x),
 
-		("alignment", "one", None, "optimal"): ("for_alignment", Alignment),
-		("alignment", "all", "iterator", "optimal"): (
+		(algorithm.Detail.ALIGNMENT, algorithm.Count.ONE, None, "optimal"): ("for_alignment", Alignment),
+		(algorithm.Detail.ALIGNMENT, algorithm.Count.ALL, "iterator", "optimal"): (
 			"for_alignment_iterator", AlignmentIterator),
-		("alignment", "all", "list", "optimal"): (
+		(algorithm.Detail.ALIGNMENT, algorithm.Count.ALL, "list", "optimal"): (
 			"for_alignment_iterator", make_list_factory(AlignmentIterator)),
 
-		("solution", "one", None, "optimal"): ("for_solution", Solution),
-		("solution", "all", "iterator", "optimal"): (
+		(algorithm.Detail.SOLUTION, algorithm.Count.ONE, None, "optimal"): ("for_solution", Solution),
+		(algorithm.Detail.SOLUTION, algorithm.Count.ALL, "iterator", "optimal"): (
 			"for_solution_iterator", SolutionIterator),
-		("solution", "all", "list", "optimal"): (
+		(algorithm.Detail.SOLUTION, algorithm.Count.ALL, "list", "optimal"): (
 			"for_solution_iterator", make_list_factory(SolutionIterator))
 	}
 
@@ -435,7 +444,7 @@ class Solver:
 
 		self._options = dict(
 			gap_cost=gap_cost,
-			goal=self._codomain,
+			codomain=self._codomain,
 			**kwargs)
 
 		self._cache = SolverCache(self._options)
@@ -453,7 +462,6 @@ class Solver:
 
 	def to_codomain(self, codomain):
 		kwargs = self._options.copy()
-		del kwargs['goal']
 		kwargs['codomain'] = codomain
 		return Solver(**kwargs)
 
@@ -468,7 +476,8 @@ class Solver:
 		the solver's optimal batch size, i.e. the number of alignment pairs
 		that can get processed in a single SIMD call on this machine.
 		"""
-		return self._cache.get(1, 1, direction='maximize', batch=True).batch_size
+		return self._cache.get(
+			1, 1, direction=algorithm.Direction.MAXIMIZE, batch=True).batch_size
 
 	def timings(self):
 		return Timings(self)
@@ -523,7 +532,10 @@ class LocalSolver(Solver):
 	"""
 
 	def __init__(self, gap_cost: GapCost = None, **kwargs):
-		super().__init__(solver="alignment", locality="local", gap_cost=gap_cost, **kwargs)
+		super().__init__(
+			solver=algorithm.Type.ALIGNMENT,
+			locality=algorithm.Locality.LOCAL,
+			gap_cost=gap_cost, **kwargs)
 
 
 class GlobalSolver(Solver):
@@ -533,7 +545,10 @@ class GlobalSolver(Solver):
 	"""
 
 	def __init__(self, gap_cost: GapCost = None, **kwargs):
-		super().__init__(solver="alignment", locality="global", gap_cost=gap_cost, **kwargs)
+		super().__init__(
+			solver=algorithm.Type.ALIGNMENT,
+			locality=algorithm.Locality.GLOBAL,
+			gap_cost=gap_cost, **kwargs)
 
 
 class SemiglobalSolver(Solver):
@@ -542,7 +557,10 @@ class SemiglobalSolver(Solver):
 	"""
 
 	def __init__(self, gap_cost: GapCost = None, **kwargs):
-		super().__init__(solver="alignment", locality="semiglobal", gap_cost=gap_cost, **kwargs)
+		super().__init__(
+			solver=algorithm.Type.ALIGNMENT,
+			locality=algorithm.Locality.SEMIGLOBAL,
+			gap_cost=gap_cost, **kwargs)
 
 
 class ElasticSolver(Solver):
@@ -552,4 +570,4 @@ class ElasticSolver(Solver):
 	"""
 
 	def __init__(self, **kwargs):
-		super().__init__(solver="dtw", **kwargs)
+		super().__init__(solver=algorithm.Type.DTW, **kwargs)
