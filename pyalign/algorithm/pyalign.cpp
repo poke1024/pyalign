@@ -902,27 +902,51 @@ public:
 	}
 };
 
-template<typename CellType>
+class SolverImplFactory {
+public:
+	template<
+		typename CellType,
+		typename ProblemType,
+		typename Solver,
+		typename OptionsRef,
+		typename... Args>
+	static SolverRef make(
+		const OptionsRef &p_options,
+		const Args&... args) {
+
+		return std::make_shared<SolverImpl<CellType, ProblemType, Solver>>(
+			p_options, args...);
+	}
+};
+
+template<typename CellType, typename SolverFactory>
 struct AlignmentSolverFactory {
 
-	template<template<typename, typename, template<typename, typename> class Locality> class AlignmentSolver,
-		typename Goal, template<typename, typename> class Locality, typename... Args>
-	static SolverRef resolve_direction(
+	template<
+		template<typename, typename, template<typename, typename> class Locality> class AlignmentSolver,
+		typename Goal,
+		template<typename, typename> class Locality,
+		typename... Args>
+	static auto resolve_direction(
 		const AlignmentOptionsRef &p_options,
 		const Args&... args) {
 
 		switch (p_options->direction()) {
 			case Options::Direction::MAXIMIZE: {
 				typedef pyalign::problem_type<Goal, pyalign::direction::maximize> ProblemType;
-				return std::make_shared<SolverImpl<CellType, ProblemType,
-					AlignmentSolver<CellType, ProblemType, Locality>>>(
+				return SolverFactory::template make<
+					CellType,
+					ProblemType,
+					AlignmentSolver<CellType, ProblemType, Locality>>(
 						p_options, args...);
 			} break;
 
 			case Options::Direction::MINIMIZE: {
 				typedef pyalign::problem_type<Goal, pyalign::direction::minimize> ProblemType;
-				return std::make_shared<SolverImpl<CellType, ProblemType,
-					AlignmentSolver<CellType, ProblemType, Locality>>>(
+				return SolverFactory::template make<
+					CellType,
+					ProblemType,
+					AlignmentSolver<CellType, ProblemType, Locality>>(
 						p_options, args...);
 			} break;
 
@@ -933,7 +957,7 @@ struct AlignmentSolverFactory {
 	}
 
 	template<typename Goal, template<typename, typename> class Locality, typename LocalityInitializers>
-	static SolverRef resolve_gap_type(
+	static auto resolve_gap_type(
 		const AlignmentOptionsRef &p_options,
 		const LocalityInitializers &p_loc_initializers,
 		const MaxLength &p_max_len) {
@@ -972,7 +996,7 @@ struct AlignmentSolverFactory {
 	}
 
 	template<typename Goal>
-	static SolverRef resolve_locality(
+	static auto resolve_locality(
 		const AlignmentOptionsRef &p_options,
 		const MaxLength &p_max_len) {
 
@@ -1005,8 +1029,8 @@ struct AlignmentSolverFactory {
 	}
 };
 
-template<typename CellType>
-SolverRef create_alignment_solver(
+template<typename CellType, typename SolverFactory>
+auto create_alignment_solver(
 	const MaxLength &p_max_len,
 	const AlignmentOptionsRef &p_options) {
 
@@ -1015,14 +1039,14 @@ SolverRef create_alignment_solver(
 
 			switch (p_options->detail()) {
 				case AlignmentOptions::Detail::SCORE: {
-					return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::optimal_score>(
+					return AlignmentSolverFactory<CellType, SolverFactory>::template resolve_locality<pyalign::goal::optimal_score>(
 						p_options,
 						p_max_len);
 				} break;
 
 				case AlignmentOptions::Detail::ALIGNMENT:
 				case AlignmentOptions::Detail::SOLUTION: {
-					return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::one_optimal_alignment>(
+					return AlignmentSolverFactory<CellType, SolverFactory>::template resolve_locality<pyalign::goal::one_optimal_alignment>(
 						p_options,
 						p_max_len);
 				} break;
@@ -1040,7 +1064,7 @@ SolverRef create_alignment_solver(
 				case AlignmentOptions::Detail::SCORE:
 				case AlignmentOptions::Detail::ALIGNMENT:
 				case AlignmentOptions::Detail::SOLUTION: {
-					return AlignmentSolverFactory<CellType>::template resolve_locality<pyalign::goal::all_optimal_alignments>(
+					return AlignmentSolverFactory<CellType, SolverFactory>::template resolve_locality<pyalign::goal::all_optimal_alignments>(
 						p_options,
 						p_max_len);
 				} break;
@@ -1059,8 +1083,8 @@ SolverRef create_alignment_solver(
 	}
 }
 
-template<typename CellType>
-SolverRef create_dtw_solver(
+template<typename CellType, typename SolverFactory>
+auto create_dtw_solver(
 	const MaxLength &p_max_len,
 	const OptionsRef &p_options) {
 
@@ -1069,8 +1093,11 @@ SolverRef create_dtw_solver(
 			typedef pyalign::problem_type<
 				pyalign::goal::one_optimal_alignment,
 				pyalign::direction::maximize> ProblemType;
-			return std::make_shared<SolverImpl<CellType, ProblemType,
-				pyalign::DynamicTimeSolver<CellType, ProblemType>>>(
+
+			return SolverFactory::template make<
+				CellType,
+				ProblemType,
+				pyalign::DynamicTimeSolver<CellType, ProblemType>>(
 					p_options,
 					p_max_len.s,
 					p_max_len.t);
@@ -1080,8 +1107,11 @@ SolverRef create_dtw_solver(
 			typedef pyalign::problem_type<
 				pyalign::goal::one_optimal_alignment,
 				pyalign::direction::minimize> ProblemType;
-			return std::make_shared<SolverImpl<CellType, ProblemType,
-				pyalign::DynamicTimeSolver<CellType, ProblemType>>>(
+
+			return SolverFactory::template make<
+				CellType,
+				ProblemType,
+				pyalign::DynamicTimeSolver<CellType, ProblemType>>(
 					p_options,
 					p_max_len.s,
 					p_max_len.t);
@@ -1093,7 +1123,8 @@ SolverRef create_dtw_solver(
 	}
 }
 
-SolverRef create_solver(
+template<typename SolverFactory>
+auto create_solver_with_factory(
 	const size_t p_max_len_s,
 	const size_t p_max_len_t,
 	const OptionsRef &p_options) {
@@ -1103,20 +1134,20 @@ SolverRef create_solver(
 	switch (p_options->type()) {
 		case Options::Type::ALIGNMENT: {
 			if (p_options->batch()) {
-				return create_alignment_solver<cell_type_batched>(
+				return create_alignment_solver<cell_type_batched, SolverFactory>(
 					max_len, std::dynamic_pointer_cast<AlignmentOptions>(p_options));
 			} else {
-				return create_alignment_solver<cell_type_nobatch>(
+				return create_alignment_solver<cell_type_nobatch, SolverFactory>(
 					max_len, std::dynamic_pointer_cast<AlignmentOptions>(p_options));
 			}
 		} break;
 
 		case Options::Type::DTW: {
 			if (p_options->batch()) {
-				return create_dtw_solver<cell_type_batched>(
+				return create_dtw_solver<cell_type_batched, SolverFactory>(
 					max_len, p_options);
 			} else {
-				return create_dtw_solver<cell_type_nobatch>(
+				return create_dtw_solver<cell_type_nobatch, SolverFactory>(
 					max_len, p_options);
 			}
 		} break;
@@ -1125,6 +1156,17 @@ SolverRef create_solver(
 			throw std::invalid_argument("illegal solver type");
 		} break;
 	}
+}
+
+SolverRef create_solver(
+	const size_t p_max_len_s,
+	const size_t p_max_len_t,
+	const OptionsRef &p_options) {
+
+	return create_solver_with_factory<SolverImplFactory>(
+		p_max_len_s,
+		p_max_len_t,
+		p_options);
 }
 
 OptionsRef create_options(const py::dict &p_options) {
