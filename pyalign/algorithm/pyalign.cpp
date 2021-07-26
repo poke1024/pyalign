@@ -902,8 +902,10 @@ public:
 	}
 };
 
-class SolverImplFactory {
+class MakeSolverImpl {
 public:
+	typedef SolverRef Instance;
+
 	template<
 		typename CellType,
 		typename ProblemType,
@@ -919,35 +921,53 @@ public:
 	}
 };
 
-template<typename CellType, typename SolverFactory>
-struct AlignmentSolverFactory {
+template<typename CellType, typename MakeSolver>
+struct FactoryCreation {
+	typedef typename MakeSolver::Instance SolverInstance;
+	typedef std::function<SolverInstance(size_t, size_t)> Factory;
 
-	template<
-		template<typename, typename, template<typename, typename> class Locality> class AlignmentSolver,
-		typename Goal,
-		template<typename, typename> class Locality,
-		typename... Args>
-	static auto resolve_direction(
-		const AlignmentOptionsRef &p_options,
-		const Args&... args) {
+	static Factory create_dtw_solver_factory(
+		const OptionsRef &p_options) {
 
 		switch (p_options->direction()) {
 			case Options::Direction::MAXIMIZE: {
-				typedef pyalign::problem_type<Goal, pyalign::direction::maximize> ProblemType;
-				return SolverFactory::template make<
-					CellType,
-					ProblemType,
-					AlignmentSolver<CellType, ProblemType, Locality>>(
-						p_options, args...);
+				typedef pyalign::problem_type<
+					pyalign::goal::one_optimal_alignment,
+					pyalign::direction::maximize> ProblemType;
+
+				return [=] (
+					const size_t p_max_len_s,
+					const size_t p_max_len_t) {
+
+					return MakeSolver::template make<
+						CellType,
+						ProblemType,
+						pyalign::DynamicTimeSolver<CellType, ProblemType>>(
+							p_options,
+							p_max_len_s,
+							p_max_len_t);
+
+
+				};
 			} break;
 
 			case Options::Direction::MINIMIZE: {
-				typedef pyalign::problem_type<Goal, pyalign::direction::minimize> ProblemType;
-				return SolverFactory::template make<
-					CellType,
-					ProblemType,
-					AlignmentSolver<CellType, ProblemType, Locality>>(
-						p_options, args...);
+				typedef pyalign::problem_type<
+					pyalign::goal::one_optimal_alignment,
+					pyalign::direction::minimize> ProblemType;
+
+				return [=] (
+					const size_t p_max_len_s,
+					const size_t p_max_len_t) {
+
+					return MakeSolver::template make<
+						CellType,
+						ProblemType,
+						pyalign::DynamicTimeSolver<CellType, ProblemType>>(
+							p_options,
+							p_max_len_s,
+							p_max_len_t);
+				};
 			} break;
 
 			default: {
@@ -956,70 +976,129 @@ struct AlignmentSolverFactory {
 		}
 	}
 
-	template<typename Goal, template<typename, typename> class Locality, typename LocalityInitializers>
-	static auto resolve_gap_type(
+	template<
+		typename ProblemType,
+		template<typename, typename> class Locality,
+		typename LocalityInitializers>
+	static Factory resolve_gap_type(
 		const AlignmentOptionsRef &p_options,
-		const LocalityInitializers &p_loc_initializers,
-		const MaxLength &p_max_len) {
+		const LocalityInitializers &p_loc_initializers) {
 
 		const auto &gap_s = p_options->gap_costs().s();
 		const auto &gap_t = p_options->gap_costs().t();
 
 		if (gap_s.linear.has_value() && gap_t.linear.has_value()) {
-			return AlignmentSolverFactory::resolve_direction<pyalign::LinearGapCostSolver, Goal, Locality>(
-				p_options,
-				*gap_s.linear,
-				*gap_t.linear,
-				p_max_len.s,
-				p_max_len.t,
-				p_loc_initializers
-			);
+			return [=] (
+				const size_t p_max_len_s,
+				const size_t p_max_len_t) {
+
+				const auto &gap_s = p_options->gap_costs().s();
+				const auto &gap_t = p_options->gap_costs().t();
+
+				return MakeSolver::template make<
+					CellType, ProblemType,
+					pyalign::LinearGapCostSolver<CellType, ProblemType, Locality>>(
+						p_options,
+						*gap_s.linear,
+						*gap_t.linear,
+						p_max_len_s,
+						p_max_len_t,
+						p_loc_initializers
+					);
+			};
 		} else if (gap_s.affine.has_value() && gap_t.affine.has_value()) {
-			return AlignmentSolverFactory::resolve_direction<pyalign::AffineGapCostSolver, Goal, Locality>(
-				p_options,
-				*gap_s.affine,
-				*gap_t.affine,
-				p_max_len.s,
-				p_max_len.t,
-				p_loc_initializers
-			);
+			return [=] (
+				const size_t p_max_len_s,
+				const size_t p_max_len_t) {
+
+				const auto &gap_s = p_options->gap_costs().s();
+				const auto &gap_t = p_options->gap_costs().t();
+
+				return MakeSolver::template make<
+					CellType, ProblemType,
+					pyalign::AffineGapCostSolver<CellType, ProblemType, Locality>>(
+						p_options,
+						*gap_s.affine,
+						*gap_t.affine,
+						p_max_len_s,
+						p_max_len_t,
+						p_loc_initializers
+					);
+			};
 		} else {
-			return AlignmentSolverFactory::resolve_direction<pyalign::GeneralGapCostSolver, Goal, Locality>(
-				p_options,
-				*gap_s.general,
-				*gap_s.general,
-				p_max_len.s,
-				p_max_len.t,
-				p_loc_initializers
-			);
+			return [=] (
+				const size_t p_max_len_s,
+				const size_t p_max_len_t) {
+
+				const auto &gap_s = p_options->gap_costs().s();
+				const auto &gap_t = p_options->gap_costs().t();
+
+				return MakeSolver::template make<
+					CellType, ProblemType,
+					pyalign::GeneralGapCostSolver<CellType, ProblemType, Locality>>(
+						p_options,
+						*gap_s.general,
+						*gap_t.general,
+						p_max_len_s,
+						p_max_len_t,
+						p_loc_initializers
+					);
+			};
+		}
+	}
+
+	template<
+		typename Goal,
+		template<typename, typename> class Locality,
+		typename LocalityInitializers>
+	static Factory resolve_direction(
+		const AlignmentOptionsRef &p_options,
+		const LocalityInitializers &p_loc_initializers) {
+
+		switch (p_options->direction()) {
+			case Options::Direction::MAXIMIZE: {
+				typedef pyalign::problem_type<Goal, pyalign::direction::maximize> ProblemType;
+
+				return FactoryCreation::resolve_gap_type<
+					ProblemType, Locality, LocalityInitializers>(
+						p_options, p_loc_initializers);
+			} break;
+
+			case Options::Direction::MINIMIZE: {
+				typedef pyalign::problem_type<Goal, pyalign::direction::minimize> ProblemType;
+
+				return FactoryCreation::resolve_gap_type<
+					ProblemType, Locality, LocalityInitializers>(
+						p_options, p_loc_initializers);
+			} break;
+
+			default: {
+				throw std::invalid_argument("illegal direction");
+			} break;
 		}
 	}
 
 	template<typename Goal>
-	static auto resolve_locality(
-		const AlignmentOptionsRef &p_options,
-		const MaxLength &p_max_len) {
+	static Factory resolve_locality(
+		const AlignmentOptionsRef &p_options) {
 
 		switch (p_options->locality()) {
 			case AlignmentOptions::Locality::LOCAL: {
-				return resolve_gap_type<Goal, pyalign::Local>(
+				return resolve_direction<Goal, pyalign::Local>(
 					p_options,
-					pyalign::LocalInitializers(),
-					p_max_len);
+					pyalign::LocalInitializers());
 			} break;
 
 			case AlignmentOptions::Locality::GLOBAL: {
-				return resolve_gap_type<Goal, pyalign::Global>(
+				return resolve_direction<Goal, pyalign::Global>(
 					p_options,
-					pyalign::GlobalInitializers(),
-					p_max_len);
+					pyalign::GlobalInitializers());
 			} break;
 
 			case AlignmentOptions::Locality::SEMIGLOBAL: {
-				return resolve_gap_type<Goal, pyalign::Semiglobal>(
+				return resolve_direction<Goal, pyalign::Semiglobal>(
 					p_options,
-					pyalign::SemiglobalInitializers(),
-					p_max_len);
+					pyalign::SemiglobalInitializers());
 			} break;
 
 			default: {
@@ -1027,128 +1106,84 @@ struct AlignmentSolverFactory {
 			} break;
 		}
 	}
-};
 
-template<typename CellType, typename SolverFactory>
-auto create_alignment_solver(
-	const MaxLength &p_max_len,
-	const AlignmentOptionsRef &p_options) {
+	static Factory create_alignment_solver_factory(
+		const AlignmentOptionsRef &p_options) {
 
-	switch (p_options->count()) {
-		case AlignmentOptions::Count::ONE: {
+		switch (p_options->count()) {
+			case AlignmentOptions::Count::ONE: {
 
-			switch (p_options->detail()) {
-				case AlignmentOptions::Detail::SCORE: {
-					return AlignmentSolverFactory<CellType, SolverFactory>::template resolve_locality<pyalign::goal::optimal_score>(
-						p_options,
-						p_max_len);
-				} break;
+				switch (p_options->detail()) {
+					case AlignmentOptions::Detail::SCORE: {
+						return FactoryCreation::
+							template resolve_locality<pyalign::goal::optimal_score>(
+								p_options);
+					} break;
 
-				case AlignmentOptions::Detail::ALIGNMENT:
-				case AlignmentOptions::Detail::SOLUTION: {
-					return AlignmentSolverFactory<CellType, SolverFactory>::template resolve_locality<pyalign::goal::one_optimal_alignment>(
-						p_options,
-						p_max_len);
-				} break;
+					case AlignmentOptions::Detail::ALIGNMENT:
+					case AlignmentOptions::Detail::SOLUTION: {
+						return FactoryCreation::
+							template resolve_locality<pyalign::goal::one_optimal_alignment>(
+								p_options);
+					} break;
 
-				default: {
-					throw std::invalid_argument("invalid detail");
-				} break;
-			}
-		} break;
+					default: {
+						throw std::invalid_argument("invalid detail");
+					} break;
+				}
+			} break;
 
-		case AlignmentOptions::Count::ALL: {
+			case AlignmentOptions::Count::ALL: {
 
-			switch (p_options->detail()) {
+				switch (p_options->detail()) {
 
-				case AlignmentOptions::Detail::SCORE:
-				case AlignmentOptions::Detail::ALIGNMENT:
-				case AlignmentOptions::Detail::SOLUTION: {
-					return AlignmentSolverFactory<CellType, SolverFactory>::template resolve_locality<pyalign::goal::all_optimal_alignments>(
-						p_options,
-						p_max_len);
-				} break;
+					case AlignmentOptions::Detail::SCORE:
+					case AlignmentOptions::Detail::ALIGNMENT:
+					case AlignmentOptions::Detail::SOLUTION: {
+						return FactoryCreation::
+							template resolve_locality<pyalign::goal::all_optimal_alignments>(
+								p_options);
+					} break;
 
-				default: {
-					throw std::invalid_argument("invalid detail");
+					default: {
+						throw std::invalid_argument("invalid detail");
+					} break;
+
 				} break;
 
 			} break;
 
-		} break;
-
-		default: {
-			throw std::invalid_argument("invalid count");
-		} break;
+			default: {
+				throw std::invalid_argument("invalid count");
+			} break;
+		}
 	}
-}
+};
 
-template<typename CellType, typename SolverFactory>
-auto create_dtw_solver(
-	const MaxLength &p_max_len,
+template<typename MakeSolver>
+auto create_solver_factory(
 	const OptionsRef &p_options) {
-
-	switch (p_options->direction()) {
-		case Options::Direction::MAXIMIZE: {
-			typedef pyalign::problem_type<
-				pyalign::goal::one_optimal_alignment,
-				pyalign::direction::maximize> ProblemType;
-
-			return SolverFactory::template make<
-				CellType,
-				ProblemType,
-				pyalign::DynamicTimeSolver<CellType, ProblemType>>(
-					p_options,
-					p_max_len.s,
-					p_max_len.t);
-		} break;
-
-		case Options::Direction::MINIMIZE: {
-			typedef pyalign::problem_type<
-				pyalign::goal::one_optimal_alignment,
-				pyalign::direction::minimize> ProblemType;
-
-			return SolverFactory::template make<
-				CellType,
-				ProblemType,
-				pyalign::DynamicTimeSolver<CellType, ProblemType>>(
-					p_options,
-					p_max_len.s,
-					p_max_len.t);
-		} break;
-
-		default: {
-			throw std::invalid_argument("illegal direction");
-		} break;
-	}
-}
-
-template<typename SolverFactory>
-auto create_solver_with_factory(
-	const size_t p_max_len_s,
-	const size_t p_max_len_t,
-	const OptionsRef &p_options) {
-
-	const auto max_len = MaxLength{p_max_len_s, p_max_len_t};
 
 	switch (p_options->type()) {
 		case Options::Type::ALIGNMENT: {
 			if (p_options->batch()) {
-				return create_alignment_solver<cell_type_batched, SolverFactory>(
-					max_len, std::dynamic_pointer_cast<AlignmentOptions>(p_options));
+				return FactoryCreation<cell_type_batched, MakeSolver>::
+					create_alignment_solver_factory(
+						std::dynamic_pointer_cast<AlignmentOptions>(p_options));
 			} else {
-				return create_alignment_solver<cell_type_nobatch, SolverFactory>(
-					max_len, std::dynamic_pointer_cast<AlignmentOptions>(p_options));
+				return FactoryCreation<cell_type_nobatch, MakeSolver>::
+					create_alignment_solver_factory(
+						std::dynamic_pointer_cast<AlignmentOptions>(p_options));
 			}
 		} break;
 
 		case Options::Type::DTW: {
 			if (p_options->batch()) {
-				return create_dtw_solver<cell_type_batched, SolverFactory>(
-					max_len, p_options);
+				return FactoryCreation<cell_type_batched, MakeSolver>::
+					create_dtw_solver_factory(p_options);
 			} else {
-				return create_dtw_solver<cell_type_nobatch, SolverFactory>(
-					max_len, p_options);
+				return FactoryCreation<cell_type_nobatch, MakeSolver>::
+					create_dtw_solver_factory(p_options);
 			}
 		} break;
 
@@ -1163,10 +1198,10 @@ SolverRef create_solver(
 	const size_t p_max_len_t,
 	const OptionsRef &p_options) {
 
-	return create_solver_with_factory<SolverImplFactory>(
-		p_max_len_s,
-		p_max_len_t,
+	const auto factory = create_solver_factory<MakeSolverImpl>(
 		p_options);
+
+	return factory(p_max_len_s, p_max_len_t);
 }
 
 OptionsRef create_options(const py::dict &p_options) {
