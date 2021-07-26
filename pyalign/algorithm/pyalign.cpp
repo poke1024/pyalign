@@ -674,11 +674,11 @@ struct indexed_matrix_form {
 	}
 };
 
-template<typename CellType, typename ProblemType, typename S>
+template<typename CellType, typename ProblemType, typename Algorithm>
 class SolverImpl : public Solver {
 private:
 	const OptionsRef m_options;
-	S m_solver;
+	Algorithm m_algorithm;
 
 	template<typename Pairwise>
 	inline xt::pytensor<float, 1> _solve_for_score(
@@ -689,8 +689,8 @@ private:
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
-			m_solver.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
-			scores = m_solver.score(p_pairwise.len_s(), p_pairwise.len_t());
+			m_algorithm.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
+			scores = m_algorithm.score(p_pairwise.len_s(), p_pairwise.len_t());
 		}
 
 		return scores;
@@ -705,9 +705,9 @@ private:
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
-			m_solver.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
+			m_algorithm.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
 
-			m_solver.template alignment<pyalign::SharedPtrFactory<Alignment>>(
+			m_algorithm.template alignment<pyalign::SharedPtrFactory<Alignment>>(
 				p_pairwise.len_s(), p_pairwise.len_t(), alignments);
 		}
 
@@ -723,12 +723,13 @@ private:
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
-			m_solver.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
+			m_algorithm.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
 
 			size_t i = 0;
-			for (auto iterator : m_solver.template alignment_iterator<pyalign::SharedPtrFactory<Alignment>>(
+			for (auto iterator : m_algorithm.template alignment_iterator<pyalign::SharedPtrFactory<Alignment>>(
 				p_pairwise.len_s(), p_pairwise.len_t())) {
-				iterators.at(i++) = std::make_shared<AlignmentIteratorImpl<typename S::locality_type>>(iterator);
+				iterators.at(i++) = std::make_shared<AlignmentIteratorImpl<
+					typename Algorithm::locality_type>>(iterator);
 			}
 		}
 
@@ -744,18 +745,18 @@ private:
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
-			m_solver.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
+			m_algorithm.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
 
 			std::array<std::shared_ptr<NativeSolution<CellType, ProblemType>>, CellType::batch_size> sol0;
 
-			m_solver.template solution<
+			m_algorithm.template solution<
 				pyalign::SharedPtrFactory<Alignment>,
 				pyalign::SharedPtrFactory<NativeSolution<CellType, ProblemType>>>(
 					p_pairwise.len_s(),
 					p_pairwise.len_t(),
 					sol0);
 
-			for (int batch_i = 0; batch_i < m_solver.batch_size(); batch_i++) {
+			for (int batch_i = 0; batch_i < m_algorithm.batch_size(); batch_i++) {
 				solutions[batch_i] = std::make_shared<SolutionImpl<CellType, ProblemType>>(
 					sol0[batch_i]);
 			}
@@ -773,16 +774,16 @@ private:
 		{
 			py::gil_scoped_release release;
 			p_pairwise.check();
-			m_solver.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
+			m_algorithm.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
 
 			size_t i = 0;
-			for (auto iterator : m_solver.template solution_iterator<
+			for (auto iterator : m_algorithm.template solution_iterator<
 				pyalign::SharedPtrFactory<Alignment>,
 				pyalign::SharedPtrFactory<NativeSolution<CellType, ProblemType>>>(
 				p_pairwise.len_s(), p_pairwise.len_t())) {
 
 				iterators.at(i++) = std::make_shared<SolutionIteratorImpl<
-					typename S::locality_type>>(iterator);
+					typename Algorithm::locality_type>>(iterator);
 			}
 		}
 
@@ -796,7 +797,7 @@ public:
 	template<typename... Args>
 	inline SolverImpl(const OptionsRef &p_options, const Args&... args) :
 		m_options(p_options),
-		m_solver(args...) {
+		m_algorithm(args...) {
 	}
 
 	virtual py::dict options() const override {
@@ -804,7 +805,7 @@ public:
 	}
 
 	virtual int batch_size() const override {
-		return m_solver.batch_size();
+		return m_algorithm.batch_size();
 	}
 
 	virtual xt::pytensor<float, 1> solve_for_score(
@@ -897,8 +898,8 @@ public:
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
 
-	const S &solver() const {
-		return m_solver;
+	const Algorithm &algorithm() const {
+		return m_algorithm;
 	}
 };
 
