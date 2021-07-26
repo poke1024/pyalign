@@ -910,15 +910,13 @@ public:
 	template<
 		typename CellType,
 		typename ProblemType,
-		typename Solver,
-		typename OptionsRef,
+		typename Algorithm,
 		typename... Args>
 	static SolverRef make(
-		const OptionsRef &p_options,
 		const Args&... args) {
 
-		return std::make_shared<SolverImpl<CellType, ProblemType, Solver>>(
-			p_options, args...);
+		return std::make_shared<SolverImpl<CellType, ProblemType, Algorithm>>(
+			args...);
 	}
 };
 
