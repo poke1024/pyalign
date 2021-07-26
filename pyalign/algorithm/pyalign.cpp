@@ -674,8 +674,12 @@ struct indexed_matrix_form {
 	}
 };
 
-template<typename CellType, typename ProblemType, typename Algorithm>
+template<typename Algorithm>
 class SolverImpl : public Solver {
+public:
+	typedef typename Algorithm::cell_type CellType;
+	typedef typename Algorithm::problem_type ProblemType;
+
 private:
 	const OptionsRef m_options;
 	Algorithm m_algorithm;
@@ -903,29 +907,65 @@ public:
 	}
 };
 
+class SolverFactory {
+public:
+	virtual ~SolverFactory() {
+	}
+
+	virtual SolverRef make(
+		const size_t p_max_len_s,
+		const size_t p_max_len_t) = 0;
+};
+
+typedef std::shared_ptr<SolverFactory> SolverFactoryRef;
+
+template<typename Generator>
+class SolverFactoryImpl : public SolverFactory {
+	const Generator m_generator;
+
+public:
+	inline SolverFactoryImpl(
+		const Generator &p_generator) :
+
+		m_generator(p_generator) {
+	}
+
+	virtual SolverRef make(
+		const size_t p_max_len_s,
+		const size_t p_max_len_t) {
+
+		return m_generator(p_max_len_s, p_max_len_t);
+	}
+};
+
 class MakeSolverImpl {
 public:
-	typedef SolverRef Instance;
-
 	template<
-		typename CellType,
-		typename ProblemType,
 		typename Algorithm,
+		typename Options,
 		typename... Args>
-	static SolverRef make(
-		const Args&... args) {
+	static SolverFactoryRef make(
+		const Options &p_options,
+		const Args&... p_args) {
 
-		return std::make_shared<SolverImpl<CellType, ProblemType, Algorithm>>(
-			args...);
+		const auto gen = [=](
+			const size_t p_max_len_s,
+			const size_t p_max_len_t) {
+
+			return std::make_shared<SolverImpl<Algorithm>>(
+				p_options,
+				p_max_len_s,
+				p_max_len_t,
+				p_args...);
+		};
+
+		return std::make_shared<SolverFactoryImpl<decltype(gen)>>(gen);
 	}
 };
 
 template<typename CellType, typename MakeSolver>
 struct FactoryCreation {
-	typedef typename MakeSolver::Instance SolverInstance;
-	typedef std::function<SolverInstance(size_t, size_t)> Factory;
-
-	static Factory create_dtw_solver_factory(
+	static auto create_dtw_solver_factory(
 		const OptionsRef &p_options) {
 
 		switch (p_options->direction()) {
@@ -934,20 +974,8 @@ struct FactoryCreation {
 					pyalign::goal::one_optimal_alignment,
 					pyalign::direction::maximize> ProblemType;
 
-				return [=] (
-					const size_t p_max_len_s,
-					const size_t p_max_len_t) {
-
-					return MakeSolver::template make<
-						CellType,
-						ProblemType,
-						pyalign::DynamicTimeSolver<CellType, ProblemType>>(
-							p_options,
-							p_max_len_s,
-							p_max_len_t);
-
-
-				};
+				return MakeSolver::template make<
+					pyalign::DynamicTimeSolver<CellType, ProblemType>>(p_options);
 			} break;
 
 			case Options::Direction::MINIMIZE: {
@@ -955,18 +983,8 @@ struct FactoryCreation {
 					pyalign::goal::one_optimal_alignment,
 					pyalign::direction::minimize> ProblemType;
 
-				return [=] (
-					const size_t p_max_len_s,
-					const size_t p_max_len_t) {
-
-					return MakeSolver::template make<
-						CellType,
-						ProblemType,
-						pyalign::DynamicTimeSolver<CellType, ProblemType>>(
-							p_options,
-							p_max_len_s,
-							p_max_len_t);
-				};
+				return MakeSolver::template make<
+					pyalign::DynamicTimeSolver<CellType, ProblemType>>(p_options);
 			} break;
 
 			default: {
@@ -979,7 +997,7 @@ struct FactoryCreation {
 		typename ProblemType,
 		template<typename, typename> class Locality,
 		typename LocalityInitializers>
-	static Factory resolve_gap_type(
+	static auto resolve_gap_type(
 		const AlignmentOptionsRef &p_options,
 		const LocalityInitializers &p_loc_initializers) {
 
@@ -987,62 +1005,28 @@ struct FactoryCreation {
 		const auto &gap_t = p_options->gap_costs().t();
 
 		if (gap_s.linear.has_value() && gap_t.linear.has_value()) {
-			return [=] (
-				const size_t p_max_len_s,
-				const size_t p_max_len_t) {
-
-				const auto &gap_s = p_options->gap_costs().s();
-				const auto &gap_t = p_options->gap_costs().t();
-
-				return MakeSolver::template make<
-					CellType, ProblemType,
-					pyalign::LinearGapCostSolver<CellType, ProblemType, Locality>>(
-						p_options,
-						*gap_s.linear,
-						*gap_t.linear,
-						p_max_len_s,
-						p_max_len_t,
-						p_loc_initializers
-					);
-			};
+			return MakeSolver::template make<
+				pyalign::LinearGapCostSolver<CellType, ProblemType, Locality>>(
+					p_options,
+					*gap_s.linear,
+					*gap_t.linear,
+					p_loc_initializers);
 		} else if (gap_s.affine.has_value() && gap_t.affine.has_value()) {
-			return [=] (
-				const size_t p_max_len_s,
-				const size_t p_max_len_t) {
-
-				const auto &gap_s = p_options->gap_costs().s();
-				const auto &gap_t = p_options->gap_costs().t();
-
-				return MakeSolver::template make<
-					CellType, ProblemType,
-					pyalign::AffineGapCostSolver<CellType, ProblemType, Locality>>(
-						p_options,
-						*gap_s.affine,
-						*gap_t.affine,
-						p_max_len_s,
-						p_max_len_t,
-						p_loc_initializers
-					);
-			};
+			return MakeSolver::template make<
+				pyalign::AffineGapCostSolver<CellType, ProblemType, Locality>>(
+					p_options,
+					*gap_s.affine,
+					*gap_t.affine,
+					p_loc_initializers
+				);
 		} else {
-			return [=] (
-				const size_t p_max_len_s,
-				const size_t p_max_len_t) {
-
-				const auto &gap_s = p_options->gap_costs().s();
-				const auto &gap_t = p_options->gap_costs().t();
-
-				return MakeSolver::template make<
-					CellType, ProblemType,
-					pyalign::GeneralGapCostSolver<CellType, ProblemType, Locality>>(
-						p_options,
-						*gap_s.general,
-						*gap_t.general,
-						p_max_len_s,
-						p_max_len_t,
-						p_loc_initializers
-					);
-			};
+			return MakeSolver::template make<
+				pyalign::GeneralGapCostSolver<CellType, ProblemType, Locality>>(
+					p_options,
+					*gap_s.general,
+					*gap_t.general,
+					p_loc_initializers
+				);
 		}
 	}
 
@@ -1050,7 +1034,7 @@ struct FactoryCreation {
 		typename Goal,
 		template<typename, typename> class Locality,
 		typename LocalityInitializers>
-	static Factory resolve_direction(
+	static auto resolve_direction(
 		const AlignmentOptionsRef &p_options,
 		const LocalityInitializers &p_loc_initializers) {
 
@@ -1078,7 +1062,7 @@ struct FactoryCreation {
 	}
 
 	template<typename Goal>
-	static Factory resolve_locality(
+	static auto resolve_locality(
 		const AlignmentOptionsRef &p_options) {
 
 		switch (p_options->locality()) {
@@ -1106,7 +1090,7 @@ struct FactoryCreation {
 		}
 	}
 
-	static Factory create_alignment_solver_factory(
+	static auto create_alignment_solver_factory(
 		const AlignmentOptionsRef &p_options) {
 
 		switch (p_options->count()) {
@@ -1200,7 +1184,7 @@ SolverRef create_solver(
 	const auto factory = create_solver_factory<MakeSolverImpl>(
 		p_options);
 
-	return factory(p_max_len_s, p_max_len_t);
+	return factory->make(p_max_len_s, p_max_len_t);
 }
 
 OptionsRef create_options(const py::dict &p_options) {

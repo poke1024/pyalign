@@ -2358,6 +2358,9 @@ struct SharedPtrFactory {
 template<typename CellType, typename ProblemType, template<typename, typename> class Locality>
 class Solver {
 public:
+	typedef CellType cell_type;
+	typedef ProblemType problem_type;
+
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::value_vec_type ValueVec;
 	typedef typename CellType::index_type Index;
@@ -2577,10 +2580,10 @@ public:
 	typedef Value GapCostSpec;
 
 	inline LinearGapCostSolver(
-		const Value p_gap_cost_s,
-		const Value p_gap_cost_t,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
+		const Value p_gap_cost_s,
+		const Value p_gap_cost_t,
 		const LocalityInit p_locality_init = LocalityInit()) :
 
 		AlignmentSolver<CellType, ProblemType, Locality>(
@@ -2688,10 +2691,10 @@ private:
 
 public:
 	inline AffineGapCostSolver(
-		const Cost &p_gap_cost_s,
-		const Cost &p_gap_cost_t,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
+		const Cost &p_gap_cost_s,
+		const Cost &p_gap_cost_t,
 		const LocalityInit p_locality_init = LocalityInit()) :
 
 		AlignmentSolver<CellType, ProblemType, Locality>(
@@ -2862,10 +2865,10 @@ public:
 	typedef GapTensorFactory<Value> GapCostSpec;
 
 	inline GeneralGapCostSolver(
-		const GapTensorFactory<Value> &p_gap_cost_s,
-		const GapTensorFactory<Value> &p_gap_cost_t,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
+		const GapTensorFactory<Value> &p_gap_cost_s,
+		const GapTensorFactory<Value> &p_gap_cost_t,
 		const LocalityInit p_locality_init = LocalityInit()) :
 
 		AlignmentSolver<CellType, ProblemType, Locality>(
