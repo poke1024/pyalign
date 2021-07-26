@@ -29,11 +29,14 @@ if sys.platform == 'darwin':
 def mk_ext(name, march):
 	extra_compile_args = []
 
+	is_debug_build = (os.environ.get("PYALIGN_DEBUG_BUILD") == 1)
+
 	if os.name == 'nt':
 		pass
 	else:
+		if not is_debug_build:
+			extra_compile_args.append("-O3")
 		extra_compile_args.extend([
-			"-O3",
 			"-ftemplate-backtrace-limit=0"])
 		if march is not None:
 			extra_compile_args.append(f"-march={march}")
