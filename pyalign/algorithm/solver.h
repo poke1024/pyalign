@@ -2686,6 +2686,10 @@ struct AffineCost {
 	inline AffineCost(Value p_u, Value p_v) : u(p_u), v(p_v) {
 	}
 
+	inline Value at(const size_t k) const {
+		return u * k + v;
+	}
+
 	inline Value w1() const {
 		return u + v; // i.e. w(1)
 	}
@@ -2848,6 +2852,14 @@ public:
 				}
 			}
 		}
+	}
+
+	inline value_type gap_cost_s(const size_t len) const {
+		return m_gap_cost_s.at(len);
+	}
+
+	inline value_type gap_cost_t(const size_t len) const {
+		return m_gap_cost_t.at(len);
 	}
 };
 
@@ -3055,6 +3067,14 @@ public:
 				.done();
 			}
 		}
+	}
+
+	inline value_type gap_cost_s(const size_t len) const {
+		return 0;
+	}
+
+	inline value_type gap_cost_t(const size_t len) const {
+		return 0;
 	}
 };
 
