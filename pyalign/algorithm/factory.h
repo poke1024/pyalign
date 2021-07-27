@@ -18,10 +18,11 @@ inline core::GapTensorFactory<float> to_gap_tensor_factory(const py::object &p_g
 	if (p_gap.is_none()) {
 		return zero_gap_tensor;
 	} else {
-		auto f = p_gap.attr("costs").cast<std::function<xt::pytensor<float, 1>(size_t)>>();
+		const auto f = p_gap.attr("costs").cast<std::function<xt::pytensor<float, 1>(size_t)>>();
 		return [f] (const size_t n) {
 			py::gil_scoped_acquire acquire;
-			return f(n).cast<xt::xtensor<float, 1>>();
+			const xt::xtensor<float, 1> costs = f(n);
+			return costs;
 		};
 	}
 }
