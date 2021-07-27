@@ -20,7 +20,7 @@ sources = [
 	src_path / 'pyalign.cpp'
 ]
 
-include_dirs = [Path(np.get_include()), src_path]
+include_dirs = [Path(np.get_include()), script_dir]
 
 if sys.platform == 'darwin':
 	cc = os.environ.get("CC")

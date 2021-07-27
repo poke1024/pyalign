@@ -1,4 +1,4 @@
-#include "factory.h"
+#include "pyalign/algorithm/factory.h"
 
 namespace pyalign {
 
