@@ -1,14 +1,7 @@
-#ifndef __PYALIGN_SOLVER__
-#define __PYALIGN_SOLVER__
+#ifndef __PYALIGN_SOLVER_H__
+#define __PYALIGN_SOLVER_H__ 1
 
-#define XTENSOR_USE_XSIMD 1
-
-#include <xtensor/xarray.hpp>
-#include <xtensor/xmath.hpp>
-#include <xtensor/xview.hpp>
-#include <xtensor/xfixed.hpp>
-#include <xtensor/xsort.hpp>
-
+#include "pyalign.h"
 #include <stack>
 
 namespace pyalign {
@@ -3048,4 +3041,4 @@ public:
 } // namespace core
 } // namespace pyalign
 
-#endif // __PYALIGN_SOLVER__
+#endif // __PYALIGN_SOLVER_H__

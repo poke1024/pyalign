@@ -1,5 +1,6 @@
 #define FORCE_IMPORT_ARRAY
 
+#include "pyalign.h"
 #include "factory.h"
 
 namespace py = pybind11;

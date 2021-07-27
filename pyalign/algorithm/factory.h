@@ -1,8 +1,5 @@
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
-#include <pybind11/functional.h>
-
-#include <xtensor-python/pytensor.hpp>
+#ifndef __PYALIGN_FACTORY_H__
+#define __PYALIGN_FACTORY_H__ 1
 
 #include "solver.h"
 
@@ -1186,3 +1183,5 @@ auto create_solver_factory(
 }
 
 } // pyalign
+
+#endif // __PYALIGN_FACTORY_H__
