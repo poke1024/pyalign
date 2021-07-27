@@ -7,26 +7,29 @@ namespace pyalign {
 
 namespace py = pybind11;
 
-inline xt::xtensor<float, 1> zero_gap_tensor(const size_t p_len) {
-	xt::xtensor<float, 1> w;
+template<typename Value>
+xt::xtensor<Value, 1> zero_gap_tensor(const size_t p_len) {
+	xt::xtensor<Value, 1> w;
 	w.resize({p_len});
 	w.fill(0);
 	return w;
 }
 
-inline core::GapTensorFactory<float> to_gap_tensor_factory(const py::object &p_gap) {
+template<typename Value>
+core::GapTensorFactory<Value> to_gap_tensor_factory(const py::object &p_gap) {
 	if (p_gap.is_none()) {
-		return zero_gap_tensor;
+		return zero_gap_tensor<Value>;
 	} else {
-		const auto f = p_gap.attr("costs").cast<std::function<xt::pytensor<float, 1>(size_t)>>();
+		const auto f = p_gap.attr("costs").cast<std::function<xt::pytensor<Value, 1>(size_t)>>();
 		return [f] (const size_t n) {
 			py::gil_scoped_acquire acquire;
-			const xt::xtensor<float, 1> costs = f(n);
+			const xt::xtensor<Value, 1> costs = f(n);
 			return costs;
 		};
 	}
 }
 
+template<typename Value>
 struct GapCostOptions {
 	inline GapCostOptions(const py::object &p_gap) {
 		if (p_gap.is_none()) {
@@ -42,25 +45,26 @@ struct GapCostOptions {
 	            // * AffineCost takes (u, v) as w(k) = u k + v, which is Gotoh's formulation
 
 	            auto affine_tuple = cost["affine"].cast<py::tuple>();
-				affine = core::AffineCost<float>(
-					affine_tuple[1].cast<float>(),
-					affine_tuple[0].cast<float>()
+				affine = core::AffineCost<Value>(
+					affine_tuple[1].cast<Value>(),
+					affine_tuple[0].cast<Value>()
 				);
 
 	        } else if (cost.contains("linear")) {
-	            linear = cost["linear"].cast<float>();
+	            linear = cost["linear"].cast<Value>();
 	        } else {
-	            general = to_gap_tensor_factory(p_gap);
+	            general = to_gap_tensor_factory<Value>(p_gap);
 	        }
 	    }
 	}
 
-	std::optional<float> linear;
-	std::optional<core::AffineCost<float>> affine;
-	std::optional<core::GapTensorFactory<float>> general;
+	std::optional<Value> linear;
+	std::optional<core::AffineCost<Value>> affine;
+	std::optional<core::GapTensorFactory<Value>> general;
 };
 
-inline auto to_gap_cost_options(const py::object p_gap_cost) {
+template<typename Value>
+auto to_gap_cost_options(const py::object p_gap_cost) {
 	py::object gap_s = py::none();
 	py::object gap_t = py::none();
 
@@ -78,25 +82,26 @@ inline auto to_gap_cost_options(const py::object p_gap_cost) {
 		gap_t = p_gap_cost;
 	}
 
-	return std::make_pair<GapCostOptions>(
-		GapCostOptions(gap_s),
-		GapCostOptions(gap_t)
+	return std::make_pair<GapCostOptions<Value>>(
+		GapCostOptions<Value>(gap_s),
+		GapCostOptions<Value>(gap_t)
 	);
 }
 
+template<typename Value>
 class GapCosts {
-	const std::pair<GapCostOptions, GapCostOptions> m_options;
+	const std::pair<GapCostOptions<Value>, GapCostOptions<Value>> m_options;
 
 public:
 	inline GapCosts(const py::object p_gap_cost) : m_options(
-		to_gap_cost_options(p_gap_cost)) {
+		to_gap_cost_options<Value>(p_gap_cost)) {
 	}
 
-	const GapCostOptions &s() const {
+	const GapCostOptions<Value> &s() const {
 		return std::get<0>(m_options);
 	}
 
-	const GapCostOptions &t() const {
+	const GapCostOptions<Value> &t() const {
 		return std::get<1>(m_options);
 	}
 };
@@ -446,6 +451,7 @@ public:
 
 typedef std::shared_ptr<Options> OptionsRef;
 
+template<typename Value>
 class AlignmentOptions : public Options {
 public:
 	enum struct Detail {
@@ -469,7 +475,7 @@ private:
 	const Detail m_detail;
 	const Count m_count;
 	const Locality m_locality;
-	const GapCosts m_gap_costs;
+	const GapCosts<Value> m_gap_costs;
 
 public:
 	inline AlignmentOptions(
@@ -496,15 +502,24 @@ public:
 		return m_locality;
 	}
 
-	inline const GapCosts &gap_costs() const {
+	inline const GapCosts<Value> &gap_costs() const {
 		return m_gap_costs;
 	}
 };
 
-typedef std::shared_ptr<AlignmentOptions> AlignmentOptionsRef;
+template<typename Value>
+using AlignmentOptionsRef = std::shared_ptr<AlignmentOptions<Value>>;
 
-OptionsRef create_options(const py::dict &p_options);
+template<typename Value>
+OptionsRef create_options(const py::dict &p_options) {
+	if (p_options["solver"].cast<Options::Type>() == Options::Type::ALIGNMENT) {
+		return std::make_shared<AlignmentOptions<Value>>(p_options);
+	} else {
+		return std::make_shared<Options>(p_options);
+	}
+}
 
+template<typename Value, typename Index>
 class Solver {
 public:
 	virtual inline ~Solver() {
@@ -514,67 +529,69 @@ public:
 
 	virtual int batch_size() const = 0;
 
-	virtual xt::pytensor<float, 1> solve_for_score(
-		const xt::pytensor<float, 3> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
+	virtual xt::pytensor<Value, 1> solve_for_score(
+		const xt::pytensor<Value, 3> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 
-	virtual xt::pytensor<float, 1> solve_indexed_for_score(
+	virtual xt::pytensor<Value, 1> solve_indexed_for_score(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
+		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_for_alignment(
-		const xt::pytensor<float, 3> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
+		const xt::pytensor<Value, 3> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_for_alignment_iterator(
-		const xt::pytensor<float, 3> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
+		const xt::pytensor<Value, 3> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_indexed_for_alignment(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
+		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_indexed_for_alignment_iterator(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
+		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_for_solution(
-		const xt::pytensor<float, 3> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
+		const xt::pytensor<Value, 3> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_for_solution_iterator(
-		const xt::pytensor<float, 3> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
+		const xt::pytensor<Value, 3> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_indexed_for_solution(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
+		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_indexed_for_solution_iterator(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const = 0;
+		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 };
 
-typedef std::shared_ptr<Solver> SolverRef;
+template<typename Value, typename Index>
+using SolverRef = std::shared_ptr<Solver<Value, Index>>;
 
 template<typename CellType>
 struct matrix_form {
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::index_vec_type IndexVec;
+	typedef typename CellType::value_type Value;
 	typedef typename CellType::value_vec_type ValueVec;
 
-	const xt::pytensor<float, 3> &m_similarity;
-	const xt::pytensor<uint16_t, 2> &m_length;
+	const xt::pytensor<Value, 3> &m_similarity;
+	const xt::pytensor<Index, 2> &m_length;
 
 	inline void check() const {
 		check_batch_size(m_similarity.shape(2), CellType::batch_size);
@@ -613,12 +630,13 @@ template<typename CellType>
 struct indexed_matrix_form {
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::index_vec_type IndexVec;
+	typedef typename CellType::value_type Value;
 	typedef typename CellType::value_vec_type ValueVec;
 
 	const xt::pytensor<uint32_t, 2> &m_a;
 	const xt::pytensor<uint32_t, 2> &m_b;
-	const xt::pytensor<float, 2> &m_similarity;
-	const xt::pytensor<uint16_t, 2> &m_length;
+	const xt::pytensor<Value, 2> &m_similarity;
+	const xt::pytensor<Index, 2> &m_length;
 
 	inline void check() const {
 		check_batch_size(m_a.shape(0), CellType::batch_size);
@@ -665,19 +683,22 @@ struct indexed_matrix_form {
 };
 
 template<typename Algorithm>
-class SolverImpl : public Solver {
+class SolverImpl : public Solver<
+	typename Algorithm::cell_type::value_type,
+	typename Algorithm::cell_type::index_type> {
 public:
 	typedef typename Algorithm::cell_type CellType;
 	typedef typename Algorithm::problem_type ProblemType;
-	typedef typename Algorithm::index_type Index;
+	typedef typename CellType::value_type Value;
 	typedef typename CellType::value_vec_type ValueVec;
+	typedef typename CellType::index_type Index;
 
 private:
 	const OptionsRef m_options;
 	Algorithm m_algorithm;
 
 	template<typename Pairwise>
-	inline xt::pytensor<float, 1> _solve_for_score(
+	inline xt::pytensor<Value, 1> _solve_for_score(
 		const Pairwise &p_pairwise) const {
 
 		ValueVec scores;
@@ -802,35 +823,35 @@ public:
 		return m_algorithm.batch_size();
 	}
 
-	virtual xt::pytensor<float, 1> solve_for_score(
-		const xt::pytensor<float, 3> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const override {
+	virtual xt::pytensor<Value, 1> solve_for_score(
+		const xt::pytensor<Value, 3> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const override {
 
 		return _solve_for_score(
 			matrix_form<CellType>{p_similarity, p_length});
 	}
 
-	virtual xt::pytensor<float, 1> solve_indexed_for_score(
+	virtual xt::pytensor<Value, 1> solve_indexed_for_score(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const override {
+		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const override {
 
 		return _solve_for_score(
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_for_alignment(
-		const xt::pytensor<float, 3> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const override {
+		const xt::pytensor<Value, 3> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const override {
 
 		return _solve_for_alignment(
 			matrix_form<CellType>{p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_for_alignment_iterator(
-		const xt::pytensor<float, 3> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const override {
+		const xt::pytensor<Value, 3> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const override {
 
 		return _solve_for_alignment_iterator(
 			matrix_form<CellType>{p_similarity, p_length});
@@ -839,8 +860,8 @@ public:
 	virtual py::tuple solve_indexed_for_alignment(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const override {
+		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const override {
 
 		return _solve_for_alignment(
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
@@ -849,24 +870,24 @@ public:
 	virtual py::tuple solve_indexed_for_alignment_iterator(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const override {
+		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const override {
 
 		return _solve_for_alignment_iterator(
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_for_solution(
-		const xt::pytensor<float, 3> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const override {
+		const xt::pytensor<Value, 3> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const override {
 
 		return _solve_for_solution(
 			matrix_form<CellType>{p_similarity, p_length});
 	}
 
 	virtual py::tuple solve_for_solution_iterator(
-		const xt::pytensor<float, 3> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const override {
+		const xt::pytensor<Value, 3> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const override {
 
 		return _solve_for_solution_iterator(
 			matrix_form<CellType>{p_similarity, p_length});
@@ -875,8 +896,8 @@ public:
 	virtual py::tuple solve_indexed_for_solution(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const override {
+		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const override {
 
 		return _solve_for_solution(
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
@@ -885,8 +906,8 @@ public:
 	virtual py::tuple solve_indexed_for_solution_iterator(
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
-		const xt::pytensor<float, 2> &p_similarity,
-		const xt::pytensor<uint16_t, 2> &p_length) const override {
+		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const override {
 
 		return _solve_for_solution_iterator(
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
@@ -897,20 +918,22 @@ public:
 	}
 };
 
+template<typename Value, typename Index>
 class SolverFactory {
 public:
 	virtual ~SolverFactory() {
 	}
 
-	virtual SolverRef make(
+	virtual SolverRef<Value, Index> make(
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) = 0;
 };
 
-typedef std::shared_ptr<SolverFactory> SolverFactoryRef;
+template<typename Value, typename Index>
+using SolverFactoryRef = std::shared_ptr<SolverFactory<Value, Index>>;
 
-template<typename Generator>
-class SolverFactoryImpl : public SolverFactory {
+template<typename Value, typename Index, typename Generator>
+class SolverFactoryImpl : public SolverFactory<Value, Index> {
 	const Generator m_generator;
 
 public:
@@ -920,7 +943,7 @@ public:
 		m_generator(p_generator) {
 	}
 
-	virtual SolverRef make(
+	virtual SolverRef<Value, Index> make(
 		const size_t p_max_len_s,
 		const size_t p_max_len_t) {
 
@@ -928,13 +951,14 @@ public:
 	}
 };
 
+template<typename Value, typename Index>
 class MakeSolverImpl {
 public:
 	template<
 		typename Algorithm,
 		typename Options,
 		typename... Args>
-	SolverFactoryRef make(
+	SolverFactoryRef<Value, Index> make(
 		const Options &p_options,
 		const Args... p_args) const {
 
@@ -949,12 +973,15 @@ public:
 				p_args...);
 		};
 
-		return std::make_shared<SolverFactoryImpl<decltype(gen)>>(gen);
+		return std::make_shared<SolverFactoryImpl<Value, Index, decltype(gen)>>(gen);
 	}
 };
 
 template<typename CellType, typename MakeSolver>
 struct FactoryCreation {
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type Value;
+
 	static auto create_dtw_solver_factory(
 		const OptionsRef &p_options,
 		const MakeSolver &p_make_solver) {
@@ -989,7 +1016,7 @@ struct FactoryCreation {
 		template<typename, typename> class Locality,
 		typename LocalityInitializers>
 	static auto resolve_gap_type(
-		const AlignmentOptionsRef &p_options,
+		const AlignmentOptionsRef<Value>  &p_options,
 		const MakeSolver &p_make_solver,
 		const LocalityInitializers &p_loc_initializers) {
 
@@ -1027,7 +1054,7 @@ struct FactoryCreation {
 		template<typename, typename> class Locality,
 		typename LocalityInitializers>
 	static auto resolve_direction(
-		const AlignmentOptionsRef &p_options,
+		const AlignmentOptionsRef<Value> &p_options,
 		const MakeSolver &p_make_solver,
 		const LocalityInitializers &p_loc_initializers) {
 
@@ -1056,25 +1083,25 @@ struct FactoryCreation {
 
 	template<typename Goal>
 	static auto resolve_locality(
-		const AlignmentOptionsRef &p_options,
+		const AlignmentOptionsRef<Value> &p_options,
 		const MakeSolver &p_make_solver) {
 
 		switch (p_options->locality()) {
-			case AlignmentOptions::Locality::LOCAL: {
+			case AlignmentOptions<Value>::Locality::LOCAL: {
 				return resolve_direction<Goal, core::Local>(
 					p_options,
 					p_make_solver,
 					core::LocalInitializers());
 			} break;
 
-			case AlignmentOptions::Locality::GLOBAL: {
+			case AlignmentOptions<Value>::Locality::GLOBAL: {
 				return resolve_direction<Goal, core::Global>(
 					p_options,
 					p_make_solver,
 					core::GlobalInitializers());
 			} break;
 
-			case AlignmentOptions::Locality::SEMIGLOBAL: {
+			case AlignmentOptions<Value>::Locality::SEMIGLOBAL: {
 				return resolve_direction<Goal, core::Semiglobal>(
 					p_options,
 					p_make_solver,
@@ -1088,22 +1115,22 @@ struct FactoryCreation {
 	}
 
 	static auto create_alignment_solver_factory(
-		const AlignmentOptionsRef &p_options,
+		const AlignmentOptionsRef<Value> &p_options,
 		const MakeSolver &p_make_solver) {
 
 		switch (p_options->count()) {
-			case AlignmentOptions::Count::ONE: {
+			case AlignmentOptions<Value>::Count::ONE: {
 
 				switch (p_options->detail()) {
-					case AlignmentOptions::Detail::SCORE: {
+					case AlignmentOptions<Value>::Detail::SCORE: {
 						return FactoryCreation::
 							template resolve_locality<core::goal::optimal_score>(
 								p_options,
 								p_make_solver);
 					} break;
 
-					case AlignmentOptions::Detail::ALIGNMENT:
-					case AlignmentOptions::Detail::SOLUTION: {
+					case AlignmentOptions<Value>::Detail::ALIGNMENT:
+					case AlignmentOptions<Value>::Detail::SOLUTION: {
 						return FactoryCreation::
 							template resolve_locality<core::goal::one_optimal_alignment>(
 								p_options,
@@ -1116,13 +1143,13 @@ struct FactoryCreation {
 				}
 			} break;
 
-			case AlignmentOptions::Count::ALL: {
+			case AlignmentOptions<Value>::Count::ALL: {
 
 				switch (p_options->detail()) {
 
-					case AlignmentOptions::Detail::SCORE:
-					case AlignmentOptions::Detail::ALIGNMENT:
-					case AlignmentOptions::Detail::SOLUTION: {
+					case AlignmentOptions<Value>::Detail::SCORE:
+					case AlignmentOptions<Value>::Detail::ALIGNMENT:
+					case AlignmentOptions<Value>::Detail::SOLUTION: {
 						return FactoryCreation::
 							template resolve_locality<core::goal::all_optimal_alignments>(
 								p_options,
@@ -1157,12 +1184,12 @@ auto create_solver_factory(
 			if (p_options->batch()) {
 				return FactoryCreation<cell_type_batched, MakeSolver>::
 					create_alignment_solver_factory(
-						std::dynamic_pointer_cast<AlignmentOptions>(
+						std::dynamic_pointer_cast<AlignmentOptions<Value>>(
 							p_options), p_make_solver);
 			} else {
 				return FactoryCreation<cell_type_nobatch, MakeSolver>::
 					create_alignment_solver_factory(
-						std::dynamic_pointer_cast<AlignmentOptions>(
+						std::dynamic_pointer_cast<AlignmentOptions<Value>>(
 							p_options), p_make_solver);
 			}
 		} break;
@@ -1181,6 +1208,18 @@ auto create_solver_factory(
 			throw std::invalid_argument("illegal solver type");
 		} break;
 	}
+}
+
+template<typename Value, typename Index>
+SolverRef<Value, Index> create_solver(
+	const size_t p_max_len_s,
+	const size_t p_max_len_t,
+	const OptionsRef &p_options) {
+
+	const auto factory = create_solver_factory<MakeSolverImpl<Value, Index>, Value, Index>(
+		p_options, MakeSolverImpl<Value, Index>());
+
+	return factory->make(p_max_len_s, p_max_len_t);
 }
 
 } // pyalign

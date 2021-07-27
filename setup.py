@@ -16,8 +16,7 @@ src_path = (script_dir / 'pyalign' / 'algorithm').resolve()
 assert src_path.exists()
 
 sources = [
-	src_path / 'factory.cpp',
-	src_path / 'pyalign.cpp'
+	src_path / 'module.cpp'
 ]
 
 include_dirs = [Path(np.get_include()), script_dir]

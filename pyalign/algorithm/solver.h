@@ -1,7 +1,7 @@
 #ifndef __PYALIGN_SOLVER_H__
 #define __PYALIGN_SOLVER_H__ 1
 
-#include "pyalign/algorithm/pyalign.h"
+#include "pyalign/algorithm/common.h"
 #include <stack>
 
 namespace pyalign {
