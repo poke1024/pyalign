@@ -2405,6 +2405,9 @@ public:
 		m_algorithm(p_algorithm) {
 	}
 
+	virtual inline ~Solver() {
+	}
+
 	inline index_type max_len_s() const {
 		return m_factory->max_len_s();
 	}
@@ -2868,8 +2871,17 @@ public:
 	typedef typename Locality<CellType, ProblemType>::initializers_type locality_init_type;
 
 private:
-	const xt::xtensor<value_type, 1> m_gap_cost_s;
-	const xt::xtensor<value_type, 1> m_gap_cost_t;
+	struct GapCost {
+		inline GapCost(
+			const xt::xtensor<value_type, 1> &s_,
+			const xt::xtensor<value_type, 1> &t_) : s(s_), t(t_) {
+		}
+
+		xt::xtensor<value_type, 1> s;
+		xt::xtensor<value_type, 1> t;
+	};
+
+	const std::unique_ptr<GapCost> m_gap_cost;
 
 public:
 	typedef GapTensorFactory<value_type> GapCostSpec;
@@ -2887,32 +2899,34 @@ public:
 			p_max_len_t,
 			1, // layer count
 			std::make_shared<AlgorithmMetaData>("Waterman-Smith-Beyer", "n^3", "n^2")),
-		m_gap_cost_s(p_gap_cost_s(p_max_len_s + 1)),
-		m_gap_cost_t(p_gap_cost_t(p_max_len_t + 1)) {
+		m_gap_cost(std::make_unique<GapCost>(
+			p_gap_cost_s(p_max_len_s + 1),
+			p_gap_cost_t(p_max_len_t + 1)
+		)) {
 
-		check_gap_tensor_shape(m_gap_cost_s, p_max_len_s + 1);
-		check_gap_tensor_shape(m_gap_cost_t, p_max_len_t + 1);
+		check_gap_tensor_shape(m_gap_cost->s, p_max_len_s + 1);
+		check_gap_tensor_shape(m_gap_cost->t, p_max_len_t + 1);
 
 		auto values = this->m_factory->template values<matrix_name::D>();
 		constexpr value_type gap_sgn = direction_type::is_minimize() ? 1 : -1;
 
 		this->m_locality.init_border_case(
 			xt::view(values, xt::all(), 0),
-			m_gap_cost_s * gap_sgn);
+			m_gap_cost->s * gap_sgn);
 
 		this->m_locality.init_border_case(
 			xt::view(values, 0, xt::all()),
-			m_gap_cost_t * gap_sgn);
+			m_gap_cost->t * gap_sgn);
 	}
 
 	inline value_type gap_cost_s(const size_t len) const {
-		PPK_ASSERT(len < m_gap_cost_s.shape(0));
-		return m_gap_cost_s(len);
+		PPK_ASSERT(len < m_gap_cost->s.shape(0));
+		return m_gap_cost->s(len);
 	}
 
 	inline value_type gap_cost_t(const size_t len) const {
-		PPK_ASSERT(len < m_gap_cost_t.shape(0));
-		return m_gap_cost_t(len);
+		PPK_ASSERT(len < m_gap_cost->t.shape(0));
+		return m_gap_cost->t(len);
 	}
 
 	template<typename Pairwise>
@@ -2927,6 +2941,9 @@ public:
 		auto traceback = matrix.template traceback<1, 1>();
 		constexpr value_type gap_sgn = direction_type::is_minimize() ? 1 : -1;
 
+		const auto &gap_cost_s = this->m_gap_cost->s;
+		const auto &gap_cost_t = this->m_gap_cost->t;
+
 		for (index_type u = 0; static_cast<size_t>(u) < len_s; u++) {
 
 			for (index_type v = 0; static_cast<size_t>(v) < len_t; v++) {
@@ -2938,18 +2955,18 @@ public:
 					values(u - 1, v - 1) + pairwise(u, v),
 					u - 1, v - 1)
 
-				.push_many([this, u, v, gap_sgn, &values] (auto acc) {
+				.push_many([u, v, gap_cost_s, gap_sgn, &values] (auto acc) {
 					for (index_type k = -1; k < u; k++) {
 						acc.push(
-							values(k, v) + this->m_gap_cost_s(u - k) * gap_sgn,
+							values(k, v) + gap_cost_s(u - k) * gap_sgn,
 							k, v);
 					}
 				})
 
-				.push_many([this, u, v, gap_sgn, &values] (auto acc) {
+				.push_many([u, v, gap_cost_t, gap_sgn, &values] (auto acc) {
 					for (index_type k = -1; k < v; k++) {
 						acc.push(
-							values(u, k) + this->m_gap_cost_t(v - k) * gap_sgn,
+							values(u, k) + gap_cost_t(v - k) * gap_sgn,
 							u, k);
 					}
 				})

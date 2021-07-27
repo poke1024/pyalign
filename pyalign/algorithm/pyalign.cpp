@@ -1,6 +1,5 @@
 #define FORCE_IMPORT_ARRAY
 
-#include "solver.h"
 #include "factory.h"
 
 namespace py = pybind11;
@@ -19,14 +18,6 @@ SolverRef create_solver(
 		p_options, MakeSolverImpl());
 
 	return factory->make(p_max_len_s, p_max_len_t);
-}
-
-OptionsRef create_options(const py::dict &p_options) {
-	if (p_options["solver"].cast<Options::Type>() == Options::Type::ALIGNMENT) {
-		return std::make_shared<AlignmentOptions>(p_options);
-	} else {
-		return std::make_shared<Options>(p_options);
-	}
 }
 
 PYBIND11_MODULE(algorithm, m) {

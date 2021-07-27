@@ -10,9 +10,9 @@ namespace pyalign {
 
 namespace py = pybind11;
 
-inline xt::pytensor<float, 1> zero_gap_tensor(const size_t p_len) {
-	xt::pytensor<float, 1> w;
-	w.resize({static_cast<ssize_t>(p_len)});
+inline xt::xtensor<float, 1> zero_gap_tensor(const size_t p_len) {
+	xt::xtensor<float, 1> w;
+	w.resize({p_len});
 	w.fill(0);
 	return w;
 }
@@ -505,6 +505,8 @@ public:
 
 typedef std::shared_ptr<AlignmentOptions> AlignmentOptionsRef;
 
+OptionsRef create_options(const py::dict &p_options);
+
 class Solver {
 public:
 	virtual inline ~Solver() {
@@ -789,7 +791,7 @@ private:
 
 public:
 	template<typename... Args>
-	inline SolverImpl(const OptionsRef &p_options, const Args&... args) :
+	inline SolverImpl(const OptionsRef &p_options, const Args... args) :
 		m_options(p_options),
 		m_algorithm(args...) {
 	}
@@ -936,7 +938,7 @@ public:
 		typename... Args>
 	SolverFactoryRef make(
 		const Options &p_options,
-		const Args&... p_args) const {
+		const Args... p_args) const {
 
 		const auto gen = [=](
 			const size_t p_max_len_s,

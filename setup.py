@@ -15,7 +15,10 @@ with open(script_dir / 'environment.yml') as f:
 src_path = (script_dir / 'pyalign' / 'algorithm').resolve()
 assert src_path.exists()
 
-sources = [src_path / 'pyalign.cpp']
+sources = [
+	src_path / 'factory.cpp',
+	src_path / 'pyalign.cpp'
+]
 
 include_dirs = [Path(np.get_include()), src_path]
 
@@ -28,24 +31,41 @@ if sys.platform == 'darwin':
 
 def mk_ext(name, march):
 	extra_compile_args = []
+	extra_link_args = []
 
-	is_debug_build = (os.environ.get("PYALIGN_DEBUG_BUILD") == 1)
+	is_sanitize = os.environ.get('PYALIGN_SANITIZE_ADDRESS', False)
+
+	if is_sanitize:
+		is_debug_build = True
+	else:
+		is_debug_build = os.environ.get("PYALIGN_DEBUG_BUILD", False)
 
 	if os.name == 'nt':
 		pass
 	else:
-		if not is_debug_build:
+		if is_debug_build:
+			extra_compile_args.append("-O0")
+			extra_compile_args.append("-g")
+		else:
 			extra_compile_args.append("-O3")
+
 		extra_compile_args.extend([
 			"-ftemplate-backtrace-limit=0"])
 		if march is not None:
 			extra_compile_args.append(f"-march={march}")
+
+	if is_sanitize:
+		extra_compile_args.append('-fsanitize=address')
+		extra_compile_args.append('-fno-omit-frame-pointer')
+		extra_compile_args.append('-fno-optimize-sibling-calls')
+		extra_link_args.append('-fsanitize=address')
 
 	return Pybind11Extension(
 		f'pyalign.algorithm.{name}.algorithm',
 		[str(x) for x in sorted(sources)],
 		cxx_std=17,
 		extra_compile_args=extra_compile_args,
+		extra_link_args=extra_link_args,
 		include_dirs=[str(x) for x in include_dirs],
 	)
 
