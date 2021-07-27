@@ -12,6 +12,7 @@
 #include <stack>
 
 namespace pyalign {
+namespace core {
 
 namespace goal {
 	struct optimal_score { // compute only optimal score
@@ -189,42 +190,42 @@ constexpr inline Index no_traceback() {
 
 template<typename CellType>
 inline auto no_traceback_vec() {
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::index_vec_type IndexVec;
-	IndexVec v;
-	v.fill(std::numeric_limits<Index>::min());
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::index_vec_type index_vec_type;
+	index_vec_type v;
+	v.fill(std::numeric_limits<index_type>::min());
 	return v;
 }
 
 template<typename CellType>
 struct traceback_1 {
 public:
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::index_vec_type IndexVec;
-	typedef typename CellType::mask_vec_type MaskVec;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::index_vec_type index_vec_type;
+	typedef typename CellType::mask_vec_type mask_vec_type;
 
 private:
 	struct {
-		IndexVec u;
-		IndexVec v;
+		index_vec_type u;
+		index_vec_type v;
 	} uv;
 
 public:
 	static constexpr bool max_degree_1 = true;
 
 	struct Single {
-		Index _u;
-		Index _v;
+		index_type _u;
+		index_type _v;
 
-		inline Index size() const {
+		inline index_type size() const {
 			return 1;
 		}
 
-		inline Index u(const size_t i) const {
+		inline index_type u(const size_t i) const {
 			return _u;
 		}
 
-		inline Index v(const size_t i) const {
+		inline index_type v(const size_t i) const {
 			return _v;
 		}
 	};
@@ -238,60 +239,60 @@ public:
 		uv.v = no_traceback_vec<CellType>();
 	}
 
-	inline void init(const Index p_u, const Index p_v) {
+	inline void init(const index_type p_u, const index_type p_v) {
 		uv.u.fill(p_u);
 		uv.v.fill(p_v);
 	}
 
-	inline void init(const Index p_u, const Index p_v, const MaskVec &mask) {
-		const IndexVec u = xt::full_like(IndexVec(), p_u);
-		const IndexVec v = xt::full_like(IndexVec(), p_v);
+	inline void init(const index_type p_u, const index_type p_v, const mask_vec_type &mask) {
+		const index_vec_type u = xt::full_like(index_vec_type(), p_u);
+		const index_vec_type v = xt::full_like(index_vec_type(), p_v);
 		uv.u = xt::where(mask, u, uv.u);
 		uv.v = xt::where(mask, v, uv.v);
 	}
 
-	inline void init(const traceback_1 &tb, const MaskVec &mask) {
+	inline void init(const traceback_1 &tb, const mask_vec_type &mask) {
 		uv.u = xt::where(mask, tb.uv.u, uv.u);
 		uv.v = xt::where(mask, tb.uv.v, uv.v);
 	}
 
-	inline void push(const Index p_u, const Index p_v, const MaskVec &mask) {
-		const IndexVec u = xt::full_like(IndexVec(), p_u);
-		const IndexVec v = xt::full_like(IndexVec(), p_v);
+	inline void push(const index_type p_u, const index_type p_v, const mask_vec_type &mask) {
+		const index_vec_type u = xt::full_like(index_vec_type(), p_u);
+		const index_vec_type v = xt::full_like(index_vec_type(), p_v);
 		uv.u = xt::where(mask, u, uv.u);
 		uv.v = xt::where(mask, v, uv.v);
 	}
 
-	inline void push(const traceback_1 &tb, const MaskVec &mask) {
+	inline void push(const traceback_1 &tb, const mask_vec_type &mask) {
 		uv.u = xt::where(mask, tb.uv.u, uv.u);
 		uv.v = xt::where(mask, tb.uv.v, uv.v);
 	}
 
-	inline Index u(const int batch_index, const size_t i) const {
+	inline index_type u(const int batch_index, const size_t i) const {
 		return uv.u(batch_index);
 	}
 
-	inline Index v(const int batch_index, const size_t i) const {
+	inline index_type v(const int batch_index, const size_t i) const {
 		return uv.v(batch_index);
 	}
 
-	inline Index size(const int batch_index) const {
-		return uv.u(batch_index) != no_traceback<Index>() ? 1 : 0;
+	inline index_type size(const int batch_index) const {
+		return uv.u(batch_index) != no_traceback<index_type>() ? 1 : 0;
 	}
 };
 
 template<typename CellType>
 struct traceback_n {
 public:
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::index_vec_type IndexVec;
-	typedef typename CellType::mask_vec_type MaskVec;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::index_vec_type index_vec_type;
+	typedef typename CellType::mask_vec_type mask_vec_type;
 
 	static constexpr int BatchSize = CellType::batch_size;
 
 	struct Pt {
-		Index u;
-		Index v;
+		index_type u;
+		index_type v;
 	};
 
 	std::vector<Pt> pts[BatchSize];
@@ -302,15 +303,15 @@ public:
 	struct Single {
 		std::vector<Pt> pts;
 
-		inline Index size() const {
+		inline index_type size() const {
 			return pts.size();
 		}
 
-		inline Index u(const size_t i) const {
+		inline index_type u(const size_t i) const {
 			return pts[i].u;
 		}
 
-		inline Index v(const size_t i) const {
+		inline index_type v(const size_t i) const {
 			return pts[i].v;
 		}
 	};
@@ -325,33 +326,33 @@ public:
 		}
 	}
 
-	inline void init(const Index p_u, const Index p_v) {
+	inline void init(const index_type p_u, const index_type p_v) {
 		for (int i = 0; i < BatchSize; i++) {
 			pts[i].clear();
 			pts[i].emplace_back(Pt{p_u, p_v});
 		}
 	}
 
-	inline void init(const Index p_u, const Index p_v, const MaskVec &mask) {
+	inline void init(const index_type p_u, const index_type p_v, const mask_vec_type &mask) {
 		for (auto i : xt::flatnonzero<xt::layout_type::row_major>(mask)) {
 			pts[i].clear();
 			pts[i].emplace_back(Pt{p_u, p_v});
 		}
 	}
 
-	inline void init(const traceback_n &tb, const MaskVec &mask) {
+	inline void init(const traceback_n &tb, const mask_vec_type &mask) {
 		for (auto i : xt::flatnonzero<xt::layout_type::row_major>(mask)) {
 			pts[i] = tb.pts[i];
 		}
 	}
 
-	inline void push(const Index p_u, const Index p_v, const MaskVec &mask) {
+	inline void push(const index_type p_u, const index_type p_v, const mask_vec_type &mask) {
 		for (auto i : xt::flatnonzero<xt::layout_type::row_major>(mask)) {
 			pts[i].emplace_back(Pt{p_u, p_v});
 		}
 	}
 
-	inline void push(const traceback_n &tb, const MaskVec &mask) {
+	inline void push(const traceback_n &tb, const mask_vec_type &mask) {
 		for (auto i : xt::flatnonzero<xt::layout_type::row_major>(mask)) {
 			for (const auto &pt : tb.pts[i]) {
 				pts[i].push_back(pt);
@@ -359,19 +360,19 @@ public:
 		}
 	}
 
-	inline Index u(const int batch_index, const size_t i) const {
+	inline index_type u(const int batch_index, const size_t i) const {
 		return i < pts[batch_index].size() ?
 			pts[batch_index][i].u :
-			no_traceback<Index>();
+			no_traceback<index_type>();
 	}
 
-	inline Index v(const int batch_index, const size_t i) const {
+	inline index_type v(const int batch_index, const size_t i) const {
 		return i < pts[batch_index].size() ?
 			pts[batch_index][i].v :
-			no_traceback<Index>();
+			no_traceback<index_type>();
 	}
 
-	inline Index size(const int batch_index) const {
+	inline index_type size(const int batch_index) const {
 		return pts[batch_index].size();
 	}
 };
@@ -445,7 +446,7 @@ struct traceback_cell_type_factory<goal::path::optimal::all, CellType> {
 };
 
 template<typename CellType, typename ProblemType>
-using traceback_type = typename traceback_cell_type_factory<
+using _traceback_type = typename traceback_cell_type_factory<
 	typename ProblemType::goal_type::path_goal,
 	CellType>::traceback_cell_type;
 
@@ -456,18 +457,18 @@ class Matrix;
 template<typename CellType, typename ProblemType>
 class MatrixFactory {
 public:
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_vec_type ValueVec;
-	typedef typename CellType::index_vec_type IndexVec;
-	typedef traceback_type<CellType, ProblemType> Traceback;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_vec_type value_vec_type;
+	typedef typename CellType::index_vec_type index_vec_type;
+	typedef _traceback_type<CellType, ProblemType> traceback_type;
 
 protected:
 	friend class Matrix<CellType, ProblemType>;
 
 	struct Data {
-		xt::xtensor<ValueVec, 3> values;
-		xt::xtensor<Traceback, 3> traceback;
+		xt::xtensor<value_vec_type, 3> values;
+		xt::xtensor<traceback_type, 3> traceback;
 	};
 
 	const std::unique_ptr<Data> m_data;
@@ -487,7 +488,7 @@ protected:
 	inline void check_size_against_implementation_limit(
 		const char *p_name,
 		const size_t p_len) const {
-		const size_t max = size_t(std::numeric_limits<Index>::max()) >> 1;
+		const size_t max = size_t(std::numeric_limits<index_type>::max()) >> 1;
 		if (p_len > max) {
 			throw exceeded_implementation_length(p_name, p_len, max);
 		}
@@ -530,13 +531,13 @@ public:
 
 	template<int Layer>
 	inline Matrix<CellType, ProblemType> make(
-		const Index len_s, const Index len_t) const;
+		const index_type len_s, const index_type len_t) const;
 
-	inline Index max_len_s() const {
+	inline index_type max_len_s() const {
 		return m_max_len_s;
 	}
 
-	inline Index max_len_t() const {
+	inline index_type max_len_t() const {
 		return m_max_len_t;
 	}
 
@@ -548,13 +549,13 @@ public:
 	struct all_layers_accessor {
 		Data &m_data;
 
-		inline auto values(const Index len_s, const Index len_t) const {
+		inline auto values(const index_type len_s, const index_type len_t) const {
 			return xt::view(
 				m_data.values,
 				xt::all(), xt::range(0, len_s + 1), xt::range(0, len_t + 1));
 		}
 
-		inline auto traceback(const Index len_s, const Index len_t) const {
+		inline auto traceback(const index_type len_s, const index_type len_t) const {
 			return xt::view(
 				m_data.traceback,
 				xt::all(), xt::range(0, len_s + 1), xt::range(0, len_t + 1));
@@ -601,20 +602,20 @@ shifted_xview<i0, j0, View> shift_xview(View &&v) {
 template<typename CellType, typename ProblemType>
 class Matrix {
 public:
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_type Index;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::index_type index_type;
 
 private:
 	const MatrixFactory<CellType, ProblemType> &m_factory;
-	const Index m_len_s;
-	const Index m_len_t;
+	const index_type m_len_s;
+	const index_type m_len_t;
 	const uint16_t m_layer;
 
 public:
 	inline Matrix(
 		const MatrixFactory<CellType, ProblemType> &factory,
-		const Index len_s,
-		const Index len_t,
+		const index_type len_s,
+		const index_type len_t,
 		const uint16_t layer) :
 
 	    m_factory(factory),
@@ -623,11 +624,11 @@ public:
 	    m_layer(layer) {
 	}
 
-	inline Index len_s() const {
+	inline index_type len_s() const {
 		return m_len_s;
 	}
 
-	inline Index len_t() const {
+	inline index_type len_t() const {
 		return m_len_t;
 	}
 
@@ -666,8 +667,8 @@ public:
 
 	void print_values(int batch_index = 0) const {
 		auto m = this->values<1, 1>();
-		for (Index i = -1; i < m_len_s; i++) {
-			for (Index j = -1; j < m_len_t; j++) {
+		for (index_type i = -1; i < m_len_s; i++) {
+			for (index_type j = -1; j < m_len_t; j++) {
 				const auto &cell = m(i, j);
 				std::cout << "(" << i << "," << j << "): " << cell(batch_index) << std::endl;
 			}
@@ -676,8 +677,8 @@ public:
 
 	void print_traceback(int batch_index = 0) const {
 		auto m = this->traceback<1, 1>();
-		for (Index i = -1; i < m_len_s; i++) {
-			for (Index j = -1; j < m_len_t; j++) {
+		for (index_type i = -1; i < m_len_s; i++) {
+			for (index_type j = -1; j < m_len_t; j++) {
 				std::cout << "(" << i << "," << j << "): ";
 				const auto &cell = m(i, j);
 				for (int k = 0; k < cell.size(batch_index); k++) {
@@ -696,7 +697,7 @@ template<typename CellType, typename ProblemType>
 template<int Layer>
 inline Matrix<CellType, ProblemType>
 MatrixFactory<CellType, ProblemType>::make(
-	const Index len_s, const Index len_t) const {
+	const index_type len_s, const index_type len_t) const {
 
 	if (Layer >= m_layer_count) {
 		throw std::invalid_argument("layer index exceeds layer count");
@@ -709,35 +710,35 @@ MatrixFactory<CellType, ProblemType>::make(
 template<typename CellType, typename ProblemType>
 class build_val {
 public:
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_type Index;
-	typedef typename ProblemType::direction_type Direction;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::index_type index_type;
+	typedef typename ProblemType::direction_type direction_type;
 
 private:
-	Value m_val;
+	value_type m_val;
 
 public:
-	inline build_val() : m_val(Direction::template worst_val<Value>()) {
+	inline build_val() : m_val(direction_type::template worst_val<value_type>()) {
 	}
 
-	inline Value val() const {
+	inline value_type val() const {
 		return m_val;
 	}
 
 	inline void begin(
-		const Index len_s,
-		const Index len_t) {
+		const index_type len_s,
+		const index_type len_t) {
 	}
 
 	inline void step(
-		const Index last_u,
-		const Index last_v,
-		const Index u,
-		const Index v) {
+		const index_type last_u,
+		const index_type last_v,
+		const index_type u,
+		const index_type v) {
 	}
 
 	inline void emit(
-		const Value p_val) {
+		const value_type p_val) {
 		m_val = p_val;
 	}
 
@@ -753,37 +754,37 @@ public:
 template<typename CellType, typename ProblemType>
 class build_path {
 public:
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_type Index;
-	typedef typename ProblemType::direction_type Direction;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::index_type index_type;
+	typedef typename ProblemType::direction_type direction_type;
 
 private:
-	typedef xt::xtensor_fixed<Index, xt::xshape<2>> Coord;
+	typedef xt::xtensor_fixed<index_type, xt::xshape<2>> Coord;
 
 	std::vector<Coord> m_path;
-	Value m_val;
+	value_type m_val;
 
 public:
-	inline build_path() : m_val(Direction::template worst_val<Value>()) {
+	inline build_path() : m_val(direction_type::template worst_val<value_type>()) {
 	}
 
-	inline Value val() const {
+	inline value_type val() const {
 		return m_val;
 	}
 
 	inline void begin(
-		const Index len_s,
-		const Index len_t) {
+		const index_type len_s,
+		const index_type len_t) {
 
 		m_path.reserve(len_s + len_t);
-		m_val = Direction::template worst_val<Value>();
+		m_val = direction_type::template worst_val<value_type>();
 	}
 
 	inline void step(
-		const Index last_u,
-		const Index last_v,
-		const Index u,
-		const Index v) {
+		const index_type last_u,
+		const index_type last_v,
+		const index_type u,
+		const index_type v) {
 
 		if (m_path.empty()) {
 			m_path.push_back(Coord{last_u, last_v});
@@ -806,8 +807,8 @@ public:
 		m_val = val;
 	}
 
-	inline xt::xtensor<Index, 2> path() const {
-		xt::xtensor<Index, 2> path;
+	inline xt::xtensor<index_type, 2> path() const {
+		xt::xtensor<index_type, 2> path;
 		path.resize({m_path.size(), 2});
 		for (size_t i = 0; i < m_path.size(); i++) {
 			xt::view(path, i, xt::all()) = m_path[i];
@@ -840,14 +841,14 @@ public:
 
 template<typename CellType, typename ProblemType>
 struct build_alignment {
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_type Index;
-	typedef typename ProblemType::direction_type Direction;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::index_type index_type;
+	typedef typename ProblemType::direction_type direction_type;
 
 	template<typename Alignment>
 	struct unbuffered {
 		Alignment &m_alignment;
-		Index m_steps;
+		index_type m_steps;
 
 	public:
 		inline unbuffered(Alignment &p_alignment) :
@@ -856,18 +857,18 @@ struct build_alignment {
 		}
 
 		inline void begin(
-			const Index len_s,
-			const Index len_t) {
+			const index_type len_s,
+			const index_type len_t) {
 
 			m_alignment.resize(len_s, len_t);
 			m_steps = 0;
 		}
 
 		inline void step(
-			const Index last_u,
-			const Index last_v,
-			const Index u,
-			const Index v) {
+			const index_type last_u,
+			const index_type last_v,
+			const index_type u,
+			const index_type v) {
 
 			if (u != last_u && v != last_v) {
 				m_alignment.add_edge(last_u, last_v);
@@ -881,7 +882,7 @@ struct build_alignment {
 			}
 		}
 
-		inline void emit(Value val) {
+		inline void emit(value_type val) {
 			m_alignment.set_score(val);
 		}
 
@@ -892,7 +893,7 @@ struct build_alignment {
 		inline void go_back(
 			const size_t p_size) {
 
-			if (static_cast<Index>(p_size) != m_steps) {
+			if (static_cast<index_type>(p_size) != m_steps) {
 				std::ostringstream s;
 				s << "cannot go back to pos " << p_size <<
 					" on unbuffered alignment of size " << m_steps;
@@ -904,16 +905,16 @@ struct build_alignment {
 	template<typename Alignment>
 	class buffered {
 		build_path<CellType, ProblemType> m_path;
-		Index m_len_s;
-		Index m_len_t;
+		index_type m_len_s;
+		index_type m_len_t;
 
 	public:
 		inline buffered() : m_len_s(0), m_len_t(0) {
 		}
 
 		inline void begin(
-			const Index len_s,
-			const Index len_t) {
+			const index_type len_s,
+			const index_type len_t) {
 
 			m_len_s = len_s;
 			m_len_t = len_t;
@@ -921,15 +922,15 @@ struct build_alignment {
 		}
 
 		inline void step(
-			const Index last_u,
-			const Index last_v,
-			const Index u,
-			const Index v) {
+			const index_type last_u,
+			const index_type last_v,
+			const index_type u,
+			const index_type v) {
 
 			m_path.step(last_u, last_v, u, v);
 		}
 
-		inline void emit(Value val) {
+		inline void emit(value_type val) {
 			m_path.emit(val);
 		}
 
@@ -948,10 +949,10 @@ struct build_alignment {
 			p_alignment.resize(m_len_s, m_len_t);
 
 			m_path.iterate([&p_alignment] (
-				const Index last_u,
-				const Index last_v,
-				const Index u,
-				const Index v) {
+				const index_type last_u,
+				const index_type last_v,
+				const index_type u,
+				const index_type v) {
 
 				if (u != last_u && v != last_v) {
 					p_alignment.add_edge(last_u, last_v);
@@ -1098,31 +1099,31 @@ public:
 template<typename CellType, typename ProblemType>
 class Accumulator {
 public:
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_vec_type IndexVec;
-	typedef typename CellType::value_vec_type ValueVec;
-	typedef typename ProblemType::direction_type Direction;
-	typedef traceback_type<CellType, ProblemType> Traceback;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::index_vec_type index_vec_type;
+	typedef typename CellType::value_vec_type value_vec_type;
+	typedef typename ProblemType::direction_type direction_type;
+	typedef _traceback_type<CellType, ProblemType> traceback_type;
 
 public:
 	struct cont {
-		ValueVec &m_val;
+		value_vec_type &m_val;
 
 		inline auto push(
-			const ValueVec &val,
-			const Index u,
-			const Index v) {
+			const value_vec_type &val,
+			const index_type u,
+			const index_type v) {
 
-			m_val = Direction::opt(val, m_val);
+			m_val = direction_type::opt(val, m_val);
 			return cont{m_val};
 		}
 
 		inline auto push(
-			const ValueVec &val,
-			const Traceback &tb) {
+			const value_vec_type &val,
+			const traceback_type &tb) {
 
-			m_val = Direction::opt(val, m_val);
+			m_val = direction_type::opt(val, m_val);
 			return cont{m_val};
 		}
 
@@ -1132,7 +1133,7 @@ public:
 			return cont{m_val};
 		}
 
-		inline auto add(const ValueVec &val) {
+		inline auto add(const value_vec_type &val) {
 			m_val += val;
 			return cont{m_val};
 		}
@@ -1145,34 +1146,37 @@ public:
 	protected:
 		friend class Accumulator;
 
-		inline explicit init(ValueVec &p_val) : m_val(p_val) {
+		inline explicit init(value_vec_type &p_val) : m_val(p_val) {
 		}
 
 		init(const init&) = delete;
 		init& operator=(init const&) = delete;
 
 	public:
-		ValueVec &m_val;
+		value_vec_type &m_val;
 
 		inline auto push(
-			const ValueVec &val,
-			const Index u,
-			const Index v) {
+			const value_vec_type &val,
+			const index_type u,
+			const index_type v) {
 
 			m_val = val;
 			return cont{m_val};
 		}
 
 		inline auto push(
-			const ValueVec &val,
-			const Traceback &tb) {
+			const value_vec_type &val,
+			const traceback_type &tb) {
 
 			m_val = val;
 			return cont{m_val};
 		}
 	};
 
-	static inline auto create(ValueVec &p_val, Traceback &p_tb) {
+	static inline auto create(
+		value_vec_type &p_val,
+		traceback_type &p_tb) {
+
 		return init{p_val};
 	}
 };
@@ -1180,58 +1184,58 @@ public:
 template<typename CellType, typename ProblemType>
 class TracingAccumulator {
 public:
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_vec_type IndexVec;
-	typedef typename CellType::value_vec_type ValueVec;
-	typedef typename CellType::mask_vec_type MaskVec;
-	typedef typename ProblemType::direction_type Direction;
-	typedef traceback_type<CellType, ProblemType> Traceback;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::index_vec_type index_vec_type;
+	typedef typename CellType::value_vec_type value_vec_type;
+	typedef typename CellType::mask_vec_type mask_vec_type;
+	typedef typename ProblemType::direction_type direction_type;
+	typedef _traceback_type<CellType, ProblemType> traceback_type;
 
 	static constexpr int BatchSize = CellType::batch_size;
 
 	struct cont {
-		ValueVec &m_val;
-		Traceback &m_tb;
+		value_vec_type &m_val;
+		traceback_type &m_tb;
 
 		inline auto push(
-			const ValueVec &val,
-			const Index u,
-			const Index v) {
+			const value_vec_type &val,
+			const index_type u,
+			const index_type v) {
 
-			if (BatchSize == 1 && Traceback::max_degree_1) {
-				if (Direction::is_opt(val(0), m_val(0))) {
+			if (BatchSize == 1 && traceback_type::max_degree_1) {
+				if (direction_type::is_opt(val(0), m_val(0))) {
 					m_val = val;
 					m_tb.init(u, v);
 				}
 			} else {
-				m_tb.init(u, v, Direction::opt_q(val, m_val));
-				if (!Traceback::max_degree_1) {
+				m_tb.init(u, v, direction_type::opt_q(val, m_val));
+				if (!traceback_type::max_degree_1) {
 					m_tb.push(u, v, xt::equal(val, m_val));
 				}
 
-				m_val = Direction::opt(val, m_val);
+				m_val = direction_type::opt(val, m_val);
 			}
 
 			return cont{m_val, m_tb};
 		}
 
 		inline auto push(
-			const ValueVec &val,
-			const Traceback &tb) {
+			const value_vec_type &val,
+			const traceback_type &tb) {
 
-			if (BatchSize == 1 && Traceback::max_degree_1) {
-				if (Direction::is_opt(val(0), m_val(0))) {
+			if (BatchSize == 1 && traceback_type::max_degree_1) {
+				if (direction_type::is_opt(val(0), m_val(0))) {
 					m_val = val;
 					m_tb.init(tb, xt::ones<bool>({BatchSize}));
 				}
 			} else {
-				m_tb.init(tb, Direction::opt_q(val, m_val));
-				if (!Traceback::max_degree_1) {
+				m_tb.init(tb, direction_type::opt_q(val, m_val));
+				if (!traceback_type::max_degree_1) {
 					m_tb.push(tb, xt::equal(val, m_val));
 				}
 
-				m_val = Direction::opt(val, m_val);
+				m_val = direction_type::opt(val, m_val);
 			}
 
 			return cont{m_val, m_tb};
@@ -1243,7 +1247,7 @@ public:
 			return cont{m_val, m_tb};
 		}
 
-		inline auto add(const ValueVec &val) {
+		inline auto add(const value_vec_type &val) {
 			m_val += val;
 			return cont{m_val, m_tb};
 		}
@@ -1256,7 +1260,7 @@ public:
 	protected:
 		friend class TracingAccumulator;
 
-		inline explicit init(ValueVec &p_val, Traceback &p_tb) :
+		inline explicit init(value_vec_type &p_val, traceback_type &p_tb) :
 			m_val(p_val), m_tb(p_tb) {
 		}
 
@@ -1264,13 +1268,13 @@ public:
 		init& operator=(init const&) = delete;
 
 	public:
-		ValueVec &m_val;
-		Traceback &m_tb;
+		value_vec_type &m_val;
+		traceback_type &m_tb;
 
 		inline auto push(
-			const ValueVec &val,
-			const Index u,
-			const Index v) {
+			const value_vec_type &val,
+			const index_type u,
+			const index_type v) {
 
 			m_val = val;
 			m_tb.init(u, v);
@@ -1278,8 +1282,8 @@ public:
 		}
 
 		inline auto push(
-			const ValueVec &val,
-			const Traceback &tb) {
+			const value_vec_type &val,
+			const traceback_type &tb) {
 
 			m_val = val;
 			m_tb.init(tb, xt::ones<bool>({BatchSize}));
@@ -1287,7 +1291,10 @@ public:
 		}
 	};
 
-	static inline auto create(ValueVec &p_val, Traceback &p_tb) {
+	static inline auto create(
+		value_vec_type &p_val,
+		traceback_type &p_tb) {
+
 		return init{p_val, p_tb};
 	}
 };
@@ -1331,8 +1338,8 @@ class TracebackIterators;
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix>
 class TracebackIterators<false, CellType, ProblemType, Strategy, Matrix> {
 public:
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
 
 	constexpr static int BatchSize = CellType::batch_size;
 
@@ -1345,7 +1352,7 @@ public:
 	private:
 		const Context m_context;
 		const int m_batch_index;
-		Stack1<std::pair<Index, Index>> m_stack;
+		Stack1<std::pair<index_type, index_type>> m_stack;
 
 	public:
 		inline Iterator(
@@ -1356,7 +1363,7 @@ public:
 			m_batch_index(p_batch_index) {
 		}
 
-		inline void push(std::pair<Index, Index> &&p) {
+		inline void push(std::pair<index_type, index_type> &&p) {
 			m_stack.push(std::move(p));
 		}
 
@@ -1371,8 +1378,8 @@ public:
 			const auto initial_uv = m_stack.top();
 			m_stack.pop();
 
-			Index u = std::get<0>(initial_uv);
-			Index v = std::get<1>(initial_uv);
+			index_type u = std::get<0>(initial_uv);
+			index_type v = std::get<1>(initial_uv);
 			const auto best_val = values(u, v)(m_batch_index);
 
 			if (m_context.strategy.has_trace()) { // && m_path.wants_path()
@@ -1386,8 +1393,8 @@ public:
 					m_context.strategy.continue_traceback_1(u, v) &&
 					m_context.strategy.continue_traceback_2(values(u, v)(m_batch_index))) {
 
-					const Index last_u = u;
-					const Index last_v = v;
+					const index_type last_u = u;
+					const index_type last_v = v;
 
 					const auto &t = traceback(u, v);
 					u = t.u(m_batch_index, 0);
@@ -1431,8 +1438,8 @@ public:
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix>
 class TracebackIterators<true, CellType, ProblemType, Strategy, Matrix> {
 public:
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
 
 	constexpr static int BatchSize = CellType::batch_size;
 
@@ -1445,9 +1452,9 @@ public:
 	private:
 		struct Entry {
 			float path_val;
-			std::pair<Index, Index> previous;
-			std::pair<Index, Index> current;
-			Index path_len;
+			std::pair<index_type, index_type> previous;
+			std::pair<index_type, index_type> current;
+			index_type path_len;
 		};
 
 		const Context m_context;
@@ -1471,18 +1478,18 @@ public:
 			std::cout << std::endl;*/
 		}
 
-		inline void push(std::pair<Index, Index> &&p0) {
-			const std::pair<Index, Index> p(p0);
+		inline void push(std::pair<index_type, index_type> &&p0) {
+			const std::pair<index_type, index_type> p(p0);
 
-			const Index u = std::get<0>(p);
-			const Index v = std::get<1>(p);
+			const index_type u = std::get<0>(p);
+			const index_type v = std::get<1>(p);
 
 			const auto values = m_context.matrix.template values_n<1, 1>();
 			const auto path_val = values(u, v)(m_batch_index);
 
 			m_stack.push(Entry{
 				path_val,
-				{no_traceback<Index>(), no_traceback<Index>()},
+				{no_traceback<index_type>(), no_traceback<index_type>()},
 				p,
 				0
 			});
@@ -1514,14 +1521,14 @@ public:
 			const auto traceback = m_context.matrix.template traceback<1, 1>();
 
 			while (!m_stack.empty()) {
-				const Index u1 = std::get<0>(m_stack.top().current);
-				const Index v1 = std::get<1>(m_stack.top().current);
+				const index_type u1 = std::get<0>(m_stack.top().current);
+				const index_type v1 = std::get<1>(m_stack.top().current);
 				const auto best_val = m_stack.top().path_val;
 				p_path.go_back(m_stack.top().path_len);
 				const auto prev = m_stack.top().previous;
 				m_stack.pop();
 
-				if (std::get<0>(prev) != no_traceback<Index>()) {
+				if (std::get<0>(prev) != no_traceback<index_type>()) {
 					p_path.step(
 						std::get<0>(prev), std::get<1>(prev),
 						u1, v1);
@@ -1536,7 +1543,7 @@ public:
 
 					const auto &t = traceback(u1, v1);
 					const size_t n = t.size(m_batch_index);
-					const Index path_size = static_cast<Index>(p_path.size());
+					const index_type path_size = static_cast<index_type>(p_path.size());
 
 					if (n >= 1) {
 						for (size_t i = 0; i < n; i++) {
@@ -1551,7 +1558,7 @@ public:
 						m_stack.push(Entry{
 							best_val,
 							{u1, v1},
-							{no_traceback<Index>(), no_traceback<Index>()},
+							{no_traceback<index_type>(), no_traceback<index_type>()},
 							path_size
 						});
 					}
@@ -1592,24 +1599,24 @@ public:
 
 template<typename Locality>
 struct SharedTracebackIterator {
-	typedef typename Locality::cell_type CellType;
-	typedef typename Locality::problem_type ProblemType;
-	typedef typename Locality::TracebackStrategy TracebackStrategy;
-	typedef Matrix<CellType, ProblemType> LayerMatrix;
+	typedef typename Locality::cell_type cell_type;
+	typedef typename Locality::problem_type problem_type;
+	typedef typename Locality::TracebackStrategy traceback_strategy_type;
+	typedef Matrix<cell_type, problem_type> layer_matrix_type;
 
-	const MatrixFactoryRef<CellType, ProblemType> factory;
+	const MatrixFactoryRef<cell_type, problem_type> factory;
 
 	TracebackIterators<
-		!traceback_type<CellType, ProblemType>::max_degree_1,
-		CellType,
-		ProblemType,
-		TracebackStrategy,
-		LayerMatrix> iterators;
+		!_traceback_type<cell_type, problem_type>::max_degree_1,
+		cell_type,
+		problem_type,
+		traceback_strategy_type,
+		layer_matrix_type> iterators;
 
 	inline SharedTracebackIterator(
-		const MatrixFactoryRef<CellType, ProblemType> &p_factory,
-		const TracebackStrategy &p_strategy,
-		const LayerMatrix &p_matrix) :
+		const MatrixFactoryRef<cell_type, problem_type> &p_factory,
+		const traceback_strategy_type &p_strategy,
+		const layer_matrix_type &p_matrix) :
 
 		factory(p_factory),
 		iterators(p_strategy, p_matrix) {
@@ -1630,15 +1637,15 @@ using SharedTracebackIteratorRef = std::shared_ptr<SharedTracebackIterator<Local
 template<typename AlignmentFactory, typename Locality>
 class AlignmentIterator {
 public:
-	typedef typename Locality::cell_type CellType;
-	typedef typename Locality::problem_type ProblemType;
-	typedef typename AlignmentFactory::ref_type AlignmentRef;
+	typedef typename Locality::cell_type cell_type;
+	typedef typename Locality::problem_type problem_type;
+	typedef typename AlignmentFactory::ref_type alignment_ref_type;
 
 private:
 	const SharedTracebackIteratorRef<Locality> m_iterators;
 	const int m_batch_index;
 
-	typedef typename build_alignment<CellType, ProblemType>::
+	typedef typename build_alignment<cell_type, problem_type>::
 		template buffered<typename AlignmentFactory::deref_type>
 		build_alignment_type;
 
@@ -1653,14 +1660,14 @@ public:
 		m_batch_index(p_batch_index) {
 	}
 
-	AlignmentRef next() {
+	alignment_ref_type next() {
 		auto &it = m_iterators->iterators.iterator(m_batch_index);
 		if (it.next(m_build)) {
-			AlignmentRef alignment = AlignmentFactory::make();
+			alignment_ref_type alignment = AlignmentFactory::make();
 			m_build.copy_to(AlignmentFactory::deref(alignment));
 			return alignment;
 		} else {
-			return AlignmentRef();
+			return alignment_ref_type();
 		}
 	}
 };
@@ -1668,17 +1675,17 @@ public:
 template<typename AlignmentFactory, typename SolutionFactory, typename Locality>
 class SolutionIterator {
 public:
-	typedef typename Locality::cell_type CellType;
-	typedef typename Locality::problem_type ProblemType;
-	typedef typename AlignmentFactory::ref_type AlignmentRef;
-	typedef typename SolutionFactory::ref_type SolutionRef;
+	typedef typename Locality::cell_type cell_type;
+	typedef typename Locality::problem_type problem_type;
+	typedef typename AlignmentFactory::ref_type alignment_ref_type;
+	typedef typename SolutionFactory::ref_type solution_ref_type;
 
 private:
 	const SharedTracebackIteratorRef<Locality> m_iterators;
 	const int m_batch_index;
 
-	typedef build_path<CellType, ProblemType> build_path_type;
-	typedef typename build_alignment<CellType, ProblemType>::
+	typedef build_path<cell_type, problem_type> build_path_type;
+	typedef typename build_alignment<cell_type, problem_type>::
 		template buffered<typename AlignmentFactory::deref_type>
 		build_alignment_type;
 
@@ -1694,10 +1701,10 @@ public:
 		m_build(build_path_type(), build_alignment_type()) {
 	}
 
-	SolutionRef next() {
+	solution_ref_type next() {
 		auto &it = m_iterators->iterators.iterator(m_batch_index);
 		if (it.next(m_build)) {
-			SolutionRef solution_ref = SolutionFactory::make();
+			solution_ref_type solution_ref = SolutionFactory::make();
 			auto &solution = SolutionFactory::deref(solution_ref);
 
 			m_iterators->factory->copy_solution_data(
@@ -1717,14 +1724,14 @@ public:
 
 			return solution_ref;
 		} else {
-			return SolutionRef();
+			return solution_ref_type();
 		}
 	}
 };
 
 template<typename CellType, typename ProblemType, typename Strategy, typename Matrix>
 using TracebackIterators2 = TracebackIterators<
-	!traceback_type<CellType, ProblemType>::max_degree_1, CellType, ProblemType, Strategy, Matrix>;
+	!_traceback_type<CellType, ProblemType>::max_degree_1, CellType, ProblemType, Strategy, Matrix>;
 
 template<typename Locality, typename Matrix>
 inline TracebackIterators2<
@@ -1770,35 +1777,38 @@ struct TracebackSupport<goal::alignment<PathGoal>> {
 template<typename Direction, typename CellType>
 class Optima {
 public:
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_vec_type IndexVec;
-	typedef typename CellType::value_vec_type ValueVec;
-	typedef typename CellType::mask_vec_type MaskVec;
+	typedef Direction direction_type;
+	typedef CellType cell_type;
+
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::index_vec_type index_vec_type;
+	typedef typename CellType::value_vec_type value_vec_type;
+	typedef typename CellType::mask_vec_type mask_vec_type;
 
 	constexpr static int BatchSize = CellType::batch_size;
 
 private:
-	const Value worst;
-	ValueVec best_val;
-	IndexVec best_i;
-	IndexVec best_j;
+	const value_type worst;
+	value_vec_type best_val;
+	index_vec_type best_i;
+	index_vec_type best_j;
 
 public:
-	inline Optima() : worst(Direction::template worst_val<Value>()) {
+	inline Optima() : worst(direction_type::template worst_val<value_type>()) {
 		best_val.fill(worst);
 	}
 
-	inline void add(const Index i, const Index j, const ValueVec &val) {
-		const MaskVec mask = Direction::opt_q(val, best_val);
-		best_val = Direction::opt(val, best_val);
+	inline void add(const index_type i, const index_type j, const value_vec_type &val) {
+		const mask_vec_type mask = direction_type::opt_q(val, best_val);
+		best_val = direction_type::opt(val, best_val);
 		best_i = xt::where(mask, i, best_i);
 		best_j = xt::where(mask, j, best_j);
 	}
 
 	template<typename Stack>
 	inline void push(Stack &stack) {
-		for (auto k : xt::flatnonzero<xt::layout_type::row_major>(Direction::opt_q(best_val, worst))) {
+		for (auto k : xt::flatnonzero<xt::layout_type::row_major>(direction_type::opt_q(best_val, worst))) {
 			stack[k].push(std::make_pair(best_i(k), best_j(k)));
 		}
 	}
@@ -1810,13 +1820,13 @@ struct LocalInitializers {
 template<typename CellType, typename ProblemType>
 class Local {
 public:
-	typedef LocalInitializers Initializers;
+	typedef LocalInitializers initializers_type;
 
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::index_vec_type IndexVec;
-	typedef typename CellType::value_vec_type ValueVec;
-	typedef typename CellType::mask_vec_type MaskVec;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::index_vec_type index_vec_type;
+	typedef typename CellType::value_vec_type value_vec_type;
+	typedef typename CellType::mask_vec_type mask_vec_type;
 
 	typedef CellType cell_type;
 	typedef ProblemType problem_type;
@@ -1825,20 +1835,20 @@ public:
 		return false;
 	}
 
-	constexpr static Value ZERO = 0;
+	constexpr static value_type ZERO = 0;
 	constexpr static int BatchSize = CellType::batch_size;
 
 public:
-	typedef TracebackSupport<typename ProblemType::goal_type> TBS;
-	typedef typename TBS::template Accumulator<CellType, ProblemType> Accumulator;
+	typedef TracebackSupport<typename ProblemType::goal_type> tbs_type;
+	typedef typename tbs_type::template Accumulator<CellType, ProblemType> accumulator_type;
 
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
-		auto acc = Accumulator::create(val, tb);
+		auto acc = accumulator_type::create(val, tb);
 		return acc.push(
-			xt::zeros<Value>({BatchSize}),
-			no_traceback<Index>(),
-			no_traceback<Index>());
+			xt::zeros<value_type>({BatchSize}),
+			no_traceback<index_type>(),
+			no_traceback<index_type>());
 	}
 
 	inline Local(const LocalInitializers &p_init) {
@@ -1851,20 +1861,20 @@ public:
 	template<typename Vector>
 	void init_border_case(
 		Vector &&p_vector,
-		const xt::xtensor<Value, 1> &p_gap_cost) const {
+		const xt::xtensor<value_type, 1> &p_gap_cost) const {
 
 		for (size_t i = 0; i < p_vector.size(); i++) {
 			p_vector(i).fill(ZERO);
 		}
 	}
 
-	inline Value zero() const {
+	inline value_type zero() const {
 		return ZERO;
 	}
 
 	template<typename Matrix, typename PathGoal>
 	struct TracebackSeeds {
-		typedef typename ProblemType::direction_type Direction;
+		typedef typename ProblemType::direction_type direction_type;
 
 		const Matrix &m_matrix;
 
@@ -1875,10 +1885,10 @@ public:
 			const auto len_s = m_matrix.len_s();
 			const auto len_t = m_matrix.len_t();
 
-			Optima<Direction, CellType> optima;
+			Optima<direction_type, cell_type> optima;
 
-			for (Index i = len_s - 1; i >= 0; i--) {
-				for (Index j = len_t - 1; j >= 0; j--) {
+			for (index_type i = len_s - 1; i >= 0; i--) {
+				for (index_type j = len_t - 1; j >= 0; j--) {
 					optima.add(i, j, values(i, j));
 				}
 			}
@@ -1889,7 +1899,7 @@ public:
 
 	template<typename Matrix>
 	struct TracebackSeeds<Matrix, goal::path::optimal::all> {
-		typedef typename ProblemType::direction_type Direction;
+		typedef typename ProblemType::direction_type direction_type;
 
 		const Matrix &m_matrix;
 
@@ -1897,22 +1907,22 @@ public:
 		void generate(Stack &r_seeds) const {
 			const auto values = m_matrix.template values_n<1, 1>();
 
-			ValueVec best_val = xt::zeros<Value>({BatchSize});
+			value_vec_type best_val = xt::zeros<value_type>({BatchSize});
 
 			const auto len_s = m_matrix.len_s();
 			const auto len_t = m_matrix.len_t();
 
-			for (Index i = len_s - 1; i >= 0; i--) {
-				for (Index j = len_t - 1; j >= 0; j--) {
-					best_val = Direction::opt(values(i, j), best_val);
+			for (index_type i = len_s - 1; i >= 0; i--) {
+				for (index_type j = len_t - 1; j >= 0; j--) {
+					best_val = direction_type::opt(values(i, j), best_val);
 				}
 			}
 
-			for (Index i = len_s - 1; i >= 0; i--) {
-				for (Index j = len_t - 1; j >= 0; j--) {
-					const ValueVec x = values(i, j);
+			for (index_type i = len_s - 1; i >= 0; i--) {
+				for (index_type j = len_t - 1; j >= 0; j--) {
+					const value_vec_type x = values(i, j);
 					for (auto k : xt::flatnonzero<xt::layout_type::row_major>(xt::equal(x, best_val))) {
-						if (Direction::is_opt(x(k), ZERO)) {
+						if (direction_type::is_opt(x(k), ZERO)) {
 							r_seeds[k].push(std::make_pair(i, j));
 						}
 					}
@@ -1922,7 +1932,7 @@ public:
 	};
 
 	class TracebackStrategy {
-		typedef typename ProblemType::direction_type Direction;
+		typedef typename ProblemType::direction_type direction_type;
 
 	public:
 		inline TracebackStrategy(
@@ -1930,7 +1940,7 @@ public:
 		}
 
 		inline constexpr bool has_trace() const {
-			return TBS::has_trace;
+			return tbs_type::has_trace;
 		}
 
 		template<typename Matrix>
@@ -1940,16 +1950,16 @@ public:
 		}
 
 		inline bool continue_traceback_1(
-			const Index u,
-			const Index v) const {
+			const index_type u,
+			const index_type v) const {
 
 			return u >= 0 && v >= 0;
 		}
 
 		inline bool continue_traceback_2(
-			const Value val) const {
+			const value_type val) const {
 
-			return Direction::is_opt(val, ZERO);
+			return direction_type::is_opt(val, ZERO);
 		}
 	};
 };
@@ -1960,10 +1970,10 @@ struct GlobalInitializers {
 template<typename CellType, typename ProblemType>
 class Global {
 public:
-	typedef GlobalInitializers Initializers;
+	typedef GlobalInitializers initializers_type;
 
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
 
 	typedef CellType cell_type;
 	typedef ProblemType problem_type;
@@ -1975,18 +1985,18 @@ public:
 	constexpr static int BatchSize = CellType::batch_size;
 
 public:
-	typedef TracebackSupport<typename ProblemType::goal_type> TBS;
-	typedef typename TBS::template Accumulator<CellType, ProblemType> Accumulator;
+	typedef TracebackSupport<typename ProblemType::goal_type> tbs_type;
+	typedef typename tbs_type::template Accumulator<CellType, ProblemType> accumulator_type;
 
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
-		return Accumulator::create(val, tb);
+		return accumulator_type::create(val, tb);
 	}
 
 	template<typename Vector>
 	void init_border_case(
 		Vector &&p_vector,
-		const xt::xtensor<Value, 1> &p_gap_cost) const {
+		const xt::xtensor<value_type, 1> &p_gap_cost) const {
 
 		if (p_vector.size() != p_gap_cost.size()) {
 			throw std::runtime_error(
@@ -2018,7 +2028,7 @@ public:
 	};
 
 	class TracebackStrategy {
-		typedef typename ProblemType::direction_type Direction;
+		typedef typename ProblemType::direction_type direction_type;
 
 	public:
 		inline TracebackStrategy(
@@ -2026,7 +2036,7 @@ public:
 		}
 
 		inline constexpr bool has_trace() const {
-			return TBS::has_trace;
+			return tbs_type::has_trace;
 		}
 
 		template<typename Matrix>
@@ -2036,14 +2046,14 @@ public:
 		}
 
 		inline bool continue_traceback_1(
-			const Index u,
-			const Index v) const {
+			const index_type u,
+			const index_type v) const {
 
 			return u >= 0 && v >= 0;
 		}
 
 		inline bool continue_traceback_2(
-			const Value val) const {
+			const value_type val) const {
 
 			return true;
 		}
@@ -2057,10 +2067,10 @@ struct SemiglobalInitializers {
 template<typename CellType, typename ProblemType>
 class Semiglobal {
 public:
-	typedef SemiglobalInitializers Initializers;
+	typedef SemiglobalInitializers initializers_type;
 
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
 
 	typedef CellType cell_type;
 	typedef ProblemType problem_type;
@@ -2072,18 +2082,18 @@ public:
 	constexpr static int BatchSize = CellType::batch_size;
 
 public:
-	typedef TracebackSupport<typename ProblemType::goal_type> TBS;
-	typedef typename TBS::template Accumulator<CellType, ProblemType> Accumulator;
+	typedef TracebackSupport<typename ProblemType::goal_type> tbs_type;
+	typedef typename tbs_type::template Accumulator<CellType, ProblemType> accumulator_type;
 
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to(ValueCell &val, TracebackCell &tb) const {
-		return Accumulator::create(val, tb);
+		return accumulator_type::create(val, tb);
 	}
 
 	template<typename Vector>
 	void init_border_case(
 		Vector &&p_vector,
-		const xt::xtensor<Value, 1> &p_gap_cost) const {
+		const xt::xtensor<value_type, 1> &p_gap_cost) const {
 
 		for (size_t i = 0; i < p_vector.size(); i++) {
 			p_vector(i).fill(0);
@@ -2095,7 +2105,7 @@ public:
 
 	template<typename Matrix, typename PathGoal>
 	struct TracebackSeeds {
-		typedef typename ProblemType::direction_type Direction;
+		typedef typename ProblemType::direction_type direction_type;
 
 		const Matrix &m_matrix;
 
@@ -2106,16 +2116,16 @@ public:
 
 			const auto values = m_matrix.template values_n<1, 1>();
 
-			const Index last_row = len_s - 1;
-			const Index last_col = len_t - 1;
+			const index_type last_row = len_s - 1;
+			const index_type last_col = len_t - 1;
 
-			Optima<Direction, CellType> optima;
+			Optima<direction_type, cell_type> optima;
 
-			for (Index j = 0; j < len_t; j++) {
+			for (index_type j = 0; j < len_t; j++) {
 				optima.add(last_row, j, values(last_row, j));
 			}
 
-			for (Index i = 0; i < len_s; i++) {
+			for (index_type i = 0; i < len_s; i++) {
 				optima.add(i, last_col, values(i, last_col));
 			}
 
@@ -2124,7 +2134,7 @@ public:
 	};
 
 	class TracebackStrategy {
-		typedef typename ProblemType::direction_type Direction;
+		typedef typename ProblemType::direction_type direction_type;
 
 	public:
 		inline TracebackStrategy(
@@ -2132,7 +2142,7 @@ public:
 		}
 
 		inline constexpr bool has_trace() const {
-			return TBS::has_trace;
+			return tbs_type::has_trace;
 		}
 
 		template<typename Matrix>
@@ -2142,14 +2152,14 @@ public:
 		}
 
 		inline bool continue_traceback_1(
-			const Index u,
-			const Index v) const {
+			const index_type u,
+			const index_type v) const {
 
 			return u >= 0 && v >= 0;
 		}
 
 		inline bool continue_traceback_2(
-			const Value val) const {
+			const value_type val) const {
 
 			return true;
 		}
@@ -2159,21 +2169,21 @@ public:
 template<typename CellType, typename ProblemType, typename AlignmentFactory>
 class Solution {
 public:
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::value_vec_type ValueVec;
-	typedef traceback_type<CellType, ProblemType> Traceback;
-	typedef typename AlignmentFactory::ref_type AlignmentRef;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::value_vec_type value_vec_type;
+	typedef _traceback_type<CellType, ProblemType> traceback_type;
+	typedef typename AlignmentFactory::ref_type alignment_ref_type;
 
 private:
-	typedef std::pair<Index, Index> Coord;
-	typedef std::pair<Coord, Coord> Edge;
+	typedef std::pair<index_type, index_type> coord_type;
+	typedef std::pair<coord_type, coord_type> edge_type;
 
 public:
-	xt::xtensor<Value, 3> m_values;
-	xt::xtensor<typename Traceback::Single, 3> m_traceback;
-	std::optional<xt::xtensor<Index, 2>> m_path;
-	std::optional<AlignmentRef> m_alignment;
+	xt::xtensor<value_type, 3> m_values;
+	xt::xtensor<typename traceback_type::Single, 3> m_traceback;
+	std::optional<xt::xtensor<index_type, 2>> m_path;
+	std::optional<alignment_ref_type> m_alignment;
 	AlgorithmMetaDataRef m_algorithm;
 
 	template<typename ValuesMatrix>
@@ -2185,7 +2195,7 @@ public:
 		const size_t len_s = p_values.shape(1);
 		const size_t len_t = p_values.shape(2);
 
-		xt::xtensor<Value, 3> values;
+		xt::xtensor<value_type, 3> values;
 		m_values.resize({
 			len_k, len_s, len_t
 		});
@@ -2219,7 +2229,7 @@ public:
 		}
 	}
 
-	inline void set_path(const xt::xtensor<Index, 2> &p_path) {
+	inline void set_path(const xt::xtensor<index_type, 2> &p_path) {
 		m_path = p_path;
 	}
 
@@ -2227,12 +2237,12 @@ public:
 		m_algorithm = p_algorithm;
 	}
 
-	const xt::xtensor<Value, 3> &values() const {
+	const xt::xtensor<value_type, 3> &values() const {
 		return m_values;
 	}
 
 	inline bool has_degree_1_traceback() const {
-		return Traceback::max_degree_1;
+		return traceback_type::max_degree_1;
 	}
 
 	const auto traceback_as_matrix() const {
@@ -2240,7 +2250,7 @@ public:
 		const size_t len_s = m_traceback.shape(1);
 		const size_t len_t = m_traceback.shape(2);
 
-		xt::xtensor<Index, 4> traceback;
+		xt::xtensor<index_type, 4> traceback;
 		traceback.resize({
 			len_k, len_s, len_t, 2
 		});
@@ -2255,16 +2265,16 @@ public:
 		return traceback;
 	}
 
-	const std::vector<xt::xtensor<Index, 3>> traceback_as_edges() const {
+	const std::vector<xt::xtensor<index_type, 3>> traceback_as_edges() const {
 		const size_t len_k = m_traceback.shape(0);
 		const size_t len_s = m_traceback.shape(1);
 		const size_t len_t = m_traceback.shape(2);
 
-		std::vector<xt::xtensor<Index, 3>> edges;
+		std::vector<xt::xtensor<index_type, 3>> edges;
 		edges.resize(len_k);
 
 		const size_t avg_degree = 3; // an estimate
-		std::vector<Edge> layer_edges;
+		std::vector<edge_type> layer_edges;
 		layer_edges.reserve(len_s * len_t * avg_degree);
 
 		for (size_t k = 0; k < len_k; k++) {
@@ -2274,18 +2284,18 @@ public:
 					const auto &cell = m_traceback(k, i, j);
 					const size_t n_edges = cell.size();
 					for (size_t q = 0; q < n_edges; q++) {
-						layer_edges.emplace_back(std::make_pair<Coord, Coord>(
-							std::make_pair<Index, Index>(
-								static_cast<Index>(i) - 1,
-								static_cast<Index>(j) - 1),
-							std::make_pair<Index, Index>(
+						layer_edges.emplace_back(std::make_pair<coord_type, coord_type>(
+							std::make_pair<index_type, index_type>(
+								static_cast<index_type>(i) - 1,
+								static_cast<index_type>(j) - 1),
+							std::make_pair<index_type, index_type>(
 								cell.u(q),
 								cell.v(q))));
 					}
 				}
 			}
 
-			xt::xtensor<Index, 3> &tensor = edges[k];
+			xt::xtensor<index_type, 3> &tensor = edges[k];
 			const size_t n_edges = layer_edges.size();
 			tensor.resize({
 				n_edges, 2, 2
@@ -2310,19 +2320,19 @@ public:
 		return m_path;
 	}
 
-	const std::optional<AlignmentRef> &alignment() const {
+	const std::optional<alignment_ref_type> &alignment() const {
 		return m_alignment;
 	}
 
-	void set_alignment(const AlignmentRef &p_alignment) {
+	void set_alignment(const alignment_ref_type &p_alignment) {
 		m_alignment = p_alignment;
 	}
 
-	const std::optional<Value> score() const {
+	const std::optional<value_type> score() const {
 		if (m_alignment.has_value()) {
 			return AlignmentFactory::deref(*m_alignment).score();
 		} else {
-			return std::optional<Value>();
+			return std::optional<value_type>();
 		}
 	}
 
@@ -2361,11 +2371,11 @@ public:
 	typedef CellType cell_type;
 	typedef ProblemType problem_type;
 
-	typedef typename CellType::value_type Value;
-	typedef typename CellType::value_vec_type ValueVec;
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::index_vec_type IndexVec;
-	typedef typename ProblemType::direction_type Direction;
+	typedef typename CellType::value_type value_type;
+	typedef typename CellType::value_vec_type value_vec_type;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::index_vec_type index_vec_type;
+	typedef typename ProblemType::direction_type direction_type;
 	typedef Locality<CellType, ProblemType> locality_type;
 
 protected:
@@ -2375,15 +2385,15 @@ protected:
 
 	template<typename ValueCell, typename TracebackCell>
 	inline auto accumulate_to_nolocal(ValueCell &val, TracebackCell &tb) const {
-		typedef TracebackSupport<typename ProblemType::goal_type> TBS;
-		typedef typename TBS::template Accumulator<CellType, ProblemType> Accumulator;
+		typedef TracebackSupport<typename ProblemType::goal_type> tbs_type;
+		typedef typename tbs_type::template Accumulator<CellType, ProblemType> accumulator_type;
 
-		return Accumulator::create(val, tb);
+		return accumulator_type::create(val, tb);
 	}
 
 public:
 	inline Solver(
-		const typename Locality<CellType, ProblemType>::Initializers &p_locality_init,
+		const typename Locality<CellType, ProblemType>::initializers_type &p_locality_init,
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
 		const size_t p_layer_count,
@@ -2395,11 +2405,11 @@ public:
 		m_algorithm(p_algorithm) {
 	}
 
-	inline Index max_len_s() const {
+	inline index_type max_len_s() const {
 		return m_factory->max_len_s();
 	}
 
-	inline Index max_len_t() const {
+	inline index_type max_len_t() const {
 		return m_factory->max_len_t();
 	}
 
@@ -2408,15 +2418,15 @@ public:
 	}
 
 	template<int Layer>
-	inline auto matrix(const Index len_s, const Index len_t) {
+	inline auto matrix(const index_type len_s, const index_type len_t) {
 		return m_factory->make<Layer>(len_s, len_t);
 	}
 
-	inline ValueVec score(
-		const IndexVec &len_s,
-		const IndexVec &len_t) const {
+	inline value_vec_type score(
+		const index_vec_type &len_s,
+		const index_vec_type &len_t) const {
 
-		ValueVec scores;
+		value_vec_type scores;
 		build_val<CellType, ProblemType> val_only;
 
 		for (int i = 0; i < CellType::batch_size; i++) {
@@ -2424,15 +2434,15 @@ public:
 			auto tb = make_traceback_iterator(m_locality, matrix);
 
 			const bool tb_good = tb.iterator(i).next(val_only);
-			scores(i) = tb_good ? val_only.val() : Direction::template worst_val<Value>();
+			scores(i) = tb_good ? val_only.val() : direction_type::template worst_val<value_type>();
 		}
 		return scores;
 	}
 
 	template<typename AlignmentFactory>
 	inline void alignment(
-		const IndexVec &len_s,
-		const IndexVec &len_t,
+		const index_vec_type &len_s,
+		const index_vec_type &len_t,
 		std::array<typename AlignmentFactory::ref_type, CellType::batch_size> &alignments) const {
 
 		for (int i = 0; i < CellType::batch_size; i++) {
@@ -2443,7 +2453,7 @@ public:
 			auto build = typename build_alignment<CellType, ProblemType>::
 				template unbuffered<typename AlignmentFactory::deref_type>(alignment);
 			if (!tb.iterator(i).next(build)) {
-				alignment.set_score(Direction::template worst_val<Value>());
+				alignment.set_score(direction_type::template worst_val<value_type>());
 			}
 		}
 	}
@@ -2451,8 +2461,8 @@ public:
 	template<typename AlignmentFactory>
 	std::vector<std::shared_ptr<AlignmentIterator<
 			AlignmentFactory, Locality<CellType, ProblemType>>>> alignment_iterator(
-		const IndexVec &len_s,
-		const IndexVec &len_t) const {
+		const index_vec_type &len_s,
+		const index_vec_type &len_t) const {
 
 		std::vector<std::shared_ptr<AlignmentIterator<
 			AlignmentFactory, Locality<CellType, ProblemType>>>> iterators;
@@ -2474,8 +2484,8 @@ public:
 
 	template<typename AlignmentFactory, typename SolutionFactory>
 	void solution(
-		const IndexVec &len_s,
-		const IndexVec &len_t,
+		const index_vec_type &len_s,
+		const index_vec_type &len_t,
 		std::array<typename SolutionFactory::ref_type, CellType::batch_size> &solutions) const {
 
 		for (int i = 0; i < CellType::batch_size; i++) {
@@ -2513,8 +2523,8 @@ public:
 	template<typename AlignmentFactory, typename SolutionFactory>
 	std::vector<std::shared_ptr<SolutionIterator<
 			AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>> solution_iterator(
-		const IndexVec &len_s,
-		const IndexVec &len_t) const {
+		const index_vec_type &len_s,
+		const index_vec_type &len_t) const {
 
 		std::vector<std::shared_ptr<SolutionIterator<
 			AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>> iterators;
@@ -2566,25 +2576,25 @@ class LinearGapCostSolver final : public AlignmentSolver<CellType, ProblemType, 
 	// Hendrix, D. A. Applied Bioinformatics. https://open.oregonstate.education/appliedbioinformatics/.
 
 public:
-	typedef typename ProblemType::goal_type Goal;
-	typedef typename ProblemType::direction_type Direction;
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
-	typedef typename Locality<CellType, ProblemType>::Initializers LocalityInit;
+	typedef typename ProblemType::goal_type goal_type;
+	typedef typename ProblemType::direction_type direction_type;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
+	typedef typename Locality<CellType, ProblemType>::initializers_type locality_init_type;
 
 private:
-	const Value m_gap_cost_s;
-	const Value m_gap_cost_t;
+	const value_type m_gap_cost_s;
+	const value_type m_gap_cost_t;
 
 public:
-	typedef Value GapCostSpec;
+	typedef value_type gap_cost_spec_type;
 
 	inline LinearGapCostSolver(
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
-		const Value p_gap_cost_s,
-		const Value p_gap_cost_t,
-		const LocalityInit p_locality_init = LocalityInit()) :
+		const value_type p_gap_cost_s,
+		const value_type p_gap_cost_t,
+		const locality_init_type p_locality_init = locality_init_type()) :
 
 		AlignmentSolver<CellType, ProblemType, Locality>(
 			p_locality_init,
@@ -2599,21 +2609,21 @@ public:
 		m_gap_cost_t(p_gap_cost_t) {
 
 		auto values = this->m_factory->template values<matrix_name::D>();
-		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
+		constexpr value_type gap_sgn = direction_type::is_minimize() ? 1 : -1;
 
 		this->m_locality.init_border_case(
 			xt::view(values, xt::all(), 0),
-			xt::arange<Index>(0, p_max_len_s + 1) * p_gap_cost_s * gap_sgn);
+			xt::arange<index_type>(0, p_max_len_s + 1) * p_gap_cost_s * gap_sgn);
 		this->m_locality.init_border_case(
 			xt::view(values, 0, xt::all()),
-			xt::arange<Index>(0, p_max_len_t + 1) * p_gap_cost_t * gap_sgn);
+			xt::arange<index_type>(0, p_max_len_t + 1) * p_gap_cost_t * gap_sgn);
 	}
 
-	inline Value gap_cost_s(const size_t len) const {
+	inline value_type gap_cost_s(const size_t len) const {
 		return m_gap_cost_s * len;
 	}
 
-	inline Value gap_cost_t(const size_t len) const {
+	inline value_type gap_cost_t(const size_t len) const {
 		return m_gap_cost_t * len;
 	}
 
@@ -2627,11 +2637,11 @@ public:
 
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
-		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
+		constexpr value_type gap_sgn = direction_type::is_minimize() ? 1 : -1;
 
-		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
+		for (index_type u = 0; static_cast<size_t>(u) < len_s; u++) {
 
-			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
+			for (index_type v = 0; static_cast<size_t>(v) < len_t; v++) {
 
 				this->m_locality.accumulate_to(
 					values(u, v), traceback(u, v))
@@ -2677,25 +2687,25 @@ public:
 	// Gotoh, O. (1982). An improved algorithm for matching biological sequences.
 	// Journal of Molecular Biology, 162(3), 705–708. https://doi.org/10.1016/0022-2836(82)90398-9
 
-	typedef typename ProblemType::goal_type Goal;
-	typedef typename ProblemType::direction_type Direction;
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
-	typedef typename Locality<CellType, ProblemType>::Initializers LocalityInit;
+	typedef typename ProblemType::goal_type goal_type;
+	typedef typename ProblemType::direction_type direction_type;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
+	typedef typename Locality<CellType, ProblemType>::initializers_type locality_init_type;
 
-	typedef AffineCost<Value> Cost;
+	typedef AffineCost<value_type> cost_type;
 
 private:
-	const Cost m_gap_cost_s;
-	const Cost m_gap_cost_t;
+	const cost_type m_gap_cost_s;
+	const cost_type m_gap_cost_t;
 
 public:
 	inline AffineGapCostSolver(
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
-		const Cost &p_gap_cost_s,
-		const Cost &p_gap_cost_t,
-		const LocalityInit p_locality_init = LocalityInit()) :
+		const cost_type &p_gap_cost_s,
+		const cost_type &p_gap_cost_t,
+		const locality_init_type p_locality_init = locality_init_type()) :
 
 		AlignmentSolver<CellType, ProblemType, Locality>(
 			p_locality_init,
@@ -2714,7 +2724,7 @@ public:
 		auto P = matrix_P.template values<0, 0>();
 		auto Q = matrix_Q.template values<0, 0>();
 
-		const auto inf = std::numeric_limits<Value>::infinity() * (Direction::is_minimize() ? 1 : -1);
+		const auto inf = std::numeric_limits<value_type>::infinity() * (direction_type::is_minimize() ? 1 : -1);
 
 		for (auto &cell : xt::view(Q, xt::all(), 0)) {
 			cell.fill(inf);
@@ -2773,11 +2783,11 @@ public:
 		auto Q = matrix_Q.template values_n<1, 1>();
 		auto tb_Q = matrix_Q.template traceback_n<1, 1>();
 
-		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
+		constexpr value_type gap_sgn = direction_type::is_minimize() ? 1 : -1;
 
-		for (Index i = 0; static_cast<size_t>(i) < len_s; i++) {
+		for (index_type i = 0; static_cast<size_t>(i) < len_s; i++) {
 
-			for (Index j = 0; static_cast<size_t>(j) < len_t; j++) {
+			for (index_type j = 0; static_cast<size_t>(j) < len_t; j++) {
 
 				// Gotoh formula (4)
 				{
@@ -2851,25 +2861,25 @@ class GeneralGapCostSolver final : public AlignmentSolver<CellType, ProblemType,
 	// Hendrix, D. A. Applied Bioinformatics. https://open.oregonstate.education/appliedbioinformatics/.
 
 public:
-	typedef typename ProblemType::goal_type Goal;
-	typedef typename ProblemType::direction_type Direction;
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
-	typedef typename Locality<CellType, ProblemType>::Initializers LocalityInit;
+	typedef typename ProblemType::goal_type goal_type;
+	typedef typename ProblemType::direction_type direction_type;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
+	typedef typename Locality<CellType, ProblemType>::initializers_type locality_init_type;
 
 private:
-	const xt::xtensor<Value, 1> m_gap_cost_s;
-	const xt::xtensor<Value, 1> m_gap_cost_t;
+	const xt::xtensor<value_type, 1> m_gap_cost_s;
+	const xt::xtensor<value_type, 1> m_gap_cost_t;
 
 public:
-	typedef GapTensorFactory<Value> GapCostSpec;
+	typedef GapTensorFactory<value_type> GapCostSpec;
 
 	inline GeneralGapCostSolver(
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
-		const GapTensorFactory<Value> &p_gap_cost_s,
-		const GapTensorFactory<Value> &p_gap_cost_t,
-		const LocalityInit p_locality_init = LocalityInit()) :
+		const GapTensorFactory<value_type> &p_gap_cost_s,
+		const GapTensorFactory<value_type> &p_gap_cost_t,
+		const locality_init_type p_locality_init = locality_init_type()) :
 
 		AlignmentSolver<CellType, ProblemType, Locality>(
 			p_locality_init,
@@ -2884,7 +2894,7 @@ public:
 		check_gap_tensor_shape(m_gap_cost_t, p_max_len_t + 1);
 
 		auto values = this->m_factory->template values<matrix_name::D>();
-		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
+		constexpr value_type gap_sgn = direction_type::is_minimize() ? 1 : -1;
 
 		this->m_locality.init_border_case(
 			xt::view(values, xt::all(), 0),
@@ -2895,12 +2905,12 @@ public:
 			m_gap_cost_t * gap_sgn);
 	}
 
-	inline Value gap_cost_s(const size_t len) const {
+	inline value_type gap_cost_s(const size_t len) const {
 		PPK_ASSERT(len < m_gap_cost_s.shape(0));
 		return m_gap_cost_s(len);
 	}
 
-	inline Value gap_cost_t(const size_t len) const {
+	inline value_type gap_cost_t(const size_t len) const {
 		PPK_ASSERT(len < m_gap_cost_t.shape(0));
 		return m_gap_cost_t(len);
 	}
@@ -2915,11 +2925,11 @@ public:
 
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
-		constexpr Value gap_sgn = Direction::is_minimize() ? 1 : -1;
+		constexpr value_type gap_sgn = direction_type::is_minimize() ? 1 : -1;
 
-		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
+		for (index_type u = 0; static_cast<size_t>(u) < len_s; u++) {
 
-			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
+			for (index_type v = 0; static_cast<size_t>(v) < len_t; v++) {
 
 				this->m_locality.accumulate_to(
 					values(u, v), traceback(u, v))
@@ -2929,7 +2939,7 @@ public:
 					u - 1, v - 1)
 
 				.push_many([this, u, v, gap_sgn, &values] (auto acc) {
-					for (Index k = -1; k < u; k++) {
+					for (index_type k = -1; k < u; k++) {
 						acc.push(
 							values(k, v) + this->m_gap_cost_s(u - k) * gap_sgn,
 							k, v);
@@ -2937,7 +2947,7 @@ public:
 				})
 
 				.push_many([this, u, v, gap_sgn, &values] (auto acc) {
-					for (Index k = -1; k < v; k++) {
+					for (index_type k = -1; k < v; k++) {
 						acc.push(
 							values(u, k) + this->m_gap_cost_t(v - k) * gap_sgn,
 							u, k);
@@ -2953,10 +2963,10 @@ public:
 template<typename CellType, typename ProblemType>
 class DynamicTimeSolver final : public Solver<CellType, ProblemType, Global> {
 public:
-	typedef typename ProblemType::goal_type Goal;
-	typedef typename ProblemType::direction_type Direction;
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
+	typedef typename ProblemType::goal_type goal_type;
+	typedef typename ProblemType::direction_type direction_type;
+	typedef typename CellType::index_type index_type;
+	typedef typename CellType::value_type value_type;
 
 	inline DynamicTimeSolver(
 		const size_t p_max_len_s,
@@ -2970,7 +2980,7 @@ public:
 			std::make_shared<AlgorithmMetaData>("DTW", "n^2", "n^2")) {
 
 		auto values = this->m_factory->template values<matrix_name::D>();
-		const auto worst = std::numeric_limits<Value>::infinity() * (Direction::is_minimize() ? 1 : -1);
+		const auto worst = std::numeric_limits<value_type>::infinity() * (direction_type::is_minimize() ? 1 : -1);
 		for (auto &cell : values) {
 			cell.fill(worst);
 		}
@@ -2997,8 +3007,8 @@ public:
 		auto values = matrix.template values_n<1, 1>();
 		auto traceback = matrix.template traceback<1, 1>();
 
-		for (Index u = 0; static_cast<size_t>(u) < len_s; u++) {
-			for (Index v = 0; static_cast<size_t>(v) < len_t; v++) {
+		for (index_type u = 0; static_cast<size_t>(u) < len_s; u++) {
+			for (index_type v = 0; static_cast<size_t>(v) < len_t; v++) {
 
 				this->m_locality.accumulate_to(
 					values(u, v), traceback(u, v))
@@ -3018,6 +3028,7 @@ public:
 	}
 };
 
+} // namespace core
 } // namespace pyalign
 
 #endif // __PYALIGN_SOLVER__
