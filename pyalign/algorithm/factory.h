@@ -2,6 +2,7 @@
 #define __PYALIGN_FACTORY_H__ 1
 
 #include "pyalign/algorithm/solver.h"
+#include "pyalign/algorithm/enum.h"
 
 namespace pyalign {
 
@@ -401,124 +402,6 @@ py::tuple to_tuple(const std::array<T, N> &obj) {
 		std::make_index_sequence<N>());
 }
 
-class Options {
-public:
-	enum struct Type {
-		ALIGNMENT,
-		DTW
-	};
-
-	enum struct Direction {
-		MINIMIZE,
-		MAXIMIZE
-	};
-
-private:
-	const py::dict m_options;
-	const Type m_type;
-	const bool m_batch;
-	const Direction m_direction;
-
-public:
-	inline Options(
-		const py::dict &p_options) :
-
-		m_options(p_options),
-		m_type(p_options["solver"].cast<Type>()),
-		m_batch(p_options["batch"].cast<bool>()),
-		m_direction(p_options["direction"].cast<Direction>()) {
-	}
-
-	virtual ~Options() {
-	}
-
-	inline py::dict to_dict() {
-		return m_options;
-	}
-
-	inline Type type() const {
-		return m_type;
-	}
-
-	inline bool batch() const {
-		return m_batch;
-	}
-
-	inline Direction direction() const {
-		return m_direction;
-	}
-};
-
-typedef std::shared_ptr<Options> OptionsRef;
-
-template<typename Value>
-class AlignmentOptions : public Options {
-public:
-	enum struct Detail {
-		SCORE,
-		ALIGNMENT,
-		SOLUTION
-	};
-
-	enum struct Count {
-		ONE,
-		ALL
-	};
-
-	enum struct Locality {
-		LOCAL,
-		GLOBAL,
-		SEMIGLOBAL
-	};
-
-private:
-	const Detail m_detail;
-	const Count m_count;
-	const Locality m_locality;
-	const GapCosts<Value> m_gap_costs;
-
-public:
-	inline AlignmentOptions(
-		const py::dict &p_options) :
-
-		Options(p_options),
-		m_detail(p_options["codomain"].attr("detail").cast<Detail>()),
-		m_count(p_options["codomain"].attr("count").cast<Count>()),
-		m_locality(p_options.contains("locality") ?
-			p_options["locality"].cast<Locality>() : Locality::LOCAL),
-		m_gap_costs(p_options.contains("gap_cost") ?
-			p_options["gap_cost"] : py::none().cast<py::object>()) {
-	}
-
-	inline Detail detail() const {
-		return m_detail;
-	}
-
-	inline Count count() const {
-		return m_count;
-	}
-
-	inline Locality locality() const {
-		return m_locality;
-	}
-
-	inline const GapCosts<Value> &gap_costs() const {
-		return m_gap_costs;
-	}
-};
-
-template<typename Value>
-using AlignmentOptionsRef = std::shared_ptr<AlignmentOptions<Value>>;
-
-template<typename Value>
-OptionsRef create_options(const py::dict &p_options) {
-	if (p_options["solver"].cast<Options::Type>() == Options::Type::ALIGNMENT) {
-		return std::make_shared<AlignmentOptions<Value>>(p_options);
-	} else {
-		return std::make_shared<Options>(p_options);
-	}
-}
-
 template<typename Value, typename Index>
 class Solver {
 public:
@@ -682,7 +565,7 @@ struct indexed_matrix_form {
 	}
 };
 
-template<typename Algorithm>
+template<typename Options, typename Algorithm>
 class SolverImpl : public Solver<
 	typename Algorithm::cell_type::value_type,
 	typename Algorithm::cell_type::index_type> {
@@ -694,7 +577,7 @@ public:
 	typedef typename CellType::index_type Index;
 
 private:
-	const OptionsRef m_options;
+	const std::shared_ptr<Options> m_options;
 	Algorithm m_algorithm;
 
 	template<typename Pairwise>
@@ -810,8 +693,8 @@ private:
 
 public:
 	template<typename... Args>
-	inline SolverImpl(const OptionsRef &p_options, const Args... args) :
-		m_options(p_options),
+	inline SolverImpl(const Options &p_options, const Args... args) :
+		m_options(p_options.clone()),
 		m_algorithm(args...) {
 	}
 
@@ -951,12 +834,14 @@ public:
 	}
 };
 
-template<typename Value, typename Index>
+template<typename Options>
 class MakeSolverImpl {
 public:
+	typedef typename Options::value_type Value;
+	typedef typename Options::index_type Index;
+
 	template<
 		typename Algorithm,
-		typename Options,
 		typename... Args>
 	SolverFactoryRef<Value, Index> make(
 		const Options &p_options,
@@ -966,7 +851,7 @@ public:
 			const size_t p_max_len_s,
 			const size_t p_max_len_t) {
 
-			return std::make_shared<SolverImpl<Algorithm>>(
+			return std::make_shared<SolverImpl<Options, Algorithm>>(
 				p_options,
 				p_max_len_s,
 				p_max_len_t,
@@ -977,32 +862,61 @@ public:
 	}
 };
 
-template<typename CellType, typename MakeSolver>
-struct FactoryCreation {
-	typedef typename CellType::index_type Index;
-	typedef typename CellType::value_type Value;
+template<typename Options, typename MakeSolver>
+struct FactoryCreator {
+	const Options &m_options;
+	const MakeSolver &m_make_solver;
 
-	static auto create_dtw_solver_factory(
-		const OptionsRef &p_options,
-		const MakeSolver &p_make_solver) {
+    typedef typename Options::value_type Value;
+    typedef typename Options::index_type Index;
 
-		switch (p_options->direction()) {
-			case Options::Direction::MAXIMIZE: {
+	typedef core::cell_type<Value, Index, core::no_batch> cell_type_nobatch;
+	typedef core::cell_type<Value, Index, core::machine_batch_size> cell_type_batched;
+
+public:
+	inline FactoryCreator(
+		const Options &p_options,
+		const MakeSolver &p_make_solver) :
+		m_options(p_options),
+		m_make_solver(p_make_solver) {
+	}
+
+	auto create_dtw_solver_factory() const {
+		if (m_options.batch()) {
+			return create_dtw_solver_factory_with_cell_type<cell_type_batched>();
+		} else {
+			return create_dtw_solver_factory_with_cell_type<cell_type_nobatch>();
+		}
+	}
+
+	auto create_alignment_solver_factory() const {
+		if (m_options.batch()) {
+			return create_alignment_solver_factory_with_cell_type<cell_type_batched>();
+		} else {
+			return create_alignment_solver_factory_with_cell_type<cell_type_nobatch>();
+		}
+	}
+
+private:
+	template<typename CellType>
+	auto create_dtw_solver_factory_with_cell_type() const {
+		switch (m_options.direction()) {
+			case enums::Direction::MAXIMIZE: {
 				typedef core::problem_type<
 					core::goal::one_optimal_alignment,
 					core::direction::maximize> ProblemType;
 
-				return p_make_solver.template make<
-					core::DynamicTimeSolver<CellType, ProblemType>>(p_options);
+				return m_make_solver.template make<
+					core::DynamicTimeSolver<CellType, ProblemType>>(m_options);
 			} break;
 
-			case Options::Direction::MINIMIZE: {
+			case enums::Direction::MINIMIZE: {
 				typedef core::problem_type<
 					core::goal::one_optimal_alignment,
 					core::direction::minimize> ProblemType;
 
-				return p_make_solver.template make<
-					core::DynamicTimeSolver<CellType, ProblemType>>(p_options);
+				return m_make_solver.template make<
+					core::DynamicTimeSolver<CellType, ProblemType>>(m_options);
 			} break;
 
 			default: {
@@ -1012,36 +926,35 @@ struct FactoryCreation {
 	}
 
 	template<
+		typename CellType,
 		typename ProblemType,
 		template<typename, typename> class Locality,
 		typename LocalityInitializers>
-	static auto resolve_gap_type(
-		const AlignmentOptionsRef<Value>  &p_options,
-		const MakeSolver &p_make_solver,
-		const LocalityInitializers &p_loc_initializers) {
+	auto resolve_gap_type(
+		const LocalityInitializers &p_loc_initializers) const {
 
-		const auto &gap_s = p_options->gap_costs().s();
-		const auto &gap_t = p_options->gap_costs().t();
+		const auto &gap_s = m_options.gap_costs().s();
+		const auto &gap_t = m_options.gap_costs().t();
 
 		if (gap_s.linear.has_value() && gap_t.linear.has_value()) {
-			return p_make_solver.template make<
+			return m_make_solver.template make<
 				core::LinearGapCostSolver<CellType, ProblemType, Locality>>(
-					p_options,
+					m_options,
 					*gap_s.linear,
 					*gap_t.linear,
 					p_loc_initializers);
 		} else if (gap_s.affine.has_value() && gap_t.affine.has_value()) {
-			return p_make_solver.template make<
+			return m_make_solver.template make<
 				core::AffineGapCostSolver<CellType, ProblemType, Locality>>(
-					p_options,
+					m_options,
 					*gap_s.affine,
 					*gap_t.affine,
 					p_loc_initializers
 				);
 		} else {
-			return p_make_solver.template make<
+			return m_make_solver.template make<
 				core::GeneralGapCostSolver<CellType, ProblemType, Locality>>(
-					p_options,
+					m_options,
 					*gap_s.general,
 					*gap_t.general,
 					p_loc_initializers
@@ -1050,29 +963,28 @@ struct FactoryCreation {
 	}
 
 	template<
+		typename CellType,
 		typename Goal,
 		template<typename, typename> class Locality,
 		typename LocalityInitializers>
-	static auto resolve_direction(
-		const AlignmentOptionsRef<Value> &p_options,
-		const MakeSolver &p_make_solver,
-		const LocalityInitializers &p_loc_initializers) {
+	auto resolve_direction(
+		const LocalityInitializers &p_loc_initializers) const {
 
-		switch (p_options->direction()) {
-			case Options::Direction::MAXIMIZE: {
+		switch (m_options.direction()) {
+			case enums::Direction::MAXIMIZE: {
 				typedef core::problem_type<Goal, core::direction::maximize> ProblemType;
 
-				return FactoryCreation::resolve_gap_type<
-					ProblemType, Locality, LocalityInitializers>(
-						p_options, p_make_solver, p_loc_initializers);
+				return resolve_gap_type<
+					CellType, ProblemType, Locality, LocalityInitializers>(
+						p_loc_initializers);
 			} break;
 
-			case Options::Direction::MINIMIZE: {
+			case enums::Direction::MINIMIZE: {
 				typedef core::problem_type<Goal, core::direction::minimize> ProblemType;
 
-				return FactoryCreation::resolve_gap_type<
-					ProblemType, Locality, LocalityInitializers>(
-						p_options, p_make_solver, p_loc_initializers);
+				return resolve_gap_type<
+					CellType, ProblemType, Locality, LocalityInitializers>(
+						p_loc_initializers);
 			} break;
 
 			default: {
@@ -1081,30 +993,21 @@ struct FactoryCreation {
 		}
 	}
 
-	template<typename Goal>
-	static auto resolve_locality(
-		const AlignmentOptionsRef<Value> &p_options,
-		const MakeSolver &p_make_solver) {
-
-		switch (p_options->locality()) {
-			case AlignmentOptions<Value>::Locality::LOCAL: {
-				return resolve_direction<Goal, core::Local>(
-					p_options,
-					p_make_solver,
+	template<typename CellType, typename Goal>
+	auto resolve_locality() const {
+		switch (m_options.locality()) {
+			case enums::Locality::LOCAL: {
+				return resolve_direction<CellType, Goal, core::Local>(
 					core::LocalInitializers());
 			} break;
 
-			case AlignmentOptions<Value>::Locality::GLOBAL: {
-				return resolve_direction<Goal, core::Global>(
-					p_options,
-					p_make_solver,
+			case enums::Locality::GLOBAL: {
+				return resolve_direction<CellType, Goal, core::Global>(
 					core::GlobalInitializers());
 			} break;
 
-			case AlignmentOptions<Value>::Locality::SEMIGLOBAL: {
-				return resolve_direction<Goal, core::Semiglobal>(
-					p_options,
-					p_make_solver,
+			case enums::Locality::SEMIGLOBAL: {
+				return resolve_direction<CellType, Goal, core::Semiglobal>(
 					core::SemiglobalInitializers());
 			} break;
 
@@ -1114,27 +1017,19 @@ struct FactoryCreation {
 		}
 	}
 
-	static auto create_alignment_solver_factory(
-		const AlignmentOptionsRef<Value> &p_options,
-		const MakeSolver &p_make_solver) {
+	template<typename CellType>
+	auto create_alignment_solver_factory_with_cell_type() const {
+		switch (m_options.count()) {
+			case enums::Count::ONE: {
 
-		switch (p_options->count()) {
-			case AlignmentOptions<Value>::Count::ONE: {
-
-				switch (p_options->detail()) {
-					case AlignmentOptions<Value>::Detail::SCORE: {
-						return FactoryCreation::
-							template resolve_locality<core::goal::optimal_score>(
-								p_options,
-								p_make_solver);
+				switch (m_options.detail()) {
+					case enums::Detail::SCORE: {
+						return resolve_locality<CellType, core::goal::optimal_score>();
 					} break;
 
-					case AlignmentOptions<Value>::Detail::ALIGNMENT:
-					case AlignmentOptions<Value>::Detail::SOLUTION: {
-						return FactoryCreation::
-							template resolve_locality<core::goal::one_optimal_alignment>(
-								p_options,
-								p_make_solver);
+					case enums::Detail::ALIGNMENT:
+					case enums::Detail::SOLUTION: {
+						return resolve_locality<CellType, core::goal::one_optimal_alignment>();
 					} break;
 
 					default: {
@@ -1143,17 +1038,12 @@ struct FactoryCreation {
 				}
 			} break;
 
-			case AlignmentOptions<Value>::Count::ALL: {
-
-				switch (p_options->detail()) {
-
-					case AlignmentOptions<Value>::Detail::SCORE:
-					case AlignmentOptions<Value>::Detail::ALIGNMENT:
-					case AlignmentOptions<Value>::Detail::SOLUTION: {
-						return FactoryCreation::
-							template resolve_locality<core::goal::all_optimal_alignments>(
-								p_options,
-								p_make_solver);
+			case enums::Count::ALL: {
+				switch (m_options.detail()) {
+					case enums::Detail::SCORE:
+					case enums::Detail::ALIGNMENT:
+					case enums::Detail::SOLUTION: {
+						return resolve_locality<CellType, core::goal::all_optimal_alignments>();
 					} break;
 
 					default: {
@@ -1171,37 +1061,21 @@ struct FactoryCreation {
 	}
 };
 
-template<typename MakeSolver, typename Value, typename Index>
+template<typename Options, typename MakeSolver>
 auto create_solver_factory(
-	const OptionsRef &p_options,
+	const Options &p_options,
 	const MakeSolver &p_make_solver) {
 
-	typedef core::cell_type<Value, Index, core::no_batch> cell_type_nobatch;
-	typedef core::cell_type<Value, Index, core::machine_batch_size> cell_type_batched;
+	const auto creator = FactoryCreator<Options, MakeSolver>(
+		p_options, p_make_solver);
 
-	switch (p_options->type()) {
-		case Options::Type::ALIGNMENT: {
-			if (p_options->batch()) {
-				return FactoryCreation<cell_type_batched, MakeSolver>::
-					create_alignment_solver_factory(
-						std::dynamic_pointer_cast<AlignmentOptions<Value>>(
-							p_options), p_make_solver);
-			} else {
-				return FactoryCreation<cell_type_nobatch, MakeSolver>::
-					create_alignment_solver_factory(
-						std::dynamic_pointer_cast<AlignmentOptions<Value>>(
-							p_options), p_make_solver);
-			}
+	switch (p_options.type()) {
+		case enums::Type::ALIGNMENT: {
+			return creator.create_alignment_solver_factory();
 		} break;
 
-		case Options::Type::DTW: {
-			if (p_options->batch()) {
-				return FactoryCreation<cell_type_batched, MakeSolver>::
-					create_dtw_solver_factory(p_options, p_make_solver);
-			} else {
-				return FactoryCreation<cell_type_nobatch, MakeSolver>::
-					create_dtw_solver_factory(p_options, p_make_solver);
-			}
+		case enums::Type::DTW: {
+			return creator.create_dtw_solver_factory();
 		} break;
 
 		default: {
@@ -1210,14 +1084,17 @@ auto create_solver_factory(
 	}
 }
 
-template<typename Value, typename Index>
-SolverRef<Value, Index> create_solver(
+template<typename Options>
+SolverRef<typename Options::value_type, typename Options::index_type> create_solver(
 	const size_t p_max_len_s,
 	const size_t p_max_len_t,
-	const OptionsRef &p_options) {
+	const Options &p_options) {
 
-	const auto factory = create_solver_factory<MakeSolverImpl<Value, Index>, Value, Index>(
-		p_options, MakeSolverImpl<Value, Index>());
+	typedef typename Options::value_type Value;
+	typedef typename Options::index_type Index;
+
+	const auto factory = create_solver_factory<Options, MakeSolverImpl<Options>>(
+		p_options, MakeSolverImpl<Options>());
 
 	return factory->make(p_max_len_s, p_max_len_t);
 }

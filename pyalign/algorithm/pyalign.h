@@ -3,14 +3,23 @@
 
 #include "pyalign/algorithm/common.h"
 #include "pyalign/algorithm/factory.h"
+#include "pyalign/algorithm/options.h"
 
 namespace py = pybind11;
 
 namespace pyalign {
 
-template<typename Value, typename Index>
+template<typename Options>
+std::shared_ptr<Options> create_options(const py::dict &p_options) {
+	return std::make_shared<Options>(p_options);
+}
+
+template<typename Options>
 void register_solver(py::module_ &m) {
-	m.def("create_solver", &create_solver<Value, Index>);
+	typedef typename Options::value_type Value;
+	typedef typename Options::index_type Index;
+
+	m.def("create_solver", &create_solver<Options>);
 
 	py::class_<Solver<Value, Index>, SolverRef<Value, Index>> solver(m, "Solver");
 	solver.def_property_readonly("options", &Solver<Value, Index>::options);
@@ -52,32 +61,32 @@ void register_solver(py::module_ &m) {
 	algorithm.def_property_readonly("runtime", &Algorithm::runtime);
 	algorithm.def_property_readonly("memory", &Algorithm::memory);
 
-	py::class_<Options, OptionsRef> options(m, "Options");
-	py::class_<AlignmentOptions<Value>, Options, AlignmentOptionsRef<Value>>
-		alignment_options(m, "AlignmentOptions");
-	m.def("create_options", &create_options<Value>);
+	py::class_<Options, std::shared_ptr<Options>> options(m, "Options");
+	m.def("create_options", &create_options<Options>);
+}
 
-	py::enum_<Options::Type>(m, "Type")
-        .value("ALIGNMENT", Options::Type::ALIGNMENT)
-        .value("DTW", Options::Type::DTW);
+inline void register_enum(py::module_ &m) {
+	py::enum_<enums::Type>(m, "Type")
+        .value("ALIGNMENT", enums::Type::ALIGNMENT)
+        .value("DTW", enums::Type::DTW);
 
-	py::enum_<Options::Direction>(m, "Direction")
-        .value("MINIMIZE", Options::Direction::MINIMIZE)
-        .value("MAXIMIZE", Options::Direction::MAXIMIZE);
+	py::enum_<enums::Direction>(m, "Direction")
+        .value("MINIMIZE", enums::Direction::MINIMIZE)
+        .value("MAXIMIZE", enums::Direction::MAXIMIZE);
 
-	py::enum_<typename AlignmentOptions<Value>::Detail>(m, "Detail")
-        .value("SCORE", AlignmentOptions<Value>::Detail::SCORE)
-        .value("ALIGNMENT", AlignmentOptions<Value>::Detail::ALIGNMENT)
-        .value("SOLUTION", AlignmentOptions<Value>::Detail::SOLUTION);
+	py::enum_<enums::Detail>(m, "Detail")
+        .value("SCORE", enums::Detail::SCORE)
+        .value("ALIGNMENT", enums::Detail::ALIGNMENT)
+        .value("SOLUTION", enums::Detail::SOLUTION);
 
-	py::enum_<typename AlignmentOptions<Value>::Count>(m, "Count")
-        .value("ONE", AlignmentOptions<Value>::Count::ONE)
-        .value("ALL", AlignmentOptions<Value>::Count::ALL);
+	py::enum_<enums::Count>(m, "Count")
+        .value("ONE", enums::Count::ONE)
+        .value("ALL", enums::Count::ALL);
 
-	py::enum_<typename AlignmentOptions<Value>::Locality>(m, "Locality")
-        .value("LOCAL", AlignmentOptions<Value>::Locality::LOCAL)
-        .value("GLOBAL", AlignmentOptions<Value>::Locality::GLOBAL)
-        .value("SEMIGLOBAL", AlignmentOptions<Value>::Locality::SEMIGLOBAL);
+	py::enum_<enums::Locality>(m, "Locality")
+        .value("LOCAL", enums::Locality::LOCAL)
+        .value("GLOBAL", enums::Locality::GLOBAL)
+        .value("SEMIGLOBAL", enums::Locality::SEMIGLOBAL);
 }
 
 } // pyalign
