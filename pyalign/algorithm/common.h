@@ -15,4 +15,20 @@
 
 #include <xtensor-python/pytensor.hpp>
 
+#ifndef PYALIGN_FEATURES_DTW
+#define PYALIGN_FEATURES_DTW 1
+#endif
+
+#ifndef PYALIGN_FEATURES_SCORE_ONLY
+#define PYALIGN_FEATURES_SCORE_ONLY 1
+#endif
+
+#ifndef PYALIGN_FEATURES_MINIMIZE
+#define PYALIGN_FEATURES_MINIMIZE 1
+#endif
+
+#ifndef PYALIGN_FEATURES_ALL_SOLUTIONS
+#define PYALIGN_FEATURES_ALL_SOLUTIONS 1
+#endif
+
 #endif // __PYALIGN_H__

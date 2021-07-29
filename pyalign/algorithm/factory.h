@@ -910,6 +910,7 @@ private:
 					core::DynamicTimeSolver<CellType, ProblemType>>(m_options);
 			} break;
 
+#if PYALIGN_FEATURES_MINIMIZE
 			case enums::Direction::MINIMIZE: {
 				typedef core::problem_type<
 					core::goal::one_optimal_alignment,
@@ -918,6 +919,7 @@ private:
 				return m_make_solver.template make<
 					core::DynamicTimeSolver<CellType, ProblemType>>(m_options);
 			} break;
+#endif
 
 			default: {
 				throw std::invalid_argument("illegal direction");
@@ -979,6 +981,7 @@ private:
 						p_loc_initializers);
 			} break;
 
+#if PYALIGN_FEATURES_MINIMIZE
 			case enums::Direction::MINIMIZE: {
 				typedef core::problem_type<Goal, core::direction::minimize> ProblemType;
 
@@ -986,6 +989,7 @@ private:
 					CellType, ProblemType, Locality, LocalityInitializers>(
 						p_loc_initializers);
 			} break;
+#endif
 
 			default: {
 				throw std::invalid_argument("illegal direction");
@@ -1023,9 +1027,11 @@ private:
 			case enums::Count::ONE: {
 
 				switch (m_options.detail()) {
+#if PYALIGN_FEATURES_SCORE_ONLY
 					case enums::Detail::SCORE: {
 						return resolve_locality<CellType, core::goal::optimal_score>();
 					} break;
+#endif
 
 					case enums::Detail::ALIGNMENT:
 					case enums::Detail::SOLUTION: {
@@ -1038,6 +1044,7 @@ private:
 				}
 			} break;
 
+#if PYALIGN_FEATURES_ALL_SOLUTIONS
 			case enums::Count::ALL: {
 				switch (m_options.detail()) {
 					case enums::Detail::SCORE:
@@ -1053,6 +1060,7 @@ private:
 				} break;
 
 			} break;
+#endif
 
 			default: {
 				throw std::invalid_argument("invalid count");
@@ -1074,9 +1082,11 @@ auto create_solver_factory(
 			return creator.create_alignment_solver_factory();
 		} break;
 
+#if PYALIGN_FEATURES_DTW
 		case enums::Type::DTW: {
 			return creator.create_dtw_solver_factory();
 		} break;
+#endif
 
 		default: {
 			throw std::invalid_argument("illegal solver type");
