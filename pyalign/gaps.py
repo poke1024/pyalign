@@ -7,11 +7,18 @@ class GapCost:
 	gap length \( k \).
 	"""
 
+	def to_tuple(self):
+		raise NotImplementedError()
+
 	def to_special_case(self):
 		return {}
 
 	def costs(self, n):
-		raise NotImplementedError
+		raise NotImplementedError()
+
+	@property
+	def title(self):
+		raise NotImplementedError()
 
 	def _plot_matplotlib(self, ax, n):
 		from matplotlib.ticker import MaxNLocator
@@ -89,6 +96,9 @@ class ConstantGapCost(GapCost):
 		self._u = u
 		assert u >= 0
 
+	def to_tuple(self):
+		return 'constant', self._u
+
 	def to_special_case(self):
 		if self._u == 0:
 			return {
@@ -124,6 +134,9 @@ class LinearGapCost(GapCost):
 		self._u = u
 		assert u >= 0
 
+	def to_tuple(self):
+		return 'linear', self._u
+
 	def to_special_case(self):
 		return {
 			'linear': self._u
@@ -153,6 +166,9 @@ class AffineGapCost(GapCost):
 		self._v = v
 		assert u >= 0
 		assert v >= 0
+
+	def to_tuple(self):
+		return 'affine', self._u, self._v
 
 	def to_special_case(self):
 		return {
@@ -186,6 +202,9 @@ class LogarithmicGapCost(GapCost):
 		assert u >= 0
 		assert v >= 0
 
+	def to_tuple(self):
+		return 'logarithmic', self._u, self._v
+
 	def costs(self, n):
 		assert n > 0
 		w = np.full((n,), self._u, dtype=np.float32)
@@ -211,6 +230,9 @@ class ExponentialGapCost(GapCost):
 		assert u >= 0
 		assert v >= 0
 
+	def to_tuple(self):
+		return 'exponential', self._u, self._v
+
 	def costs(self, n):
 		c = np.empty((n,), dtype=np.float32)
 		for i in range(n):
@@ -229,6 +251,9 @@ class UserFuncGapCost(GapCost):
 
 	def __init__(self, costs_fn):
 		self._costs_fn = costs_fn
+
+	def to_tuple(self):
+		return 'user', self._costs_fn
 
 	def costs(self, n):
 		c = np.empty((n,), dtype=np.float32)
