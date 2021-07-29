@@ -71,24 +71,24 @@ void register_solver(py::module_ &m) {
 }
 
 inline void register_enum(py::module_ &m) {
-	py::enum_<enums::Type>(m, "Type")
+	py::enum_<enums::Type>(m, "Type", py::module_local())
         .value("ALIGNMENT", enums::Type::ALIGNMENT)
         .value("DTW", enums::Type::DTW);
 
-	py::enum_<enums::Direction>(m, "Direction")
+	py::enum_<enums::Direction>(m, "Direction", py::module_local())
         .value("MINIMIZE", enums::Direction::MINIMIZE)
         .value("MAXIMIZE", enums::Direction::MAXIMIZE);
 
-	py::enum_<enums::Detail>(m, "Detail")
+	py::enum_<enums::Detail>(m, "Detail", py::module_local())
         .value("SCORE", enums::Detail::SCORE)
         .value("ALIGNMENT", enums::Detail::ALIGNMENT)
         .value("SOLUTION", enums::Detail::SOLUTION);
 
-	py::enum_<enums::Count>(m, "Count")
+	py::enum_<enums::Count>(m, "Count", py::module_local())
         .value("ONE", enums::Count::ONE)
         .value("ALL", enums::Count::ALL);
 
-	py::enum_<enums::Locality>(m, "Locality")
+	py::enum_<enums::Locality>(m, "Locality", py::module_local())
         .value("LOCAL", enums::Locality::LOCAL)
         .value("GLOBAL", enums::Locality::GLOBAL)
         .value("SEMIGLOBAL", enums::Locality::SEMIGLOBAL);
