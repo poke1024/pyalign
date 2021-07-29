@@ -46,7 +46,6 @@ private:
 	const std::optional<alignment> m_alignment;
 
 public:
-
 	inline Options(
 		const py::dict &p_options) :
 
@@ -56,9 +55,6 @@ public:
 			p_options["solver"].cast<enums::Type>() == enums::Type::ALIGNMENT ?
 				alignment(p_options) : std::optional<alignment>()
 		) {
-	}
-
-	virtual ~Options() {
 	}
 
 	inline py::dict to_dict() {

@@ -1090,9 +1090,6 @@ SolverRef<typename Options::value_type, typename Options::index_type> create_sol
 	const size_t p_max_len_t,
 	const Options &p_options) {
 
-	typedef typename Options::value_type Value;
-	typedef typename Options::index_type Index;
-
 	const auto factory = create_solver_factory<Options, MakeSolverImpl<Options>>(
 		p_options, MakeSolverImpl<Options>());
 
