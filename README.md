@@ -137,6 +137,7 @@ Here is a short overview of other libraries.
 * https://pypi.org/project/textdistance/
 * https://github.com/mbreese/swalign/
 * https://github.com/seqan/seqan3
+* https://github.com/wannesm/dtaidistance
 
 ## for large scale problems
 
