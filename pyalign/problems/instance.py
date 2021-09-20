@@ -114,6 +114,9 @@ class Problem:
 
 		raise NotImplementedError()
 
+	def __str__(self):
+		return str(self.matrix)
+
 
 class MatrixProblem(Problem):
 	"""

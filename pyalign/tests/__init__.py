@@ -1,5 +1,13 @@
+from collections.abc import Sequence
 import numpy as np
 import unittest
+
+
+def to_tuple(x):
+	if isinstance(x, Sequence):
+		return tuple(map(to_tuple, x))
+	else:
+		return x
 
 
 class TestCase(unittest.TestCase):
@@ -8,10 +16,9 @@ class TestCase(unittest.TestCase):
 
 		for x in alignments:
 			self.assertAlmostEqual(x.score, score, places=places)
-			computed_edges.append([tuple(edge) for edge in x.edges.tolist()])
+			computed_edges.append(x.edges.tolist())
 
-		true_edges = sorted([tuple(edge) for edge in edges])
-		computed_edges = sorted(computed_edges)
-		self.assertTrue(len(true_edges) == len(computed_edges))
+		true_edges = sorted(to_tuple(edges))
+		computed_edges = sorted(to_tuple(computed_edges))
 
-		self.assertTrue((np.array(computed_edges) == np.array(true_edges)).all())
+		self.assertEqual(true_edges, computed_edges)

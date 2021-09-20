@@ -2,6 +2,7 @@ import numpy as np
 import yaml
 import sys
 import os
+import platform
 
 from pathlib import Path
 from setuptools import setup, find_packages
@@ -11,6 +12,12 @@ script_dir = Path(os.path.abspath(os.path.dirname(__file__)))
 
 with open(script_dir / 'environment.yml') as f:
 	required = yaml.safe_load(f.read())['dependencies'][-1]['pip']
+
+is_arm = (platform.machine() == "arm64")  # Apple Silicon or ARM?
+
+if is_arm:
+	# workaround for cpufeature not available on Apple M1 as of 2021/09.
+	required = list(filter(lambda s: not s.startswith("cpufeature"), required))
 
 src_path = (script_dir / 'pyalign' / 'algorithm').resolve()
 assert src_path.exists()
@@ -70,7 +77,9 @@ def mk_ext(name, march):
 
 ext_modules = []
 
-if os.environ.get("PYALIGN_PREBUILT_MARCH"):
+if is_arm:
+	ext_modules.append(mk_ext('generic', None))
+elif os.environ.get("PYALIGN_PREBUILT_MARCH"):
 	ext_modules.append(mk_ext('generic', None))
 	ext_modules.append(mk_ext('avx2', 'haswell'))
 else:
@@ -81,7 +90,7 @@ with open(script_dir / 'README.md') as f:
 
 setup(
 	name='pyalign',
-	version='0.3.3',
+	version='0.3.4',
 	packages=find_packages(include=[
 		'pyalign',
 		'pyalign.algorithm',
