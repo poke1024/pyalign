@@ -16,6 +16,7 @@ jobs:
       CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
       CIBW_MANYLINUX_X86_64_IMAGE: ${{ matrix.manylinux_image }}
       CIBW_ARCHS: "auto64"
+      CIBW_ARCHS_MACOS: "x86_64 arm64"
       CIBW_BEFORE_ALL_LINUX: bash ci/prepare_for_build_linux.sh
       CIBW_BEFORE_ALL_MACOS: bash ci/prepare_for_build_macos.sh
       CIBW_BEFORE_ALL_WINDOWS: C:\msys64\msys2_shell.cmd -mingw64 -defterm -here -full-path -no-start -shell bash ci/prepare_for_build_win.sh
@@ -33,6 +34,8 @@ jobs:
             platform_id: manylinux_x86_64
           - os: macos-latest
             platform_id: macosx_x86_64
+          - os: macos-latest
+            platform_id: macos_arm64
 
     steps:
       - uses: actions/checkout@v2
