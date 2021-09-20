@@ -448,6 +448,12 @@ template<typename CellType, typename ProblemType>
 class Matrix;
 
 template<typename CellType, typename ProblemType>
+class MatrixFactory;
+
+template<typename CellType, typename ProblemType>
+using MatrixFactoryRef = std::shared_ptr<MatrixFactory<CellType, ProblemType>>;
+
+template<typename CellType, typename ProblemType>
 class MatrixFactory {
 public:
 	typedef typename CellType::value_type value_type;
@@ -526,6 +532,21 @@ public:
 	inline Matrix<CellType, ProblemType> make(
 		const index_type len_s, const index_type len_t) const;
 
+	template<int Layer>
+	inline MatrixFactoryRef<CellType, ProblemType> copy(
+		const index_type len_s, const index_type len_t) const {
+
+	    auto ref = std::make_shared<MatrixFactory<CellType, ProblemType>>(
+	        len_s, len_t, 1);
+
+        xt::view(ref->m_data->values, 0, xt::all(), xt::all()) = xt::view(
+            m_data->values, Layer, xt::range(0, len_s + 1), xt::range(0, len_t + 1));
+        xt::view(ref->m_data->traceback, 0, xt::all(), xt::all()) = xt::view(
+            m_data->traceback, Layer, xt::range(0, len_s + 1), xt::range(0, len_t + 1));
+
+	    return ref;
+    }
+
 	inline index_type max_len_s() const {
 		return m_max_len_s;
 	}
@@ -570,9 +591,6 @@ public:
 		solution.set_traceback(this->all_layers().traceback(len_s, len_t), i);
 	}
 };
-
-template<typename CellType, typename ProblemType>
-using MatrixFactoryRef = std::shared_ptr<MatrixFactory<CellType, ProblemType>>;
 
 template<ssize_t i0, ssize_t j0, typename View>
 struct shifted_xview {
@@ -2480,10 +2498,13 @@ public:
 			AlignmentFactory, Locality<CellType, ProblemType>>>> iterators;
 		iterators.reserve(CellType::batch_size);
 
+		const auto detached_factory = m_factory->template copy<matrix_name::D>(
+		    xt::amax(len_s)(), xt::amax(len_t)());
+
 		for (int i = 0; i < CellType::batch_size; i++) {
-			auto matrix = m_factory->template make<matrix_name::D>(len_s(i), len_t(i));
+			auto matrix = detached_factory->template make<0>(len_s(i), len_t(i));
 			auto shared_it = std::make_shared<SharedTracebackIterator<
-				Locality<CellType, ProblemType>>>(m_factory, m_locality, matrix);
+				Locality<CellType, ProblemType>>>(detached_factory, m_locality, matrix);
 
 			iterators.push_back(std::make_shared<AlignmentIterator<
 				AlignmentFactory, Locality<CellType, ProblemType>>>(
@@ -2546,10 +2567,13 @@ public:
 			AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>> iterators;
 		iterators.reserve(CellType::batch_size);
 
+		const auto detached_factory = m_factory->template copy<matrix_name::D>(
+		    xt::amax(len_s)(), xt::amax(len_t)());
+
 		for (int i = 0; i < CellType::batch_size; i++) {
-			auto matrix = m_factory->template make<matrix_name::D>(len_s(i), len_t(i));
+			auto matrix = detached_factory->template make<0>(len_s(i), len_t(i));
 			auto shared_it = std::make_shared<SharedTracebackIterator<
-				Locality<CellType, ProblemType>>>(m_factory, m_locality, matrix);
+				Locality<CellType, ProblemType>>>(detached_factory, m_locality, matrix);
 
 			iterators.push_back(std::make_shared<SolutionIterator<
 				AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>(
