@@ -4,3 +4,5 @@
 /demo/cpp/build
 /demo/py/.ipynb_checkpoints
 /pdoc/build
+.idea
+
