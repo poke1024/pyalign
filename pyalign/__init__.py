@@ -7,6 +7,8 @@ __pdoc__ = {
 	'tests': False
 }
 
+from pyalign._version import __version__
+
 from .gaps import *
 from .solve import *
 from .problems import *

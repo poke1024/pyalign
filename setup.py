@@ -88,9 +88,11 @@ else:
 with open(script_dir / 'README.md') as f:
 	long_description = f.read()
 
+exec(open("pyalign/_version.py").read())
+
 setup(
 	name='pyalign',
-	version='0.3.5',
+	version=__version__,
 	packages=find_packages(include=[
 		'pyalign',
 		'pyalign.algorithm',
