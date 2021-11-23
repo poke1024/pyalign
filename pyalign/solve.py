@@ -60,6 +60,8 @@ class Solution:
 
 	@cached_property
 	def alignment(self):
+		if self._solution.alignment is None:
+			return None
 		return Alignment(
 			self._problem,
 			self._solver,
