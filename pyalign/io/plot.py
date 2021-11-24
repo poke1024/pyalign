@@ -11,7 +11,9 @@ def inset_arrows(data, d0=0.2):
 	mx = (data['x_start'] + data['x_end']) / 2
 	my = (data['y_start'] + data['y_end']) / 2
 	length = np.sqrt(np.power(dx, 2) + np.power(dy, 2))
-	d = d0 / length
+
+	with np.errstate(divide='ignore'):
+		d = d0 / length
 
 	data_short = dict(
 		x_start=mx - dx * d,
@@ -20,7 +22,7 @@ def inset_arrows(data, d0=0.2):
 		y_end=my + dy * d
 	)
 
-	cond = np.logical_and(np.abs(dx) <= 1, np.abs(dy) <= 1)
+	cond = np.logical_and(np.logical_and(np.abs(dx) <= 1, np.abs(dy) <= 1), length > 0)
 	return dict((k, np.where(cond, data_short[k], data[k])) for k in data.keys())
 
 
@@ -100,7 +102,7 @@ class TracebackPlotFactory:
 	def _plot_traceback_matrix_arrows(self):
 		if not self._solution.traceback_has_max_degree_1:
 			edges = self._solution.traceback_as_edges[self._layer]
-			edges = edges[np.logical_and(edges[:, 0, 0] >= 0, edges[:, 0, 1] >= 0)]
+			edges = edges[(edges >= 0).all(axis=-1).all(axis=-1)]
 			src = edges[:, 0, :] + 1
 			dst = edges[:, 1, :] + 1
 
@@ -115,7 +117,7 @@ class TracebackPlotFactory:
 			src = src[mask]
 			dst = dst[mask]
 
-			mask = np.logical_and(dst[:, 0] >= 0, dst[:, 1] >= 0)
+			mask = np.logical_and(dst[:, 0] >= 1, dst[:, 1] >= 1)
 			src = src[mask]
 			dst = dst[mask]
 
