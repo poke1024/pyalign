@@ -4,7 +4,7 @@ import bokeh.io
 import numpy as np
 
 
-def inset_arrows(data, d0=0.2):
+def inset_arrows(data, d0=0.1):
 	dx = data['x_end'] - data['x_start']
 	dy = data['y_end'] - data['y_start']
 
@@ -128,7 +128,7 @@ class TracebackPlotFactory:
 			x_start=src[:, 1],
 			y_start=src[:, 0],
 			x_end=dst[:, 1],
-			y_end=dst[:, 0]), 0.1))
+			y_end=dst[:, 0])))
 		self._p.add_layout(bokeh.models.Arrow(
 			end=bokeh.models.OpenHead(
 				line_color=arrow_color, line_alpha=arrow_alpha, line_width=1, size=5),
