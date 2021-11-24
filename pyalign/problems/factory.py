@@ -139,7 +139,7 @@ class AlphabetProblemFactory:
 		else:
 			for i, x in enumerate(ordered_alphabet):
 				for j, y in enumerate(ordered_alphabet):
-					self._matrix[i, j] = w(i, j)
+					self._matrix[i, j] = w(x, y)
 		self._direction = direction
 		self._dtype = dtype
 
