@@ -14,7 +14,8 @@ class TestBatch(TestCase):
 
 		solver = pyalign.solve.GlobalSolver(
 			gap_cost=pyalign.gaps.LinearGapCost(2),
-			codomain=Iterator[pyalign.solve.Alignment])
+			codomain=Iterator[pyalign.solve.Alignment],
+			return_dup=False)
 
 		alignments = solver.solve([
 			pf.new_problem("AATCG", "AACG"),

@@ -628,7 +628,7 @@ private:
 			size_t i = 0;
 			for (auto iterator : m_algorithm.template alignment_iterator<
 				core::SharedPtrFactory<Alignment<Index>>>(
-				p_pairwise.len_s(), p_pairwise.len_t())) {
+				p_pairwise.len_s(), p_pairwise.len_t(), m_options->remove_dup())) {
 				iterators.at(i++) = std::make_shared<AlignmentIteratorImpl<
 					Index, typename Algorithm::locality_type>>(iterator);
 			}
@@ -681,7 +681,7 @@ private:
 			for (auto iterator : m_algorithm.template solution_iterator<
 				core::SharedPtrFactory<Alignment<Index>>,
 				core::SharedPtrFactory<NativeSolution<CellType, ProblemType>>>(
-				p_pairwise.len_s(), p_pairwise.len_t())) {
+				p_pairwise.len_s(), p_pairwise.len_t(), m_options->remove_dup())) {
 
 				iterators.at(i++) = std::make_shared<SolutionIteratorImpl<
 					typename Algorithm::locality_type>>(iterator);

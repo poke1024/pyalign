@@ -17,12 +17,14 @@ private:
 		inline base(const py::dict &p_options) :
 			type(p_options["solver"].cast<enums::Type>()),
 			batch(p_options["batch"].cast<bool>()),
-			direction(p_options["direction"].cast<enums::Direction>()) {
+			direction(p_options["direction"].cast<enums::Direction>()),
+			remove_dup(!p_options["return_dup"].cast<bool>()) {
 		}
 
 		const enums::Type type;
 		const bool batch;
 		const enums::Direction direction;
+		const bool remove_dup;
 	};
 
 	struct alignment {
@@ -71,6 +73,10 @@ public:
 
 	inline enums::Direction direction() const {
 		return m_base.direction;
+	}
+
+	inline bool remove_dup() const {
+	    return m_base.remove_dup;
 	}
 
 	inline enums::Detail detail() const {

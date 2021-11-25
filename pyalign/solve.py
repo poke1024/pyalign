@@ -31,14 +31,18 @@ def import_algorithm():
 		('generic', lambda: True)
 	)
 
+	missing_module_names = []
+
 	for name, check in candidates:
 		module_name = f"pyalign.algorithm.{name}"
 		if importlib.util.find_spec(module_name) is not None:
 			if check():
 				logging.info(f"running in {name} mode.")
 				return importlib.import_module(module_name + ".algorithm")
+		else:
+			missing_module_names.append(module_name)
 
-	raise RuntimeError("no suitable c++ core found")
+	raise RuntimeError(f"failed to find suitable c++ core in {missing_module_names}")
 
 
 algorithm = import_algorithm()
@@ -193,6 +197,7 @@ class SolverCache:
 			options = self._options.copy()
 			options['direction'] = algorithm.Direction.__members__[direction.upper()]
 			options['batch'] = batch
+			options['return_dup'] = options.get('return_dup', False)
 
 			parsed_options = algorithm.create_options(options)
 
@@ -462,9 +467,10 @@ class Solver:
 	def gap_cost(self):
 		return self._options["gap_cost"]
 
-	def to_codomain(self, codomain):
+	def to_codomain(self, codomain, return_dup=False):
 		kwargs = self._options.copy()
 		kwargs['codomain'] = codomain
+		kwargs['return_dup'] = return_dup
 		return Solver(**kwargs)
 
 	@property

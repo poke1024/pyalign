@@ -3,6 +3,7 @@
 
 #include "pyalign/algorithm/common.h"
 #include <stack>
+#include <unordered_set>
 
 namespace pyalign {
 namespace core {
@@ -718,6 +719,38 @@ MatrixFactory<CellType, ProblemType>::make(
 	return Matrix<CellType, ProblemType>(*this, len_s, len_t, Layer);
 }
 
+template<typename CellType>
+struct CompressedPath {
+	typedef typename CellType::index_type index_type;
+
+	typedef xt::xtensor_fixed<index_type, xt::xshape<2>> Coord;
+
+	std::vector<Coord> path;
+
+	inline CompressedPath() {
+	}
+
+	inline bool operator==(const CompressedPath &p) const {
+	    return path == p.path;
+	}
+};
+
+template<typename CellType>
+struct CompressedPathHash {
+	typedef typename CellType::index_type index_type;
+
+    size_t operator()(const CompressedPath<CellType>& v) const {
+        std::hash<index_type> hasher;
+        size_t seed = 0;
+        for (const auto &p : v.path) {
+            for (int i = 0; i < 2; i++) {
+                seed ^= hasher(p(i)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            }
+        }
+        return seed;
+    }
+};
+
 template<typename CellType, typename ProblemType>
 class build_val {
 public:
@@ -742,11 +775,14 @@ public:
 	}
 
 	inline void step(
-		const index_type last_u,
-		const index_type last_v,
 		const index_type u,
 		const index_type v) {
 	}
+
+    template<typename F>
+    inline bool check_emit(const F &f) const {
+        return true;
+    }
 
 	inline void emit(
 		const value_type p_val) {
@@ -761,6 +797,58 @@ public:
 		const size_t p_size) {
 	}
 };
+
+template<typename CellType>
+class path_compressor {
+	typedef typename CellType::index_type index_type;
+
+    index_type m_last_u;
+    index_type m_last_v;
+    bool m_empty;
+
+public:
+    inline path_compressor() {
+        m_empty = true;
+    }
+
+    inline bool empty() const {
+        return m_empty;
+    }
+
+    inline void begin() {
+        m_empty = true;
+    }
+
+    template<typename F>
+    inline void step(
+        const index_type u,
+        const index_type v,
+        const F &f) {
+
+        if (m_empty) {
+            m_empty = false;
+        } else if ((u != m_last_u && v != m_last_v) || u < 0 || v < 0) {
+            /*std::cout << "step: " << u << ", " << v << std::endl;
+            std::cout << "emit: " << m_last_u << ", " << m_last_v << std::endl;
+            std::cout << std::endl;*/
+            if (m_last_u >= 0 && m_last_v >= 0) {
+                f(m_last_u, m_last_v);
+            }
+        }
+
+        m_last_u = u;
+        m_last_v = v;
+    }
+};
+
+template<typename CellType>
+class make_path_compressor {
+public:
+    const path_compressor<CellType> make() const {
+        return path_compressor<CellType>();
+    }
+};
+
 
 template<typename CellType, typename ProblemType>
 class build_path {
@@ -788,30 +876,21 @@ public:
 		const index_type len_t) {
 
 		m_path.reserve(len_s + len_t);
+		m_path.clear();
 		m_val = direction_type::template worst_val<value_type>();
 	}
 
 	inline void step(
-		const index_type last_u,
-		const index_type last_v,
 		const index_type u,
 		const index_type v) {
 
-		if (m_path.empty()) {
-			m_path.push_back(Coord{last_u, last_v});
-			m_path.push_back(Coord{u, v});
-		} else {
-			if (m_path.back()(0) != last_u) {
-				throw std::runtime_error(
-					"internal error in traceback generation");
-			}
-			if (m_path.back()(1) != last_v) {
-				throw std::runtime_error(
-					"internal error in traceback generation");
-			}
-			m_path.push_back(Coord{u, v});
-		}
+        m_path.push_back(Coord{u, v});
 	}
+
+    template<typename F>
+    inline bool check_emit(const F &f) const {
+        return true;
+    }
 
 	template<typename Value>
 	inline void emit(Value val) {
@@ -837,14 +916,17 @@ public:
 	}
 
 	template<typename F>
-	inline void iterate(const F &f) const {
+	inline void iterate(
+	    const make_path_compressor<CellType> &filter_factory,
+	    const F &f) const {
+
+		auto filter = filter_factory.make();
 		const size_t n = m_path.size();
-		for (size_t i = 1; i < n; i++) {
-			f(
-				m_path[i - 1](0),
-				m_path[i - 1](1),
-				m_path[i](0),
-				m_path[i](1)
+		for (size_t i = 0; i < n; i++) {
+			filter.step(
+				m_path[i](0), m_path[i](1), [&f] (auto u, auto v) {
+				    f(u, v);
+				}
 			);
 		}
 	}
@@ -859,11 +941,17 @@ struct build_alignment {
 	template<typename Alignment>
 	struct unbuffered {
 		Alignment &m_alignment;
+		make_path_compressor<CellType> m_filter_factory;
 		index_type m_steps;
+		path_compressor<CellType> m_filter;
 
 	public:
-		inline unbuffered(Alignment &p_alignment) :
+		inline unbuffered(
+		    Alignment &p_alignment,
+		    const make_path_compressor<CellType> &p_filter_factory) :
+
 			m_alignment(p_alignment),
+			m_filter_factory(p_filter_factory),
 			m_steps(0) {
 		}
 
@@ -871,26 +959,30 @@ struct build_alignment {
 			const index_type len_s,
 			const index_type len_t) {
 
+			if (m_steps > 0) {
+                throw std::runtime_error(
+                    "internal error: called begin() on non-empty unbuffered alignment builder");
+			}
+
 			m_alignment.resize(len_s, len_t);
+			m_filter = m_filter_factory.make();
 			m_steps = 0;
 		}
 
 		inline void step(
-			const index_type last_u,
-			const index_type last_v,
 			const index_type u,
 			const index_type v) {
 
-			if (u != last_u && v != last_v) {
-				m_alignment.add_edge(last_u, last_v);
-			}
+            m_filter.step(u, v, [this] (auto u, auto v) {
+                m_alignment.add_edge(u, v);
+            });
 
-			// m_steps needs to match with build_path's concept of size()
-			if (m_steps == 0) {
-				m_steps = 2;
-			} else {
-				m_steps += 1;
-			}
+            m_steps += 1;
+		}
+
+        template<typename F>
+		inline bool check_emit(const F &f) const {
+            return true;
 		}
 
 		inline void emit(value_type val) {
@@ -904,23 +996,36 @@ struct build_alignment {
 		inline void go_back(
 			const size_t p_size) {
 
-			if (static_cast<index_type>(p_size) != m_steps) {
-				std::ostringstream s;
-				s << "cannot go back to pos " << p_size <<
-					" on unbuffered alignment of size " << m_steps;
-				throw std::runtime_error(s.str());
-			}
-		}
-	};
+            throw std::runtime_error(
+                "internal error: called go_back() on unbuffered alignment builder");
+        }
+    };
 
 	template<typename Alignment>
 	class buffered {
 		build_path<CellType, ProblemType> m_path;
+		mutable CompressedPath<CellType> m_compressed_path;
+		const make_path_compressor<CellType> m_filter_factory;
 		index_type m_len_s;
 		index_type m_len_t;
 
+		inline void update_compressed_path() const {
+		    m_compressed_path.path.reserve(m_len_s + m_len_t);
+		    m_compressed_path.path.clear();
+			m_path.iterate(m_filter_factory, [this] (
+				const index_type u,
+				const index_type v) {
+
+				typedef typename CompressedPath<CellType>::Coord Coord;
+
+                m_compressed_path.path.push_back(Coord{u, v});
+			});
+		}
 	public:
-		inline buffered() : m_len_s(0), m_len_t(0) {
+		inline buffered(const make_path_compressor<CellType> &p_filter_factory) :
+		    m_filter_factory(p_filter_factory),
+		    m_len_s(0),
+		    m_len_t(0) {
 		}
 
 		inline void begin(
@@ -933,16 +1038,20 @@ struct build_alignment {
 		}
 
 		inline void step(
-			const index_type last_u,
-			const index_type last_v,
 			const index_type u,
 			const index_type v) {
 
-			m_path.step(last_u, last_v, u, v);
+			m_path.step(u, v);
+		}
+
+        template<typename F>
+		inline bool check_emit(const F &f) const {
+    		update_compressed_path();
+		    return f(m_compressed_path);
 		}
 
 		inline void emit(value_type val) {
-			m_path.emit(val);
+            m_path.emit(val);
 		}
 
 		inline size_t size() const {
@@ -959,15 +1068,11 @@ struct build_alignment {
 
 			p_alignment.resize(m_len_s, m_len_t);
 
-			m_path.iterate([&p_alignment] (
-				const index_type last_u,
-				const index_type last_v,
+			m_path.iterate(m_filter_factory, [&p_alignment] (
 				const index_type u,
 				const index_type v) {
 
-				if (u != last_u && v != last_v) {
-					p_alignment.add_edge(last_u, last_v);
-				}
+                p_alignment.add_edge(u, v);
 			});
 
 			p_alignment.set_score(m_path.val());
@@ -989,11 +1094,14 @@ public:
 
 	template<typename Index>
 	inline void step(
-		const Index last_u,
-		const Index last_v,
 		const Index u,
 		const Index v) {
 	}
+
+    template<typename F>
+    inline bool check_emit(const F &f) const {
+        return true;
+    }
 
 	template<typename Value>
 	inline void emit(
@@ -1063,14 +1171,17 @@ public:
 
 	template<typename Index>
 	inline void step(
-		const Index last_u,
-		const Index last_v,
 		const Index u,
 		const Index v) {
 
-		m_head.step(last_u, last_v, u, v);
-		m_rest.step(last_u, last_v, u, v);
+		m_head.step(u, v);
+		m_rest.step(u, v);
 	}
+
+    template<typename F>
+    inline bool check_emit(const F &f) const {
+        return m_head.check_emit(f) && m_rest.check_emit(f);
+    }
 
 	template<typename Value>
 	inline void emit(
@@ -1396,7 +1507,9 @@ public:
 			if (m_context.strategy.has_trace()) { // && m_path.wants_path()
 				const auto len_s = m_context.matrix.len_s();
 				const auto len_t = m_context.matrix.len_t();
+
 				p_path.begin(len_s, len_t);
+				p_path.step(u, v);
 
 				const auto traceback = m_context.matrix.template traceback<1, 1>();
 
@@ -1404,14 +1517,11 @@ public:
 					m_context.strategy.continue_traceback_1(u, v) &&
 					m_context.strategy.continue_traceback_2(values(u, v)(m_batch_index))) {
 
-					const index_type last_u = u;
-					const index_type last_v = v;
-
 					const auto &t = traceback(u, v);
 					u = t.u(m_batch_index, 0);
 					v = t.v(m_batch_index, 0);
 
-					p_path.step(last_u, last_v, u, v);
+                    p_path.step(u, v);
 				}
 			}
 
@@ -1428,11 +1538,15 @@ private:
 public:
 	inline TracebackIterators(
 		const Strategy &p_strategy,
-		const Matrix &p_matrix) :
+		const Matrix &p_matrix,
+		const bool /*p_remove_dup*/) :
 
 		m_matrix(p_matrix),
 		m_iterators(seq_array<Iterator, BatchSize, Context>(
 			Context{p_strategy, m_matrix})) {
+
+	    // p_remove_dup is ignored since we only return 1
+	    // alignment in this TracebackIterators implementation.
 
 		p_strategy.seeds(m_matrix).generate(m_iterators);
 	}
@@ -1457,13 +1571,13 @@ public:
 	struct Context {
 		const Strategy strategy;
 		const Matrix &matrix;
+		const bool remove_dup;
 	};
 
 	class Iterator {
 	private:
 		struct Entry {
 			float path_val;
-			std::pair<index_type, index_type> previous;
 			std::pair<index_type, index_type> current;
 			index_type path_len;
 		};
@@ -1471,6 +1585,17 @@ public:
 		const Context m_context;
 		const int m_batch_index;
 		std::stack<Entry> m_stack;
+		std::unordered_set<
+		    CompressedPath<CellType>,
+		    CompressedPathHash<CellType>> m_emitted;
+
+        inline bool check_path(const CompressedPath<CellType> &compressed_path) {
+            if (m_emitted.find(compressed_path) != m_emitted.end()) {
+                return false;
+            }
+            m_emitted.insert(compressed_path);
+            return true;
+        }
 
 	public:
 		inline Iterator(
@@ -1500,7 +1625,6 @@ public:
 
 			m_stack.push(Entry{
 				path_val,
-				{no_traceback<index_type>(), no_traceback<index_type>()},
 				p,
 				0
 			});
@@ -1534,20 +1658,21 @@ public:
 			while (!m_stack.empty()) {
 				const index_type u1 = std::get<0>(m_stack.top().current);
 				const index_type v1 = std::get<1>(m_stack.top().current);
+
 				const auto best_val = m_stack.top().path_val;
-				p_path.go_back(m_stack.top().path_len);
-				const auto prev = m_stack.top().previous;
+				const auto path_len = m_stack.top().path_len;
+
 				m_stack.pop();
 
-				if (std::get<0>(prev) != no_traceback<index_type>()) {
-					p_path.step(
-						std::get<0>(prev), std::get<1>(prev),
-						u1, v1);
-				} else {
+				if (path_len == 0) {
 					const auto len_s = m_context.matrix.len_s();
 					const auto len_t = m_context.matrix.len_t();
 					p_path.begin(len_s, len_t);
-				}
+                } else {
+    				p_path.go_back(path_len);
+                }
+
+                p_path.step(u1, v1);
 
 				if (m_context.strategy.continue_traceback_1(u1, v1) &&
 					m_context.strategy.continue_traceback_2(values(u1, v1)(m_batch_index))) {
@@ -1560,7 +1685,6 @@ public:
 						for (size_t i = 0; i < n; i++) {
 							m_stack.push(Entry{
 								best_val,
-								{u1, v1},
 								{t.u(m_batch_index, i), t.v(m_batch_index, i)},
 								path_size
 							});
@@ -1568,14 +1692,18 @@ public:
 					} else {
 						m_stack.push(Entry{
 							best_val,
-							{u1, v1},
 							{no_traceback<index_type>(), no_traceback<index_type>()},
 							path_size
 						});
 					}
 				} else {
-					p_path.emit(best_val);
-					return true;
+				    if (!m_context.remove_dup || p_path.check_emit([this] (const auto &path) {
+    				    return check_path(path);
+				    })) {
+
+                        p_path.emit(best_val);
+                        return true;
+				    }
 				}
 			}
 
@@ -1590,11 +1718,12 @@ private:
 public:
 	inline TracebackIterators(
 		const Strategy &p_strategy,
-		const Matrix &p_matrix) :
+		const Matrix &p_matrix,
+		const bool p_remove_dup) :
 
 		m_matrix(p_matrix),
 		m_iterators(seq_array<Iterator, BatchSize, Context>(
-			Context{p_strategy, m_matrix})) {
+			Context{p_strategy, m_matrix, p_remove_dup})) {
 
 		p_strategy.seeds(m_matrix).generate(m_iterators);
 	}
@@ -1627,10 +1756,11 @@ struct SharedTracebackIterator {
 	inline SharedTracebackIterator(
 		const MatrixFactoryRef<cell_type, problem_type> &p_factory,
 		const traceback_strategy_type &p_strategy,
-		const layer_matrix_type &p_matrix) :
+		const layer_matrix_type &p_matrix,
+		const bool p_remove_dup = false) :
 
 		factory(p_factory),
-		iterators(p_strategy, p_matrix) {
+		iterators(p_strategy, p_matrix, p_remove_dup) {
 	}
 
 	auto len_s() const {
@@ -1666,12 +1796,14 @@ private:
 public:
 	inline AlignmentIterator(
 		const SharedTracebackIteratorRef<Locality> &p_iterators,
+		const make_path_compressor<cell_type> &p_path_filter_factory,
 		const int p_batch_index,
 		AlignmentFactory p_alignment_factory = AlignmentFactory()) :
 
 		m_iterators(p_iterators),
 		m_batch_index(p_batch_index),
-		m_alignment_factory(p_alignment_factory) {
+		m_alignment_factory(p_alignment_factory),
+		m_build(p_path_filter_factory) {
 	}
 
 	alignment_ref_type next() {
@@ -1710,6 +1842,7 @@ private:
 public:
 	inline SolutionIterator(
 		const SharedTracebackIteratorRef<Locality> &p_iterators,
+		const make_path_compressor<cell_type> &p_path_filter_factory,
 		const int p_batch_index,
 		const AlignmentFactory p_alignment_factory = AlignmentFactory(),
 		const SolutionFactory p_solution_factory = SolutionFactory()) :
@@ -1718,7 +1851,7 @@ public:
 		m_batch_index(p_batch_index),
 		m_alignment_factory(p_alignment_factory),
 		m_solution_factory(p_solution_factory),
-		m_build(build_path_type(), build_alignment_type()) {
+		m_build(build_path_type(), build_alignment_type(p_path_filter_factory)) {
 	}
 
 	solution_ref_type next() {
@@ -1761,7 +1894,8 @@ inline TracebackIterators2<
 	Matrix>
 	make_traceback_iterator(
 		const Locality &p_locality,
-		Matrix &p_matrix) {
+		Matrix &p_matrix,
+		const bool remove_dup = false) {
 
 	return TracebackIterators2<
 		typename Locality::cell_type,
@@ -1770,7 +1904,8 @@ inline TracebackIterators2<
 		Matrix>(
 
 		typename Locality::TracebackStrategy(p_locality),
-		p_matrix
+		p_matrix,
+		remove_dup
 	);
 }
 
@@ -2459,7 +2594,7 @@ public:
 
 		for (int i = 0; i < CellType::batch_size; i++) {
 			auto matrix = m_factory->template make<matrix_name::D>(len_s(i), len_t(i));
-			auto tb = make_traceback_iterator(m_locality, matrix);
+			auto tb = make_traceback_iterator(m_locality, matrix, true);
 
 			const bool tb_good = tb.iterator(i).next(val_only);
 			scores(i) = tb_good ? val_only.val() : direction_type::template worst_val<value_type>();
@@ -2476,11 +2611,13 @@ public:
 
 		for (int i = 0; i < CellType::batch_size; i++) {
 			auto matrix = m_factory->template make<matrix_name::D>(len_s(i), len_t(i));
-			auto tb = make_traceback_iterator(m_locality, matrix);
+			auto tb = make_traceback_iterator(m_locality, matrix, true);
 			alignments[i] = alignment_factory.make();
 			auto &alignment = alignment_factory.deref(alignments[i]);
 			auto build = typename build_alignment<CellType, ProblemType>::
-				template unbuffered<typename AlignmentFactory::deref_type>(alignment);
+				template unbuffered<typename AlignmentFactory::deref_type>(
+				    alignment,
+				    make_path_compressor<CellType>());
 			if (!tb.iterator(i).next(build)) {
 				alignment.set_score(direction_type::template worst_val<value_type>());
 			}
@@ -2492,6 +2629,7 @@ public:
 			AlignmentFactory, Locality<CellType, ProblemType>>>> alignment_iterator(
 		const index_vec_type &len_s,
 		const index_vec_type &len_t,
+		const bool remove_duplicate_alignments,
 		const AlignmentFactory alignment_factory = AlignmentFactory()) const {
 
 		std::vector<std::shared_ptr<AlignmentIterator<
@@ -2504,11 +2642,15 @@ public:
 		for (int i = 0; i < CellType::batch_size; i++) {
 			auto matrix = detached_factory->template make<0>(len_s(i), len_t(i));
 			auto shared_it = std::make_shared<SharedTracebackIterator<
-				Locality<CellType, ProblemType>>>(detached_factory, m_locality, matrix);
+				Locality<CellType, ProblemType>>>(
+				    detached_factory, m_locality, matrix, remove_duplicate_alignments);
 
 			iterators.push_back(std::make_shared<AlignmentIterator<
 				AlignmentFactory, Locality<CellType, ProblemType>>>(
-					shared_it, i, alignment_factory
+					shared_it,
+					make_path_compressor<CellType>(),
+					i,
+					alignment_factory
 				));
 		}
 
@@ -2525,7 +2667,7 @@ public:
 
 		for (int i = 0; i < CellType::batch_size; i++) {
 			auto matrix = m_factory->template make<matrix_name::D>(len_s(i), len_t(i));
-			auto tb = make_traceback_iterator(m_locality, matrix);
+			auto tb = make_traceback_iterator(m_locality, matrix, true);
 
 			solutions[i] = solution_factory.make();
 			auto &solution = solution_factory.deref(solutions[i]);
@@ -2541,7 +2683,9 @@ public:
 
 			auto build = build_multiple<build_path_type, build_alignment_type>(
 				build_path_type(),
-				build_alignment_type(alignment_factory.deref(alignment))
+				build_alignment_type(
+				    alignment_factory.deref(alignment),
+				    make_path_compressor<CellType>())
 			);
 
 			const bool tb_good = tb.iterator(i).next(build);
@@ -2560,6 +2704,7 @@ public:
 			AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>> solution_iterator(
 		const index_vec_type &len_s,
 		const index_vec_type &len_t,
+		const bool remove_duplicate_alignments,
 		const AlignmentFactory alignment_factory = AlignmentFactory(),
 		const SolutionFactory solution_factory = SolutionFactory()) const {
 
@@ -2573,11 +2718,16 @@ public:
 		for (int i = 0; i < CellType::batch_size; i++) {
 			auto matrix = detached_factory->template make<0>(len_s(i), len_t(i));
 			auto shared_it = std::make_shared<SharedTracebackIterator<
-				Locality<CellType, ProblemType>>>(detached_factory, m_locality, matrix);
+				Locality<CellType, ProblemType>>>(
+				    detached_factory, m_locality, matrix, remove_duplicate_alignments);
 
 			iterators.push_back(std::make_shared<SolutionIterator<
 				AlignmentFactory, SolutionFactory, Locality<CellType, ProblemType>>>(
-					shared_it, i, alignment_factory, solution_factory
+					shared_it,
+					make_path_compressor<CellType>(),
+					i,
+					alignment_factory,
+					solution_factory
 				));
 		}
 
