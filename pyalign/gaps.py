@@ -161,11 +161,17 @@ class AffineGapCost(GapCost):
            Proteins: Structure, 32.
 	"""
 
-	def __init__(self, u, v):
-		self._u = u
-		self._v = v
-		assert u >= 0
-		assert v >= 0
+	def __init__(self, open=None, extend=0, u=None, v=None):
+		if open is not None:
+			assert u is None and v is None
+			self._u = open - extend
+			self._v = extend
+		else:
+			assert extend == 0
+			self._u = u
+			self._v = v
+		assert self._u >= 0
+		assert self._v >= 0
 
 	def to_tuple(self):
 		return 'affine', self._u, self._v

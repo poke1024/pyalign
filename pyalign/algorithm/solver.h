@@ -827,10 +827,7 @@ public:
 
         if (m_empty) {
             m_empty = false;
-        } else if ((u != m_last_u && v != m_last_v) || u < 0 || v < 0) {
-            /*std::cout << "step: " << u << ", " << v << std::endl;
-            std::cout << "emit: " << m_last_u << ", " << m_last_v << std::endl;
-            std::cout << std::endl;*/
+        } else if ((u != m_last_u && v != m_last_v)) { //} || u < 0 || v < 0) {
             if (m_last_u >= 0 && m_last_v >= 0) {
                 f(m_last_u, m_last_v);
             }
@@ -2927,21 +2924,23 @@ public:
 			cell.fill(inf);
 		}
 
+		constexpr value_type gap_sgn = direction_type::is_minimize() ? 1 : -1;
+
 		// setting D(m, 0) = P(m, 0) = w(m)
 		this->m_locality.init_border_case(
 			xt::view(D, xt::all(), 0),
-			m_gap_cost_s.vector(p_max_len_s + 1));
+			m_gap_cost_s.vector(p_max_len_s + 1) * gap_sgn);
 		this->m_locality.init_border_case(
 			xt::view(P, xt::all(), 0),
-			m_gap_cost_s.vector(p_max_len_s + 1));
+			m_gap_cost_s.vector(p_max_len_s + 1) * gap_sgn);
 
 		// setting D(0, n) = Q(0, n) = w(n)
 		this->m_locality.init_border_case(
 			xt::view(D, 0, xt::all()),
-			m_gap_cost_t.vector(p_max_len_t + 1));
+			m_gap_cost_t.vector(p_max_len_t + 1) * gap_sgn);
 		this->m_locality.init_border_case(
 			xt::view(Q, 0, xt::all()),
-			m_gap_cost_t.vector(p_max_len_t + 1));
+			m_gap_cost_t.vector(p_max_len_t + 1) * gap_sgn);
 
 		auto tb_P = matrix_P.template traceback<0, 0>();
 		auto tb_Q = matrix_Q.template traceback<0, 0>();

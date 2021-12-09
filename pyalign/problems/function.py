@@ -35,7 +35,20 @@ class Dict(Function):
 		self._dict = pairs
 
 	def get(self, u, v):
-		return self._dict.get(u, v)
+		a = self._dict.get((u, v))
+		b = self._dict.get((v, u))
+
+		if a is None and b is not None:
+			return b
+		elif b is None and a is not None:
+			return a
+		elif a is not None and b is not None:
+			if a != b:
+				raise ValueError(
+					f"cost is not symmetric: d({u}, {v}) = {a} vs. d({v}, {u}) = {b}")
+			return a
+		else:
+			return 0
 
 	def build_matrix(self, encoder, matrix):
 		for uv, w in self._dict.items():
