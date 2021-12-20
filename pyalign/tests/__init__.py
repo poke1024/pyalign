@@ -11,11 +11,15 @@ def to_tuple(x):
 
 
 class TestCase(unittest.TestCase):
-	def _problems(self, alphabet, *args, **kwargs):
-		from ..problems import general, alphabetic
+	def _problems(self, alphabet, sim, **kwargs):
+		from ..problems import general, alphabetic, binary
 
-		yield general(*args, **kwargs)
-		yield alphabetic(alphabet, *args, **kwargs)
+		yield general(sim, **kwargs)
+		yield alphabetic(alphabet, sim, **kwargs)
+
+		eq_ne = sim.binary_similarity_values
+		if eq_ne is not None:
+			yield binary(*eq_ne, **kwargs)
 
 	def _check_alignments(self, alignments, score, *edges, places=7):
 		computed_edges = []

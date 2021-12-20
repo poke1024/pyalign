@@ -13,6 +13,10 @@ class Function:
 	def build_matrix(self, encoder, matrix):
 		raise NotImplementedError()
 
+	@property
+	def binary_similarity_values(self):
+		return None
+
 
 class Coalesced(Function):
 	def __init__(self, *ops):
@@ -82,3 +86,6 @@ class Equality(Function):
 		matrix.fill(self._ne)
 		np.fill_diagonal(matrix, self._eq)
 
+	@property
+	def binary_similarity_values(self):
+		return self._eq, self._ne

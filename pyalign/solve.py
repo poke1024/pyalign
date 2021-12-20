@@ -381,7 +381,24 @@ class MatrixForm:
 			for problem, x in zip(batch.problems, r)]
 
 
-class IndexedMatrixForm:
+class AbstractIndexedMatrixForm:
+	def prepare(self, batch):
+		shape = batch.shape
+		a = self._a
+		b = self._b
+		p_len = self._len
+
+		for k, p in enumerate(batch.problems):
+			p.build_index_sequences(
+				a[k, :shape[0]],
+				b[k, :shape[1]])
+
+			p_shape = p.shape
+			p_len[0, k] = p_shape[0]
+			p_len[1, k] = p_shape[1]
+
+
+class IndexedMatrixForm(AbstractIndexedMatrixForm):
 	_solvers = solver_variants("solve_indexed")
 
 	def __init__(self, solver, codomain, bag):
@@ -403,21 +420,6 @@ class IndexedMatrixForm:
 		self._solve = getattr(solver, variant[0])
 		self._construct = variant[1]
 
-	def prepare(self, batch):
-		shape = batch.shape
-		a = self._a
-		b = self._b
-		p_len = self._len
-
-		for k, p in enumerate(batch.problems):
-			p.build_index_sequences(
-				a[k, :shape[0]],
-				b[k, :shape[1]])
-
-			p_shape = p.shape
-			p_len[0, k] = p_shape[0]
-			p_len[1, k] = p_shape[1]
-
 	def solve(self, batch):
 		shape = batch.shape
 
@@ -432,10 +434,53 @@ class IndexedMatrixForm:
 			for problem, x in zip(batch.problems, r)]
 
 
+class BinaryMatrixForm(AbstractIndexedMatrixForm):
+	_solvers = solver_variants("solve_binary")
+
+	def __init__(self, solver, codomain, bag):
+		self._solver = solver
+		batch_size = solver.batch_size
+		max_shape = bag.max_shape
+
+		self._a = np.zeros((batch_size, max_shape[0]), dtype=np.uint32)
+		self._b = np.zeros((batch_size, max_shape[1]), dtype=np.uint32)
+		self._len = np.zeros((2, batch_size), dtype=np.uint16)
+
+		self._sim = bag.problems[0].binary_similarity_values()
+		if not all(p.binary_similarity_values() is self._sim for p in bag.problems):
+			raise ValueError("similarity must be identical for all problems in a batch")
+
+		variant = BinaryMatrixForm._solvers.get(codomain.key)
+		if variant is None:
+			raise ValueError(f"codomain {codomain} is currently not supported")
+		self._solve = getattr(solver, variant[0])
+		self._construct = variant[1]
+
+	def solve(self, batch):
+		shape = batch.shape
+
+		r = self._solve(
+			self._a[:, :shape[0]],
+			self._b[:, :shape[1]],
+			*self._sim,  # eq, ne
+			self._len)
+		c = self._construct
+
+		return [
+			c(problem, self._solver, x)
+			for problem, x in zip(batch.problems, r)]
+
+
 class Solver:
 	"""
 	A solver that obtains solutions to alignment problems.
 	"""
+
+	_matrix_c = {
+		Form.MATRIX_FORM: MatrixForm,
+		Form.INDEXED_MATRIX_FORM: IndexedMatrixForm,
+		Form.BINARY_MATRIX_FORM: BinaryMatrixForm
+	}
 
 	def __init__(
 		self, gap_cost: GapCost = None, codomain=Solution, **kwargs):
@@ -500,14 +545,11 @@ class Solver:
 		form = bag.form
 		problems = bag.problems
 
-		if form == Form.MATRIX_FORM:
-			form_solver = MatrixForm(
-				solver, self._codomain, bag)
-		elif form == Form.INDEXED_MATRIX_FORM:
-			form_solver = IndexedMatrixForm(
-				solver, self._codomain, bag)
-		else:
+		matrix_c = Solver._matrix_c.get(form)
+		if matrix_c is None:
 			raise ValueError(form)
+		form_solver = matrix_c(
+			solver, self._codomain, bag)
 
 		result = [None] * len(problems)
 

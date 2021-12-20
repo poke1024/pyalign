@@ -422,6 +422,13 @@ public:
 		const xt::pytensor<Value, 2> &p_similarity,
 		const xt::pytensor<Index, 2> &p_length) const = 0;
 
+	virtual xt::pytensor<Value, 1> solve_binary_for_score(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const Value p_eq,
+		const Value p_ne,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
+
 	virtual py::tuple solve_for_alignment(
 		const xt::pytensor<Value, 3> &p_similarity,
 		const xt::pytensor<Index, 2> &p_length) const = 0;
@@ -440,6 +447,20 @@ public:
 		const xt::pytensor<uint32_t, 2> &p_a,
 		const xt::pytensor<uint32_t, 2> &p_b,
 		const xt::pytensor<Value, 2> &p_similarity,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
+
+	virtual py::tuple solve_binary_for_alignment(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const Value p_eq,
+		const Value p_ne,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
+
+	virtual py::tuple solve_binary_for_alignment_iterator(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const Value p_eq,
+		const Value p_ne,
 		const xt::pytensor<Index, 2> &p_length) const = 0;
 
 	virtual py::tuple solve_for_solution(
@@ -461,30 +482,75 @@ public:
 		const xt::pytensor<uint32_t, 2> &p_b,
 		const xt::pytensor<Value, 2> &p_similarity,
 		const xt::pytensor<Index, 2> &p_length) const = 0;
+
+	virtual py::tuple solve_binary_for_solution(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const Value p_eq,
+		const Value p_ne,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
+
+	virtual py::tuple solve_binary_for_solution_iterator(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const Value p_eq,
+		const Value p_ne,
+		const xt::pytensor<Index, 2> &p_length) const = 0;
 };
 
 template<typename Value, typename Index>
 using SolverRef = std::shared_ptr<Solver<Value, Index>>;
 
 template<typename CellType>
-struct matrix_form {
+struct base_matrix_form {
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::index_vec_type IndexVec;
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::value_vec_type ValueVec;
 
-	const xt::pytensor<Value, 3> &m_similarity;
 	const xt::pytensor<Index, 2> &m_length;
 
-	inline void check() const {
-		check_batch_size(m_similarity.shape(2), CellType::batch_size);
+	inline base_matrix_form(
+	    const xt::pytensor<Index, 2> &p_length) : m_length(p_length) {
+	}
 
+	inline void check() const {
 		if (m_length.shape(0) != 2 || m_length.shape(1) != CellType::batch_size) {
 			std::ostringstream err;
 			err << "m_length has shape (" << m_length.shape(0) << ", " <<
 				m_length.shape(1) << "), expected (2, " << CellType::batch_size << ")";
 			throw std::invalid_argument(err.str());
 		}
+	}
+
+	inline IndexVec len_s() const {
+		return xt::view(m_length, 0, xt::all());
+	}
+
+	inline IndexVec len_t() const {
+		return xt::view(m_length, 1, xt::all());
+	}
+};
+
+template<typename CellType>
+struct matrix_form : base_matrix_form<CellType> {
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::index_vec_type IndexVec;
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::value_vec_type ValueVec;
+
+	const xt::pytensor<Value, 3> &m_similarity;
+
+	inline matrix_form(
+	    const xt::pytensor<Value, 3> &p_similarity,
+	    const xt::pytensor<Index, 2> &p_length) :
+	    base_matrix_form<CellType>(p_length),
+	    m_similarity(p_similarity) {
+	}
+
+	inline void check() const {
+		check_batch_size(m_similarity.shape(2), CellType::batch_size);
+		base_matrix_form<CellType>::check();
 	}
 
 	inline size_t batch_len_s() const {
@@ -495,14 +561,6 @@ struct matrix_form {
 		return m_similarity.shape(1);
 	}
 
-	inline IndexVec len_s() const {
-		return xt::view(m_length, 0, xt::all());
-	}
-
-	inline IndexVec len_t() const {
-		return xt::view(m_length, 1, xt::all());
-	}
-
 	inline ValueVec operator()(const Index i, const Index j) const {
 		ValueVec v = xt::view(m_similarity, i, j, xt::all());
 		return v;
@@ -510,7 +568,7 @@ struct matrix_form {
 };
 
 template<typename CellType>
-struct indexed_matrix_form {
+struct indexed_matrix_form : base_matrix_form<CellType> {
 	typedef typename CellType::index_type Index;
 	typedef typename CellType::index_vec_type IndexVec;
 	typedef typename CellType::value_type Value;
@@ -519,7 +577,18 @@ struct indexed_matrix_form {
 	const xt::pytensor<uint32_t, 2> &m_a;
 	const xt::pytensor<uint32_t, 2> &m_b;
 	const xt::pytensor<Value, 2> &m_similarity;
-	const xt::pytensor<Index, 2> &m_length;
+
+	inline indexed_matrix_form(
+	    const xt::pytensor<uint32_t, 2> &p_a,
+    	const xt::pytensor<uint32_t, 2> &p_b,
+	    const xt::pytensor<Value, 2> &p_similarity,
+	    const xt::pytensor<Index, 2> &p_length) :
+
+	    base_matrix_form<CellType>(p_length),
+	    m_a(p_a),
+	    m_b(p_b),
+	    m_similarity(p_similarity) {
+	}
 
 	inline void check() const {
 		check_batch_size(m_a.shape(0), CellType::batch_size);
@@ -532,12 +601,7 @@ struct indexed_matrix_form {
 			throw std::invalid_argument("out of bounds index in b");
 		}
 
-		if (m_length.shape(0) != 2 || m_length.shape(1) != CellType::batch_size) {
-			std::ostringstream err;
-			err << "m_length has shape (" << m_length.shape(0) << ", " <<
-				m_length.shape(1) << "), expected (2, " << CellType::batch_size << ")";
-			throw std::invalid_argument(err.str());
-		}
+		base_matrix_form<CellType>::check();
 	}
 
 	inline size_t batch_len_s() const {
@@ -548,18 +612,59 @@ struct indexed_matrix_form {
 		return m_b.shape(1);
 	}
 
-	inline IndexVec len_s() const {
-		return xt::view(m_length, 0, xt::all());
+	inline ValueVec operator()(const Index i, const Index j) const {
+		ValueVec v;
+		for (int k = 0; k < CellType::batch_size; k++) {
+			v(k) = m_similarity(m_a(k, i), m_b(k, j));
+		}
+		return v;
+	}
+};
+
+template<typename CellType>
+struct binary_matrix_form : base_matrix_form<CellType> {
+	typedef typename CellType::index_type Index;
+	typedef typename CellType::index_vec_type IndexVec;
+	typedef typename CellType::value_type Value;
+	typedef typename CellType::value_vec_type ValueVec;
+
+	const xt::pytensor<uint32_t, 2> &m_a;
+	const xt::pytensor<uint32_t, 2> &m_b;
+    const Value m_eq;
+    const Value m_ne;
+
+	inline binary_matrix_form(
+	    const xt::pytensor<uint32_t, 2> &p_a,
+    	const xt::pytensor<uint32_t, 2> &p_b,
+    	const Value p_eq,
+    	const Value p_ne,
+	    const xt::pytensor<Index, 2> &p_length) :
+
+	    base_matrix_form<CellType>(p_length),
+	    m_a(p_a),
+	    m_b(p_b),
+	    m_eq(p_eq),
+	    m_ne(p_ne) {
 	}
 
-	inline IndexVec len_t() const {
-		return xt::view(m_length, 1, xt::all());
+	inline void check() const {
+		check_batch_size(m_a.shape(0), CellType::batch_size);
+		check_batch_size(m_b.shape(0), CellType::batch_size);
+		base_matrix_form<CellType>::check();
+	}
+
+	inline size_t batch_len_s() const {
+		return m_a.shape(1);
+	}
+
+	inline size_t batch_len_t() const {
+		return m_b.shape(1);
 	}
 
 	inline ValueVec operator()(const Index i, const Index j) const {
 		ValueVec v;
 		for (int k = 0; k < CellType::batch_size; k++) {
-			v(k) = m_similarity(m_a(k, i), m_b(k, j));
+			v(k) = (m_a(k, i) == m_b(k, j)) ? m_eq : m_ne;
 		}
 		return v;
 	}
@@ -724,6 +829,17 @@ public:
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
 
+	virtual xt::pytensor<Value, 1> solve_binary_for_score(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const Value p_eq,
+		const Value p_ne,
+		const xt::pytensor<Index, 2> &p_length) const override {
+
+		return _solve_for_score(
+			binary_matrix_form<CellType>{p_a, p_b, p_eq, p_ne, p_length});
+	}
+
 	virtual py::tuple solve_for_alignment(
 		const xt::pytensor<Value, 3> &p_similarity,
 		const xt::pytensor<Index, 2> &p_length) const override {
@@ -760,6 +876,28 @@ public:
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
 	}
 
+	virtual py::tuple solve_binary_for_alignment(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const Value p_eq,
+		const Value p_ne,
+		const xt::pytensor<Index, 2> &p_length) const override {
+
+		return _solve_for_alignment(
+			binary_matrix_form<CellType>{p_a, p_b, p_eq, p_ne, p_length});
+	}
+
+	virtual py::tuple solve_binary_for_alignment_iterator(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const Value p_eq,
+		const Value p_ne,
+		const xt::pytensor<Index, 2> &p_length) const override {
+
+		return _solve_for_alignment_iterator(
+			binary_matrix_form<CellType>{p_a, p_b, p_eq, p_ne, p_length});
+	}
+
 	virtual py::tuple solve_for_solution(
 		const xt::pytensor<Value, 3> &p_similarity,
 		const xt::pytensor<Index, 2> &p_length) const override {
@@ -794,6 +932,28 @@ public:
 
 		return _solve_for_solution_iterator(
 			indexed_matrix_form<CellType>{p_a, p_b, p_similarity, p_length});
+	}
+
+	virtual py::tuple solve_binary_for_solution(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const Value p_eq,
+		const Value p_ne,
+		const xt::pytensor<Index, 2> &p_length) const override {
+
+		return _solve_for_solution(
+			binary_matrix_form<CellType>{p_a, p_b, p_eq, p_ne, p_length});
+	}
+
+	virtual py::tuple solve_binary_for_solution_iterator(
+		const xt::pytensor<uint32_t, 2> &p_a,
+		const xt::pytensor<uint32_t, 2> &p_b,
+		const Value p_eq,
+		const Value p_ne,
+		const xt::pytensor<Index, 2> &p_length) const override {
+
+		return _solve_for_solution_iterator(
+			binary_matrix_form<CellType>{p_a, p_b, p_eq, p_ne, p_length});
 	}
 
 	const Algorithm &algorithm() const {

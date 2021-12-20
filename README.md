@@ -1,6 +1,12 @@
 # pyalign
 
-Try it out and learn the details:
+Fast and simple alignments in Python.
+
+An Example using the simplified high-level API:
+
+![Example inside Jupyter](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/jupyter_example.png)
+
+To learn more details about the full low-level API:
 
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/poke1024/pyalign-demo/HEAD?filepath=example.ipynb)
 
@@ -55,8 +61,8 @@ import pyalign.problems
 import pyalign.solve
 import pyalign.gaps
 
-pf = pyalign.problems.ProblemFactory(
-    pyalign.problems.Binary(eq=1, ne=-1),
+pf = pyalign.problems.general(
+    pyalign.problems.Equality(eq=1, ne=-1),
     direction="maximize")
 solver = pyalign.solve.GlobalSolver(
     gap_cost=pyalign.gaps.LinearGapCost(0.2))

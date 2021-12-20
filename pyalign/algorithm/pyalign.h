@@ -26,14 +26,19 @@ void register_solver(py::module_ &m) {
 	solver.def_property_readonly("batch_size", &Solver<Value, Index>::batch_size);
 	solver.def("solve_for_score", &Solver<Value, Index>::solve_for_score);
 	solver.def("solve_indexed_for_score", &Solver<Value, Index>::solve_indexed_for_score);
+	solver.def("solve_binary_for_score", &Solver<Value, Index>::solve_binary_for_score);
 	solver.def("solve_for_alignment", &Solver<Value, Index>::solve_for_alignment);
 	solver.def("solve_for_alignment_iterator", &Solver<Value, Index>::solve_for_alignment_iterator);
 	solver.def("solve_indexed_for_alignment", &Solver<Value, Index>::solve_indexed_for_alignment);
 	solver.def("solve_indexed_for_alignment_iterator", &Solver<Value, Index>::solve_indexed_for_alignment_iterator);
+	solver.def("solve_binary_for_alignment", &Solver<Value, Index>::solve_binary_for_alignment);
+	solver.def("solve_binary_for_alignment_iterator", &Solver<Value, Index>::solve_binary_for_alignment_iterator);
 	solver.def("solve_for_solution", &Solver<Value, Index>::solve_for_solution);
 	solver.def("solve_for_solution_iterator", &Solver<Value, Index>::solve_for_solution_iterator);
 	solver.def("solve_indexed_for_solution", &Solver<Value, Index>::solve_indexed_for_solution);
 	solver.def("solve_indexed_for_solution_iterator", &Solver<Value, Index>::solve_indexed_for_solution_iterator);
+	solver.def("solve_binary_for_solution", &Solver<Value, Index>::solve_binary_for_solution);
+	solver.def("solve_binary_for_solution_iterator", &Solver<Value, Index>::solve_binary_for_solution_iterator);
 
 	py::class_<Alignment<Index>, AlignmentRef<Index>> alignment(
 		m, "Alignment", py::module_local());

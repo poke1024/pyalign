@@ -7,6 +7,7 @@ from pymorton import interleave2
 class Form(enum.Enum):
 	MATRIX_FORM = 0
 	INDEXED_MATRIX_FORM = 1
+	BINARY_MATRIX_FORM = 2
 
 
 class Task:
@@ -153,6 +154,15 @@ class IndexedMatrixProblem(Problem):
 	@property
 	def form(self):
 		return Form.INDEXED_MATRIX_FORM
+
+
+class BinaryMatrixProblem(Problem):
+	def binary_similarity_values(self):
+		raise NotImplementedError()
+
+	@property
+	def form(self):
+		return Form.BINARY_MATRIX_FORM
 
 
 class ProblemBatch:
