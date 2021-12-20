@@ -140,6 +140,12 @@ public:
 	inline Alignment() : m_len_s(0), m_len_t(0) {
 	}
 
+	inline ~Alignment() {
+		py::gil_scoped_acquire acquire;
+	    m_s_to_t.reset();
+	    m_t_to_s.reset();
+	}
+
 	inline void resize(const size_t len_s, const size_t len_t) {
 		m_len_s = len_s;
 		m_len_t = len_t;
@@ -681,6 +687,8 @@ public:
 	typedef typename CellType::value_vec_type ValueVec;
 	typedef typename CellType::index_type Index;
 
+	typedef py::gil_scoped_release gil_scoped_release;
+
 private:
 	const std::shared_ptr<Options> m_options;
 	Algorithm m_algorithm;
@@ -692,7 +700,7 @@ private:
 		ValueVec scores;
 
 		{
-			py::gil_scoped_release release;
+		    gil_scoped_release release;
 			p_pairwise.check();
 			m_algorithm.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
 			scores = m_algorithm.score(p_pairwise.len_s(), p_pairwise.len_t());
@@ -708,13 +716,13 @@ private:
 		std::array<AlignmentRef<Index>, CellType::batch_size> alignments;
 
 		{
-			py::gil_scoped_release release;
+		    gil_scoped_release release;
 			p_pairwise.check();
 			m_algorithm.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
-
-			m_algorithm.template alignment<core::SharedPtrFactory<Alignment<Index>>>(
-				p_pairwise.len_s(), p_pairwise.len_t(), alignments);
 		}
+
+        m_algorithm.template alignment<core::SharedPtrFactory<Alignment<Index>>>(
+            p_pairwise.len_s(), p_pairwise.len_t(), alignments);
 
 		return to_tuple<AlignmentRef<Index>, CellType::batch_size>(alignments);
 	}
@@ -726,18 +734,18 @@ private:
 		std::array<AlignmentIteratorRef<Index>, CellType::batch_size> iterators;
 
 		{
-			py::gil_scoped_release release;
+		    gil_scoped_release release;
 			p_pairwise.check();
 			m_algorithm.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
-
-			size_t i = 0;
-			for (auto iterator : m_algorithm.template alignment_iterator<
-				core::SharedPtrFactory<Alignment<Index>>>(
-				p_pairwise.len_s(), p_pairwise.len_t(), m_options->remove_dup())) {
-				iterators.at(i++) = std::make_shared<AlignmentIteratorImpl<
-					Index, typename Algorithm::locality_type>>(iterator);
-			}
 		}
+
+        size_t i = 0;
+        for (auto iterator : m_algorithm.template alignment_iterator<
+            core::SharedPtrFactory<Alignment<Index>>>(
+            p_pairwise.len_s(), p_pairwise.len_t(), m_options->remove_dup())) {
+            iterators.at(i++) = std::make_shared<AlignmentIteratorImpl<
+                Index, typename Algorithm::locality_type>>(iterator);
+        }
 
 		return to_tuple<AlignmentIteratorRef<Index>, CellType::batch_size>(iterators);
 	}
@@ -749,24 +757,24 @@ private:
 		std::array<SolutionRef, CellType::batch_size> solutions;
 
 		{
-			py::gil_scoped_release release;
+		    gil_scoped_release release;
 			p_pairwise.check();
 			m_algorithm.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
-
-			std::array<std::shared_ptr<NativeSolution<CellType, ProblemType>>, CellType::batch_size> sol0;
-
-			m_algorithm.template solution<
-				core::SharedPtrFactory<Alignment<Index>>,
-				core::SharedPtrFactory<NativeSolution<CellType, ProblemType>>>(
-					p_pairwise.len_s(),
-					p_pairwise.len_t(),
-					sol0);
-
-			for (int batch_i = 0; batch_i < m_algorithm.batch_size(); batch_i++) {
-				solutions[batch_i] = std::make_shared<SolutionImpl<CellType, ProblemType>>(
-					sol0[batch_i]);
-			}
 		}
+
+        std::array<std::shared_ptr<NativeSolution<CellType, ProblemType>>, CellType::batch_size> sol0;
+
+        m_algorithm.template solution<
+            core::SharedPtrFactory<Alignment<Index>>,
+            core::SharedPtrFactory<NativeSolution<CellType, ProblemType>>>(
+                p_pairwise.len_s(),
+                p_pairwise.len_t(),
+                sol0);
+
+        for (int batch_i = 0; batch_i < m_algorithm.batch_size(); batch_i++) {
+            solutions[batch_i] = std::make_shared<SolutionImpl<CellType, ProblemType>>(
+                sol0[batch_i]);
+        }
 
 		return to_tuple<SolutionRef, CellType::batch_size>(solutions);
 	}
@@ -778,20 +786,20 @@ private:
 		std::array<SolutionIteratorRef, CellType::batch_size> iterators;
 
 		{
-			py::gil_scoped_release release;
+		    gil_scoped_release release;
 			p_pairwise.check();
 			m_algorithm.solve(p_pairwise, p_pairwise.batch_len_s(), p_pairwise.batch_len_t());
-
-			size_t i = 0;
-			for (auto iterator : m_algorithm.template solution_iterator<
-				core::SharedPtrFactory<Alignment<Index>>,
-				core::SharedPtrFactory<NativeSolution<CellType, ProblemType>>>(
-				p_pairwise.len_s(), p_pairwise.len_t(), m_options->remove_dup())) {
-
-				iterators.at(i++) = std::make_shared<SolutionIteratorImpl<
-					typename Algorithm::locality_type>>(iterator);
-			}
 		}
+
+        size_t i = 0;
+        for (auto iterator : m_algorithm.template solution_iterator<
+            core::SharedPtrFactory<Alignment<Index>>,
+            core::SharedPtrFactory<NativeSolution<CellType, ProblemType>>>(
+            p_pairwise.len_s(), p_pairwise.len_t(), m_options->remove_dup())) {
+
+            iterators.at(i++) = std::make_shared<SolutionIteratorImpl<
+                typename Algorithm::locality_type>>(iterator);
+        }
 
 		return to_tuple<SolutionIteratorRef, CellType::batch_size>(iterators);
 	}
