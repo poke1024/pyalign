@@ -101,7 +101,7 @@ class Problem:
 		"""
 		Returns
 		-------
-		The matrix \( M \) built by `self.built_matrix`.
+		The matrix \( M \) built by `self.build_matrix`.
 		"""
 
 		m = np.empty(self.shape, dtype=self._dtype)

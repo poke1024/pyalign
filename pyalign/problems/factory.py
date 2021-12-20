@@ -89,18 +89,23 @@ class AlphabetProblem(IndexedMatrixProblem):
 		encoder.encode(self._t, out=b)
 
 
-class Encoder:
+class AlphabetEncoder:
 	def __init__(self, alphabet):
 		self._alphabet = tuple(set(alphabet))
 		self._ids = dict((k, i) for i, k in enumerate(self._alphabet))
 
 	def encode(self, s, out=None):
 		ids = self._ids
-		if out is None:
-			return [ids[x] for x in s]
-		else:
-			for i, x in enumerate(s):
-				out[i] = ids[x]
+		try:
+			if out is None:
+				return [ids[x] for x in s]
+			else:
+				if out.shape[0] != len(s) or len(out.shape) != 1:
+					raise ValueError(f"expected shape ({len(s)},), got {out.shape}")
+				for i, x in enumerate(s):
+					out[i] = ids[x]
+		except KeyError as e:
+			raise ValueError(f"'{e.args[0]}' is not in alphabet")
 
 	@property
 	def alphabet(self):
@@ -130,10 +135,10 @@ class AlphabetProblemFactory:
 			dtype of values returned by \(f\)
 		"""
 
-		self._encoder = Encoder(alphabet)
+		self._encoder = AlphabetEncoder(alphabet)
 		ordered_alphabet = self._encoder.alphabet
 		n = len(ordered_alphabet)
-		self._matrix = np.empty((n, n), dtype=np.float32)
+		self._matrix = np.zeros((n, n), dtype=np.float32)
 		if isinstance(w, Function):
 			w.build_matrix(self._encoder, self._matrix)
 		else:

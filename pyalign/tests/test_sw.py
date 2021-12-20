@@ -11,19 +11,21 @@ class TestSmithWaterman(TestCase):
 		# test case is taken from default settings at
 		# http://rna.informatik.uni-freiburg.de/Teaching/index.jsp?toolName=Smith-Waterman
 
-		pf = pyalign.problems.general(
+		for pf in self._problems(
+			"ACGT",
 			pyalign.problems.Equality(eq=1, ne=-1),
-			direction="maximize")
-		problem = pf.new_problem("AATCG", "AACG")
+			direction="maximize"):
 
-		solver = pyalign.solve.LocalSolver(
-			gap_cost=pyalign.gaps.LinearGapCost(2),
-			codomain=Iterator[pyalign.solve.Alignment])
+			problem = pf.new_problem("AATCG", "AACG")
 
-		alignments = list(solver.solve(problem))
+			solver = pyalign.solve.LocalSolver(
+				gap_cost=pyalign.gaps.LinearGapCost(2),
+				codomain=Iterator[pyalign.solve.Alignment])
 
-		self._check_alignments(
-			alignments,
-			2,
-			[[0, 0], [1, 1]],
-			[[3, 2], [4, 3]])
+			alignments = list(solver.solve(problem))
+
+			self._check_alignments(
+				alignments,
+				2,
+				[[0, 0], [1, 1]],
+				[[3, 2], [4, 3]])

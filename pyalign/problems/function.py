@@ -31,8 +31,9 @@ class Coalesced(Function):
 
 
 class Dict(Function):
-	def __init__(self, pairs: Dict):
+	def __init__(self, pairs: Dict, default=0):
 		self._dict = pairs
+		self._default = default
 
 	def get(self, u, v):
 		a = self._dict.get((u, v))
@@ -51,10 +52,19 @@ class Dict(Function):
 			return 0
 
 	def build_matrix(self, encoder, matrix):
+		matrix.fill(self._default)
+		set = np.zeros(matrix.shape, dtype=bool)
 		for uv, w in self._dict.items():
 			i, j = encoder.encode(uv)
-			matrix[i, j] = w
-			matrix[j, i] = w
+			if set[i, j]:
+				if w != matrix[j, i]:
+					raise ValueError(
+						f"asymmetric w: w({i}, {j}) = {w} != w({j}, {i}) = {matrix[j, i]}")
+			else:
+				matrix[i, j] = w
+				matrix[j, i] = w
+				set[i, j] = True
+				set[j, i] = True
 
 
 class Equality(Function):

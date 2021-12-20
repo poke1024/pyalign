@@ -302,11 +302,11 @@ public:
 		}
 
 		inline index_type u(const size_t i) const {
-			return pts[i].u;
+			return i < pts.size() ? pts[i].u : no_traceback<index_type>();
 		}
 
 		inline index_type v(const size_t i) const {
-			return pts[i].v;
+			return i < pts.size() ? pts[i].v : no_traceback<index_type>();
 		}
 	};
 
