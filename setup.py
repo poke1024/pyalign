@@ -35,7 +35,7 @@ if sys.platform == 'darwin':
 		pybind11.setup_helpers.MACOS = False
 
 
-def mk_ext(name, march):
+def mk_ext(name, arch=None, cpu=None):
 	extra_compile_args = []
 	extra_link_args = []
 
@@ -57,8 +57,10 @@ def mk_ext(name, march):
 
 		extra_compile_args.extend([
 			"-ftemplate-backtrace-limit=0"])
-		if march is not None:
-			extra_compile_args.append(f"-march={march}")
+		if arch is not None:
+			extra_compile_args.append(f"-march={arch}")
+		if cpu is not None:
+			extra_compile_args.append(f"-mcpu={cpu}")
 
 	if is_sanitize:
 		extra_compile_args.append('-fsanitize=address')
@@ -77,13 +79,16 @@ def mk_ext(name, march):
 
 ext_modules = []
 
-if is_arm:
+if os.environ.get("PYALIGN_PREBUILT_MARCH"):
 	ext_modules.append(mk_ext('generic', None))
-elif os.environ.get("PYALIGN_PREBUILT_MARCH"):
+	if is_arm:
+		ext_modules.append(mk_ext('apple_m1', cpu='apple-m1'))
+	else:
+		ext_modules.append(mk_ext('intel_avx2', arch='haswell'))
+elif is_arm:
 	ext_modules.append(mk_ext('generic', None))
-	ext_modules.append(mk_ext('avx2', 'haswell'))
 else:
-	ext_modules.append(mk_ext('native', 'native'))
+	ext_modules.append(mk_ext('native', arch='native'))
 
 with open(script_dir / 'README.md') as f:
 	long_description = f.read()

@@ -21,13 +21,21 @@ def has_avx2():
 	return cpufeature.CPUFeature["AVX2"]
 
 
+def has_apple_m1():
+	import cpuinfo
+	import re
+	brand = cpuinfo.get_cpu_info().get('brand_raw')
+	return re.match("^Apple M1", brand) is not None
+
+
 def import_algorithm():
 	if os.environ.get('PYALIGN_PDOC') is not None:
 		return None
 
 	candidates = (
 		('native', lambda: True),
-		('avx2', has_avx2),
+		('intel_avx2', has_avx2),
+		('apple_m1', has_apple_m1),
 		('generic', lambda: True)
 	)
 
