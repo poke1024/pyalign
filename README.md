@@ -1,12 +1,10 @@
 # pyalign
 
-Fast and simple alignments in Python.
-
-An Example using the simplified high-level API:
+Fast and simple alignments in Python:
 
 ![Example inside Jupyter](https://github.com/poke1024/pyalign/blob/main/docs/jupyter_example.png)
 
-To learn more details about the full low-level API:
+Above is an example of the high-level API. To learn more details about the full low-level API:
 
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/poke1024/pyalign-demo/HEAD?filepath=example.ipynb)
 
