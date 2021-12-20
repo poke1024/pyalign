@@ -4,7 +4,7 @@ Fast and simple alignments in Python.
 
 An Example using the simplified high-level API:
 
-![Example inside Jupyter](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/jupyter_example.png)
+![Example inside Jupyter](https://github.com/poke1024/pyalign/blob/main/docs/jupyter_example.png)
 
 To learn more details about the full low-level API:
 
