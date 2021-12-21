@@ -5,7 +5,7 @@ A simple high level API, which should be sufficient for many simple use cases.
 
 from pyalign.gaps import LinearGapCost
 from pyalign.solve import Alignment, GlobalSolver, SemiglobalSolver, LocalSolver
-from pyalign.problems import binary
+from pyalign.problems import binary, alphabetic
 from typing import List
 from functools import lru_cache
 
@@ -28,9 +28,18 @@ def _make_solver(solver_class, gap_cost=1, return_all=False):
         codomain=_codomain[return_all])
 
 
-def _alignment(solver_class, a, b, eq=1, ne=0, gap_cost=1, return_all=False):
-    pf = _make_binary(
-        eq=eq, ne=ne, direction='maximize')
+def _alignment(solver_class, a, b, score=None, gap_cost=1, return_all=False, **kwargs):
+    if score is not None:
+        if 'eq' in kwargs or 'ne' in kwargs:
+            raise ValueError("argument 'score' cannot be used with 'ne', 'eq'")
+        alphabet = list(set([*a, *b]))
+        pf = alphabetic(
+            alphabet, score, direction='maximize')
+    else:
+        pf = _make_binary(
+            eq=kwargs.get('eq', 1),
+            ne=kwargs.get('ne', 0),
+            direction='maximize')
 
     solver = _make_solver(
         solver_class=solver_class,
