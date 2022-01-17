@@ -27,6 +27,7 @@ codomain_names = {
 	str(Iterator[pyalign.solve.Solution]): "all solutions"
 }
 
+
 class Aligner:
 	def prepare(self, a, b):
 		raise NotImplementedError()
@@ -87,10 +88,11 @@ class PyAlignImplementation(Aligner):
 			terms.append("alphabet")
 		if self._batch:
 			batch_size = self._solver.batch_size
-			if batch_size == 8:
-				terms.append("AVX2")
+			if batch_size > 1:
+				terms.append(f"SIMD-{batch_size * 32}")
 			else:
-				raise RuntimeError(f"unexpected batch_size {batch_size}")
+				raise RuntimeError(
+					f"unexpected batch_size {batch_size}; running on generic build?")
 		return " +".join(terms)
 
 
@@ -231,7 +233,7 @@ def benchmark(num_runs=1000, seq_len=20):
 	ax.set_xticks(x)
 	ax.set_xticklabels([codomain_names[str(s)] for s in codomains])
 
-	ax.legend(loc="upper right")
+	ax.legend(loc="upper right", bbox_to_anchor=(0, 0))
 	plt.xticks(rotation=45)
 	plt.grid(which="both", alpha=0.25)
 

@@ -389,14 +389,16 @@ struct custom_batch_size {
 struct machine_batch_size {
 	template<typename Value, typename Index>
 	struct size {
-#if __AVX512F__
-		static constexpr int s = 512 / (std::max(sizeof(Value), sizeof(Index)) * 8);
+#if __aarch64__
+    static constexpr int s = 128 / (std::max(sizeof(Value), sizeof(Index)) * 8);
+#elif __AVX512F__
+    static constexpr int s = 512 / (std::max(sizeof(Value), sizeof(Index)) * 8);
 #elif __AVX2__
-		static constexpr int s = 256 / (std::max(sizeof(Value), sizeof(Index)) * 8);
+    static constexpr int s = 256 / (std::max(sizeof(Value), sizeof(Index)) * 8);
 #elif __SSE__
-		static constexpr int s = 128 / (std::max(sizeof(Value), sizeof(Index)) * 8);
+    static constexpr int s = 128 / (std::max(sizeof(Value), sizeof(Index)) * 8);
 #else
-		static constexpr int s = 1;
+    static constexpr int s = 1;
 #endif
 	};
 };

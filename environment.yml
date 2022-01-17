@@ -3,7 +3,7 @@ channels:
   - default
   - conda-forge
 dependencies:
-  - python=3.8
+  - python=3.9
   - xtl
   - xtensor
   - xsimd
@@ -17,3 +17,4 @@ dependencies:
       - cpufeature==0.2.0
       - py-cpuinfo==8.0.0
       - pymorton==1.0.5
+      - pyyaml==6.0

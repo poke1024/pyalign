@@ -2,6 +2,7 @@ import numpy as np
 import time
 import contextlib
 import importlib
+import importlib.util
 import typing
 import os
 import logging
@@ -538,7 +539,7 @@ class Solver:
 		that can get processed in a single SIMD call on this machine.
 		"""
 		return self._cache.get(
-			1, 1, direction=algorithm.Direction.MAXIMIZE, batch=True).batch_size
+			1, 1, direction="maximize", batch=True).batch_size
 
 	def timings(self):
 		return Timings(self)
