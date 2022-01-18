@@ -218,7 +218,7 @@ def benchmark(num_runs=1000, seq_len=20):
 	cmap = matplotlib.cm.get_cmap('Set3')
 	norm = matplotlib.colors.Normalize(vmin=0, vmax=len(variants) - 1)
 
-	fig, ax = plt.subplots(figsize=(8, 6))
+	fig, ax = plt.subplots(figsize=(10, 7))
 	for i, variant in enumerate(variants):
 		ax.bar(x_c + width * i, y[variant], width, label=variant, color=cmap(norm(i)))
 
@@ -233,7 +233,7 @@ def benchmark(num_runs=1000, seq_len=20):
 	ax.set_xticks(x)
 	ax.set_xticklabels([codomain_names[str(s)] for s in codomains])
 
-	ax.legend(loc="upper right", bbox_to_anchor=(0, 0))
+	ax.legend(loc="center right", bbox_to_anchor=(1.6, 0.9))
 	plt.xticks(rotation=45)
 	plt.grid(which="both", alpha=0.25)
 
