@@ -8,6 +8,8 @@
 namespace pyalign {
 namespace core {
 
+typedef uint16_t layer_t;
+
 namespace goal {
 	struct optimal_score { // compute only optimal score
 		struct path_goal {
@@ -476,7 +478,7 @@ protected:
 	const std::unique_ptr<Data> m_data;
 	const size_t m_max_len_s;
 	const size_t m_max_len_t;
-	const uint16_t m_layer_count;
+	const layer_t m_layer_count;
 
 	inline void check_size_against_max(
 		const char *p_name,
@@ -500,7 +502,7 @@ public:
 	inline MatrixFactory(
 		const size_t p_max_len_s,
 		const size_t p_max_len_t,
-		const uint16_t p_layer_count) :
+		const layer_t p_layer_count) :
 
 		m_data(std::make_unique<Data>()),
 		m_max_len_s(p_max_len_s),
@@ -623,14 +625,14 @@ private:
 	const MatrixFactory<CellType, ProblemType> &m_factory;
 	const index_type m_len_s;
 	const index_type m_len_t;
-	const uint16_t m_layer;
+	const layer_t m_layer;
 
 public:
 	inline Matrix(
 		const MatrixFactory<CellType, ProblemType> &factory,
 		const index_type len_s,
 		const index_type len_t,
-		const uint16_t layer) :
+		const layer_t layer) :
 
 	    m_factory(factory),
 	    m_len_s(len_s),

@@ -6,6 +6,13 @@
 
 PYBIND11_MODULE(algorithm, m) {
 	xt::import_numpy();
-	pyalign::register_solver<pyalign::Options<float, int16_t>>(m);
+
+	auto m16 = m.def_submodule("m16");
+	pyalign::register_solver<pyalign::Options<float, int16_t>>(m16);
+
+    auto m32 = m.def_submodule("m32");
+	pyalign::register_solver<pyalign::Options<float, int32_t>>(m32);
+
+    pyalign::register_algorithm(m);
 	pyalign::register_enum(m);
 }

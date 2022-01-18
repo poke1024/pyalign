@@ -247,10 +247,10 @@ public:
 typedef core::AlgorithmMetaData Algorithm;
 typedef core::AlgorithmMetaDataRef AlgorithmRef;
 
+template<typename Index>
 class Solution {
 public:
 	typedef float Value;
-	typedef int16_t Index;
 
 	virtual ~Solution() {
 	}
@@ -265,21 +265,24 @@ public:
 	virtual py::object path() const = 0;
 };
 
-typedef std::shared_ptr<Solution> SolutionRef;
+template<typename Index>
+using SolutionRef = std::shared_ptr<Solution<Index>>;
 
+template<typename Index>
 class SolutionIterator {
 public:
 	virtual ~SolutionIterator() {
 	}
 
-	virtual SolutionRef next() = 0;
+	virtual SolutionRef<Index> next() = 0;
 };
 
-typedef std::shared_ptr<SolutionIterator> SolutionIteratorRef;
+template<typename Index>
+using SolutionIteratorRef = std::shared_ptr<SolutionIterator<Index>>;
 
 
 template<typename CellType, typename ProblemType>
-class SolutionImpl : public Solution {
+class SolutionImpl : public Solution<typename CellType::index_type> {
 public:
 	typedef typename CellType::value_type Value;
 	typedef typename CellType::index_type Index;
@@ -349,7 +352,7 @@ public:
 };
 
 template<typename Locality>
-class SolutionIteratorImpl : public SolutionIterator {
+class SolutionIteratorImpl : public SolutionIterator<typename Locality::cell_type::index_type> {
 public:
 	typedef typename Locality::cell_type CellType;
 	typedef typename Locality::problem_type ProblemType;
@@ -371,12 +374,12 @@ public:
 		m_iterator(p_iterator) {
 	}
 
-	virtual SolutionRef next() override {
+	virtual SolutionRef<Index> next() override {
 		const auto r = m_iterator->next();
 		if (r.get()) {
 			return std::make_shared<SolutionImpl<CellType, ProblemType>>(r);
 		} else {
-			return SolutionRef();
+			return SolutionRef<Index>();
 		}
 	}
 };
@@ -754,7 +757,7 @@ private:
 	inline py::tuple _solve_for_solution(
 		const Pairwise &p_pairwise) const {
 
-		std::array<SolutionRef, CellType::batch_size> solutions;
+		std::array<SolutionRef<Index>, CellType::batch_size> solutions;
 
 		{
 		    gil_scoped_release release;
@@ -776,14 +779,14 @@ private:
                 sol0[batch_i]);
         }
 
-		return to_tuple<SolutionRef, CellType::batch_size>(solutions);
+		return to_tuple<SolutionRef<Index>, CellType::batch_size>(solutions);
 	}
 
 	template<typename Pairwise>
 	inline py::tuple _solve_for_solution_iterator(
 		const Pairwise &p_pairwise) const {
 
-		std::array<SolutionIteratorRef, CellType::batch_size> iterators;
+		std::array<SolutionIteratorRef<Index>, CellType::batch_size> iterators;
 
 		{
 		    gil_scoped_release release;
@@ -801,7 +804,7 @@ private:
                 typename Algorithm::locality_type>>(iterator);
         }
 
-		return to_tuple<SolutionIteratorRef, CellType::batch_size>(iterators);
+		return to_tuple<SolutionIteratorRef<Index>, CellType::batch_size>(iterators);
 	}
 
 public:

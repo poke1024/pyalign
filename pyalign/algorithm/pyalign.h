@@ -50,29 +50,31 @@ void register_solver(py::module_ &m) {
 		m, "AlignmentIterator", py::module_local());
 	alignment_iterator.def("next", &AlignmentIterator<Index>::next);
 
-	py::class_<Solution, SolutionRef> solution(m, "Solution", py::module_local());
-	solution.def_property_readonly("values", &Solution::values);
-	solution.def_property_readonly("traceback_has_max_degree_1", &Solution::traceback_has_max_degree_1);
-	solution.def_property_readonly("traceback_as_matrix", &Solution::traceback_as_matrix);
-	solution.def_property_readonly("traceback_as_edges", &Solution::traceback_as_edges);
-	solution.def_property_readonly("path", &Solution::path);
-	solution.def_property_readonly("score", &Solution::score);
-	solution.def_property_readonly("alignment", &Solution::alignment);
-	solution.def_property_readonly("algorithm", &Solution::algorithm);
+	py::class_<Solution<Index>, SolutionRef<Index>> solution(m, "Solution", py::module_local());
+	solution.def_property_readonly("values", &Solution<Index>::values);
+	solution.def_property_readonly("traceback_has_max_degree_1", &Solution<Index>::traceback_has_max_degree_1);
+	solution.def_property_readonly("traceback_as_matrix", &Solution<Index>::traceback_as_matrix);
+	solution.def_property_readonly("traceback_as_edges", &Solution<Index>::traceback_as_edges);
+	solution.def_property_readonly("path", &Solution<Index>::path);
+	solution.def_property_readonly("score", &Solution<Index>::score);
+	solution.def_property_readonly("alignment", &Solution<Index>::alignment);
+	solution.def_property_readonly("algorithm", &Solution<Index>::algorithm);
 
-	py::class_<SolutionIterator, SolutionIteratorRef> solution_iterator(
+	py::class_<SolutionIterator<Index>, SolutionIteratorRef<Index>> solution_iterator(
 		m, "SolutionIterator", py::module_local());
-	solution_iterator.def("next", &SolutionIterator::next);
+	solution_iterator.def("next", &SolutionIterator<Index>::next);
 
+	py::class_<Options, std::shared_ptr<Options>> options(
+		m, "Options", py::module_local());
+	m.def("create_options", &create_options<Options>);
+}
+
+inline void register_algorithm(py::module_ &m) {
 	py::class_<Algorithm, AlgorithmRef> algorithm(
 		m, "Algorithm", py::module_local());
 	algorithm.def_property_readonly("name", &Algorithm::name);
 	algorithm.def_property_readonly("runtime", &Algorithm::runtime);
 	algorithm.def_property_readonly("memory", &Algorithm::memory);
-
-	py::class_<Options, std::shared_ptr<Options>> options(
-		m, "Options", py::module_local());
-	m.def("create_options", &create_options<Options>);
 }
 
 inline void register_enum(py::module_ &m) {

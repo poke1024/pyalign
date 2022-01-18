@@ -168,9 +168,14 @@ class SolverCache:
 			options['batch'] = batch
 			options['return_dup'] = options.get('return_dup', False)
 
-			parsed_options = algorithm.create_options(options)
+			if len_s < 8192 and len_t < 8192:
+				bits_algo = algorithm.m16
+			else:
+				bits_algo = algorithm.m32
 
-			solver = algorithm.create_solver(
+			parsed_options = bits_algo.create_options(options)
+
+			solver = bits_algo.create_solver(
 				self._max_lim_s, self._max_lim_t, parsed_options)
 
 			self._solvers[batch] = solver
