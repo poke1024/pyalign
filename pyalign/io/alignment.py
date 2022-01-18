@@ -1,4 +1,5 @@
 import collections.abc
+import string
 
 
 def _seq_type(x):
@@ -23,54 +24,62 @@ def det_seq_type(s, t):
 		return seq_type
 
 
+def _make_rows(s, t, ts, elastic=False):
+	upper = []
+	edges = []
+	lower = []
+	last_x = -1
+
+	# flip upper, lower
+	# flip s, t
+
+	for i, x in enumerate(ts):
+		if x < 0:
+			edges.append(" ")
+			lower.append(t[i])
+			upper.append("-" if not elastic else s[max(last_x, 0)])
+		else:
+			for j in range(last_x + 1, x):
+				upper.append(s[j])
+				edges.append(" ")
+				lower.append("-" if not elastic else t[i])
+
+			upper.append(s[x])
+			edges.append("|")
+			lower.append(t[i])
+			last_x = x
+
+	for j in range(last_x + 1, len(s)):
+		upper.append(s[j])
+		edges.append(" ")
+		lower.append("-" if not elastic else t[-1])
+
+	return upper, edges, lower
+
+
 class Formatter:
-	def __init__(self, alignment):
+	_html_template = string.Template("""
+		<table style="border-collapse: collapse; border-spacing:0;">
+		<tr>$upper</tr>
+		<tr style="background-color: #F0F0F0; padding:0;">$edges</tr>
+		<tr>$lower</tr>
+		</table>
+		""")
+
+	def __init__(self, alignment, style="t_to_s"):
 		self._alignment = alignment
+		self._style = style
 
 	def _rows(self, s, t):
-		upper = []
-		edges = []
-		lower = []
-		last_x = -1
+		elastic = self._alignment.solver.options["solver"] == "dtw"
 
-		is_elastic = self._alignment.solver.options["solver"] == "dtw"
-
-		for i, x in enumerate(self._alignment.s_to_t):
-			if x < 0:
-				if not is_elastic:
-					upper.append(s[i])
-					edges.append(" ")
-					lower.append(" ")
-				else:
-					upper.append(s[i])
-					edges.append(" ")
-					lower.append(t[max(last_x, 0)])
-			else:
-				for j in range(last_x + 1, x):
-					if not is_elastic:
-						upper.append(" ")
-						edges.append(" ")
-						lower.append(t[j])
-					else:
-						upper.append(s[i])
-						edges.append(" ")
-						lower.append(t[j])
-				upper.append(s[i])
-				edges.append("|")
-				lower.append(t[x])
-				last_x = x
-
-		for j in range(last_x + 1, len(t)):
-			if not is_elastic:
-				upper.append(" ")
-				edges.append(" ")
-				lower.append(t[j])
-			else:
-				upper.append(s[-1])
-				edges.append(" ")
-				lower.append(t[j])
-
-		return upper, edges, lower
+		if self._style == "s_to_t":
+			upper, edges, lower = _make_rows(t, s, self._alignment.s_to_t, elastic)
+			return lower, edges, upper
+		elif self._style == "t_to_s":
+			return _make_rows(s, t, self._alignment.t_to_s, elastic)
+		else:
+			raise ValueError(self._style)
 
 	@property
 	def html(self):
@@ -91,17 +100,10 @@ class Formatter:
 		else:
 			return None
 
-		upper = "".join([f"<td>{x}</td>" for x in upper])
-		edges = "".join([f'<td style="text-align: center;">{x}</td>' for x in edges])
-		lower = "".join([f"<td>{x}</td>" for x in lower])
-
-		return f"""
-			<table style="border-collapse: collapse; border-spacing:0;">
-			<tr>{upper}</tr>
-			<tr style="background-color: #F0F0F0; padding:0;">{edges}</tr>
-			<tr>{lower}</tr>
-			</table>
-			"""
+		return Formatter._html_template.substitute(
+			upper="".join([f"<td>{x}</td>" for x in upper]),
+			edges="".join([f'<td style="text-align: center;">{x}</td>' for x in edges]),
+			lower="".join([f"<td>{x}</td>" for x in lower]))
 
 	@property
 	def text(self):
