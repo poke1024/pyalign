@@ -77,7 +77,7 @@ alignment.score
 as
 
 ```python
-2.4
+4.0
 ```
 
 It's also possible to extract the traceback matrix and path and generate
