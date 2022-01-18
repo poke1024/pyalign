@@ -4,10 +4,6 @@ Fast and simple alignments in Python:
 
 ![Example inside Jupyter](https://github.com/poke1024/pyalign/blob/main/docs/jupyter_example.png)
 
-Above is an example of the high-level API. To learn more details about the full low-level API:
-
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/poke1024/pyalign-demo/HEAD?filepath=example.ipynb)
-
 <hr>
 
 Alignments have been a staple algorithm in bioinformatics for decades now,
@@ -55,26 +51,21 @@ whereas computing "all alignments" will track multiple traceback edges
 Running
 
 ```python
-import pyalign.problems
-import pyalign.solve
-import pyalign.gaps
-
-pf = pyalign.problems.general(
-    pyalign.problems.Equality(eq=1, ne=-1),
-    direction="maximize")
-solver = pyalign.solve.GlobalSolver(
-    gap_cost=pyalign.gaps.LinearGapCost(0.2))
-problem = pf.new_problem("INDUSTRY", "INTEREST")
-alignment = solver.solve(problem)
+import pyalign
+alignment = pyalign.global_alignment("INDUSTRY", "INTEREST", gap_cost=0, eq=1, ne=-1)
 alignment
 ```
 
-in Jupyter gives
+will compute an optimal global alignment between "INDUSTRY" and "INTEREST".
+
+We instruct the optimizer to use of scores 1 and -1 (for matching and non-matching letters) and no (i.e. 0) gap costs.
+
+In Jupyter, this will give
 
 ```
-INDU    STRY
+IN----DUSTRY
 ||      ||  
-IN  TEREST  
+INTERE--ST--
 ```
 
 Of course you can also extract the actual score:
@@ -90,26 +81,52 @@ as
 ```
 
 It's also possible to extract the traceback matrix and path and generate
-visuals (and thus a detailed rationale for the obtained score and solution):
+visuals (and thus a detailed rationale for the obtained score and solution).
+
+In contrast to the first example above, which used the simplified high level
+API, we now use the full, more detailed API, which gives much more detailed
+access to different gap costs, solvers and scoring configurations. To make
+things a bit more interesting, we switch from 0 gap cost to 0.2 (which will
+not  change the result in this case, but shows in the traceback matrix):
 
 ```python
-solver_sol = pyalign.solve.GlobalSolver(
+import pyalign.problems
+import pyalign.solve
+import pyalign.gaps
+
+pf = pyalign.problems.general(
+    pyalign.problems.Equality(eq=1, ne=-1),
+    direction="maximize")
+solver = pyalign.solve.GlobalSolver(
     gap_cost=pyalign.gaps.LinearGapCost(0.2),
-    generate="solution")
-solver_sol.solve(problem)
+    codomain=pyalign.solve.Solution)
+problem = pf.new_problem("INDUSTRY", "INTEREST")
+solver.solve(problem)
 ```
 
 ![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/traceback.svg)
 
-As a final example, here is how to generate an iterator over all optimal
+As a final example, here is how we would modify the `solver` above to get a list over all optimal
 solutions of a problem:
 
 ```python
-solver_sol_all = pyalign.solve.GlobalSolver(
+from typing import Iterator
+
+solver = pyalign.solve.GlobalSolver(
     gap_cost=pyalign.gaps.LinearGapCost(0.2),
-    generate="solution[all, optimal]")
-solver_sol_all.solve(problem)
+    codomain=List[pyalign.solve.Solution])
 ```
+
+This will now return a list of solutions, each with its own traceback, e.g.:
+
+```python
+[<pyalign.solve.Solution at 0x10f0f15b0>,
+ <pyalign.solve.Solution at 0x10f0f1580>]
+```
+
+To learn more about the API, take a look at
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/poke1024/pyalign-demo/HEAD?filepath=example.ipynb)
 
 # Performance
 
