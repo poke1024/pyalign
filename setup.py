@@ -14,13 +14,6 @@ with open(script_dir / 'environment.yml') as f:
 	required = yaml.safe_load(f.read())['dependencies'][-1]['pip']
 
 
-def has_apple_m1():
-	import cpuinfo
-	import re
-	brand = cpuinfo.get_cpu_info().get('brand_raw')
-	return re.match("^Apple M1", brand) is not None
-
-
 is_arm = (platform.machine() == "arm64")  # Apple Silicon or ARM?
 
 if is_arm:
@@ -89,12 +82,12 @@ ext_modules = []
 
 if os.environ.get("PYALIGN_PREBUILT_MARCH"):
 	ext_modules.append(mk_ext('generic', None))
-	if has_apple_m1():
+	if os.environ.get("PYALIGN_APPLE_M1"):
 		ext_modules.append(mk_ext('apple_m1', cpu='apple-m1'))
 	else:
 		ext_modules.append(mk_ext('intel_avx2', arch='haswell'))
 else:
-	if has_apple_m1():
+	if os.environ.get("PYALIGN_APPLE_M1"):
 		ext_modules.append(mk_ext('apple_m1', cpu='apple-m1'))
 	else:
 		ext_modules.append(mk_ext('native', arch='native'))
