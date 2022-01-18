@@ -147,11 +147,11 @@ The following benchmarks were done on an Apple M1 Max. SIMD-128 refers to the M1
 
 The benchmark code can be found under [benchmark.py](demo/py/benchmark.py).
 
-![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/benchmark_10.svg)
+![traceback and path](docs/benchmark_10.svg)
 
-![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/benchmark_20.svg)
+![traceback and path](docs/benchmark_20.svg)
 
-![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/benchmark_50.svg)
+![traceback and path](docs/benchmark_50.svg)
 
 # Other Alignment Libraries
 
