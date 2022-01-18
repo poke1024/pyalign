@@ -218,17 +218,17 @@ def benchmark(num_runs=1000, seq_len=20):
 	cmap = matplotlib.cm.get_cmap('Set3')
 	norm = matplotlib.colors.Normalize(vmin=0, vmax=len(variants) - 1)
 
-	fig, ax = plt.subplots()
+	fig, ax = plt.subplots(figsize=(8, 6))
 	for i, variant in enumerate(variants):
 		ax.bar(x_c + width * i, y[variant], width, label=variant, color=cmap(norm(i)))
 
 	ax.set_ylabel('time in μs')
 	ax.set_yscale('log')
 
-	from matplotlib.ticker import StrMethodFormatter, FixedLocator
+	from matplotlib.ticker import StrMethodFormatter, LogLocator
 	ax.yaxis.set_major_formatter(StrMethodFormatter('{x:.0f}'))
 	ax.yaxis.set_minor_formatter(StrMethodFormatter('{x:.0f}'))
-	ax.yaxis.set_minor_locator(FixedLocator([15, 25, 50, 100, 150, 250, 500]))
+	ax.yaxis.set_major_locator(LogLocator(subs=(0.5,)))
 
 	ax.set_xticks(x)
 	ax.set_xticklabels([codomain_names[str(s)] for s in codomains])

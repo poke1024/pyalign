@@ -135,12 +135,17 @@ benchmark is found at https://github.com/eseraygun/python-alignment.
 
 The y axis is logarithmic. 1000 μs = 1 / 1000 s.
 
-`+alphabet` means using `pyalign.problem.AlphabetProblemFactory` instead of
-the simpler `pyalign.problem.ProblemFactory`.
+`+alphabet` means using `pyalign.problems.alphabetic` instead of
+the simpler `pyalign.problems.general` to construct a problem.
 
-`+AVX2` means feeding groups of equally-structured aligment problems into
+`+SIMD` means feeding groups of equally-structured aligment problems into
 one `solve` call by using `pyalign.problem.ProblemBatch` - doing this will
-internally make use of AVX2 SIMD operations if available.
+internally make use of [AVX2](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions)
+on Intel and [Neon](https://developer.arm.com/technologies/neon) on ARM processors.
+
+The following benchmarks were done on an Apple M1 Max. SIMD-128 refers to the M1's 128-bit SIMD.
+
+The benchmark code can be found under [benchmark.py](demo/py/benchmark.py).
 
 ![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/benchmark_10.svg)
 
