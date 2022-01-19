@@ -169,7 +169,7 @@ class SolverCache:
 			options['batch'] = batch
 			options['return_dup'] = options.get('return_dup', False)
 
-			if len_s < 8192 and len_t < 8192:
+			if self._max_lim_s < 16000 and self._max_lim_t < 16000:
 				bits_algo = algorithm.m16
 			else:
 				bits_algo = algorithm.m32
