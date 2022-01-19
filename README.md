@@ -44,7 +44,29 @@ whereas computing "all alignments" will track multiple traceback edges
 
 # Installation
 
+## via pip (recommended)
+
+pyalign currently provides precompiled packages for Windows (Intel), Linux (Intel)
+and  macOS (Intel).
+
 `pip install pyalign`
+
+## locally
+
+Installing pyalign locally will require a modern C++ compiler. It also requires
+various  libraries from the [xtensor stack](https://github.com/xtensor-stack)
+which are best installed via cona; for the full list of required packages, see
+[environment.yml](environment.yml).
+
+Local installation via conda:
+
+```
+conda env create -f /Users/ch/git/pyalign/environment.yml
+conda activate pyalign
+git clone https://github.com/poke1024/pyalign
+cd pyalign
+python setup.py install
+```
 
 # Example
 

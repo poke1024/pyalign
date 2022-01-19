@@ -15,10 +15,10 @@ with open(script_dir / 'environment.yml') as f:
 
 
 is_arm = (platform.machine() == "arm64")  # Apple Silicon or ARM?
+is_apple_arm = is_arm and platform.system() == 'Darwin'
 
-if is_arm:
-	# workaround for cpufeature not available on Apple M1 as of 2021/09.
-	required = list(filter(lambda s: not s.startswith("cpufeature"), required))
+if not is_arm:
+	required.append("cpufeature==0.2.0")
 
 src_path = (script_dir / 'pyalign' / 'algorithm').resolve()
 assert src_path.exists()
@@ -82,15 +82,14 @@ ext_modules = []
 
 if os.environ.get("PYALIGN_PREBUILT_MARCH"):
 	ext_modules.append(mk_ext('generic', None))
-	if os.environ.get("PYALIGN_APPLE_M1"):
+	if is_apple_arm:
 		ext_modules.append(mk_ext('apple_m1', cpu='apple-m1'))
-	else:
+	elif not is_arm:
 		ext_modules.append(mk_ext('intel_avx2', arch='haswell'))
+elif is_apple_arm:
+	ext_modules.append(mk_ext('apple_m1', cpu='apple-m1'))
 else:
-	if os.environ.get("PYALIGN_APPLE_M1"):
-		ext_modules.append(mk_ext('apple_m1', cpu='apple-m1'))
-	else:
-		ext_modules.append(mk_ext('native', arch='native'))
+	ext_modules.append(mk_ext('native', arch='native'))
 
 with open(script_dir / 'README.md') as f:
 	long_description = f.read()
