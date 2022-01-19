@@ -1,7 +1,12 @@
 import numpy as np
 
 
-def random_seq(alphabet, n, seed=1234):
-    np.random.seed(seed)
-    return ''.join([alphabet[i] for i in np.random.randint(0, len(alphabet), n)])
+class RandomSequenceGenerator:
+    def __init__(self, alphabet, seed=1234):
+        self._alphabet = tuple(set(alphabet))
+        self._rng = np.random.default_rng(seed)
+
+    def __call__(self, n):
+        a = self._alphabet
+        return ''.join([a[i] for i in self._rng.integers(0, len(a), n)])
 
