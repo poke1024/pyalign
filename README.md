@@ -61,10 +61,10 @@ which are best installed via cona; for the full list of required packages, see
 Local installation via conda:
 
 ```
-conda env create -f /Users/ch/git/pyalign/environment.yml
-conda activate pyalign
 git clone https://github.com/poke1024/pyalign
 cd pyalign
+conda env create -f environment.yml
+conda activate pyalign
 python setup.py install
 ```
 
