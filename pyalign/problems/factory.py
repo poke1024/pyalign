@@ -110,7 +110,11 @@ class ByteAlphabetEncoder:
 		self._index = index
 
 	def encode(self, s, out=None):
-		t = np.frombuffer(self._encoder(s)[0], dtype=np.uint8)
+		if not isinstance(s, str):
+			s = ''.join(s)
+		t = np.frombuffer(
+			self._encoder(s)[0],
+			dtype=np.uint8)
 		r = self._index[t]
 		if out is not None:
 			out[:] = r
@@ -166,7 +170,7 @@ class AlphabetProblemFactory:
 			dtype of values returned by \(f\)
 		"""
 
-		if _try_encoding(alphabet, "latin1"):
+		if False and _try_encoding(alphabet, "latin1"):
 			self._encoder = ByteAlphabetEncoder(alphabet, "latin1")
 		else:
 			self._encoder = AlphabetEncoder(alphabet)
