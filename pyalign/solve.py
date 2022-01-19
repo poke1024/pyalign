@@ -2,6 +2,7 @@ import numpy as np
 import time
 import contextlib
 import typing
+import itertools
 import pyalign.io.alignment
 
 from cached_property import cached_property
@@ -271,6 +272,9 @@ class Iterator:
 		self._solver = solver
 		self._iterator = iterator
 
+	def is_exhausted(self):
+		return self._iterator.next() is None
+
 	def __iter__(self):
 		while True:
 			x = self._iterator.next()
@@ -287,9 +291,17 @@ class SolutionIterator(Iterator):
 	_element_class = Solution
 
 
+max_results = 100
+
+
 def make_list_factory(iterator):
 	def to_list(*args, **kwargs):
-		return list(iterator(*args, **kwargs))
+		it = iterator(*args, **kwargs)
+		r = list(itertools.islice(it, max_results))
+		if not it.is_exhausted():
+			raise RuntimeError(
+				f"more than {max_results} results, please use an iterator")
+		return r
 
 	return to_list
 
