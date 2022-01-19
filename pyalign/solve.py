@@ -142,16 +142,28 @@ def next_power_of_2(x):
 	return 1 if x == 0 else 2 ** (int(x) - 1).bit_length()
 
 
+class SizeRounder:
+	def __init__(self, limit=1024):
+		self._limit = limit
+
+	def __call__(self, x):
+		if x >= self._limit:
+			return x
+		else:
+			return next_power_of_2(x)
+
+
 class SolverCache:
 	def __init__(self, options):
 		self._options = options
 		self._max_lim_s = 0
 		self._max_lim_t = 0
 		self._solvers = {}
+		self._rounder = SizeRounder()
 
 	def ensure(self, len_s, len_t):
-		lim_s = max(self._max_lim_s, next_power_of_2(len_s))
-		lim_t = max(self._max_lim_t, next_power_of_2(len_t))
+		lim_s = max(self._max_lim_s, self._rounder(len_s))
+		lim_t = max(self._max_lim_t, self._rounder(len_t))
 
 		if lim_s > self._max_lim_s or lim_t > self._max_lim_t:
 			self._max_lim_s = lim_s
