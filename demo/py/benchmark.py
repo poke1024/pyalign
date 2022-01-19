@@ -5,14 +5,14 @@ import pyalign.problems
 import pyalign.gaps
 import pyalign.solve
 
-import string
-import random
 import time
 import collections
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import json
+import Bio.pairwise2
+import parasail
 
 from tqdm import tqdm
 from pathlib import Path
@@ -22,10 +22,12 @@ from typing import Iterator
 codomain_names = {
 	str(pyalign.solve.Score): "score",
 	str(pyalign.solve.Alignment): "alignment",
-	str(pyalign.solve.Solution): "solution",
+	str(pyalign.solve.Solution): "matrix",
 	str(Iterator[pyalign.solve.Alignment]): "all alignments",
-	str(Iterator[pyalign.solve.Solution]): "all solutions"
+	str(Iterator[pyalign.solve.Solution]): "all matrices"
 }
+
+ALPHABET = "ACGT"
 
 
 class Aligner:
@@ -56,11 +58,11 @@ class PyAlignImplementation(Aligner):
 	def prepare(self, a, b):
 		if not self._encoded:
 			pf = pyalign.problems.general(
-				pyalign.problems.Equality(eq=1, ne=-1))
+				pyalign.problems.Equality(eq=1, ne=0))
 		else:
 			pf = pyalign.problems.alphabetic(
-				string.ascii_uppercase[:4],
-				pyalign.problems.Equality(eq=1, ne=-1))
+				ALPHABET,
+				pyalign.problems.Equality(eq=1, ne=0))
 
 		self._solver = pyalign.solve.LocalSolver(
 			gap_cost=pyalign.gaps.LinearGapCost(1),
@@ -122,7 +124,7 @@ class PurePythonImplementation(Aligner):
 		self._bEncoded = v.encodeSequence(b)
 
 		# Create a scoring and align the sequences using global aligner.
-		scoring = SimpleScoring(1, -1)
+		scoring = SimpleScoring(1, 0)
 		self._aligner = LocalSequenceAligner(scoring, -1)
 
 	def solve(self):
@@ -144,37 +146,83 @@ class PurePythonImplementation(Aligner):
 		return 1
 
 
-def random_seq(l=20, n=4):
-	x = []
-	for _ in range(l):
-		x.append(random.choice(string.ascii_uppercase[:n]))
-	return ''.join(x)
+class Pairwise2:
+	def __init__(self, **kwargs):
+		self._kwargs = kwargs
+
+	def prepare(self, a, b):
+		self._a = a
+		self._b = b
+
+	def solve(self):
+		Bio.pairwise2.align.localxs(
+			self._a, self._b, **self._kwargs, open=-1, extend=-1)
+
+	@property
+	def name(self):
+		return "Bio.pairwise2.localxs"
+
+	@property
+	def num_problems(self):
+		return 1
 
 
-def benchmark(num_runs=1000, seq_len=20):
-	random.seed(24242)
+class Parasail:
+	def __init__(self, **kwargs):
+		self._kwargs = kwargs
+		self._matrix = parasail.matrix_create("ACGT", 1, 0)
 
-	a = random_seq(seq_len)  # "DDAAABDBADDBADBDBABB"
-	b = random_seq(seq_len)  # "AADCCCCACBADCDACDBCA"
+	def prepare(self, a, b):
+		self._a = a
+		self._b = b
+
+	def solve(self):
+		parasail.sw(self._a, self._b, 1, 1, self._matrix)
+
+	@property
+	def name(self):
+		return "parasail.sw"
+
+	@property
+	def num_problems(self):
+		return 1
+
+
+def benchmark(num_runs=1000, seq_lens=(20, 20), is_large_seq=False):
+	seq_gen = pyalign.utils.RandomSequenceGenerator(ALPHABET, seed=24242)
+	a = seq_gen(seq_lens[0])
+	b = seq_gen(seq_lens[1])
 
 	codomains = [
 		pyalign.solve.Score,
-		pyalign.solve.Alignment,
-		pyalign.solve.Solution,
-		Iterator[pyalign.solve.Alignment],
-		Iterator[pyalign.solve.Solution]
+		pyalign.solve.Alignment
 	]
 
+	if not is_large_seq:
+		codomains.extend([
+			pyalign.solve.Solution,
+			Iterator[pyalign.solve.Alignment],
+			Iterator[pyalign.solve.Solution]
+		])
+
 	def aligners():
-		yield str(pyalign.solve.Score), PurePythonImplementation(backtrace=False)
-		yield str(pyalign.solve.Alignment), PurePythonImplementation(backtrace=True)
-		for batch in (False, True):
-			for encoded in (False, True):
+		if not is_large_seq:
+			yield str(pyalign.solve.Score), PurePythonImplementation(backtrace=False)
+			yield str(pyalign.solve.Alignment), PurePythonImplementation(backtrace=True)
+
+		yield str(pyalign.solve.Score), Parasail()
+		yield str(pyalign.solve.Alignment), Parasail()
+
+		yield str(pyalign.solve.Score), Pairwise2(score_only=True)
+		yield str(pyalign.solve.Alignment), Pairwise2(one_alignment_only=True)
+
+		for batch in ((False,) if is_large_seq else (False, True)):
+			for encoded in ((True,) if is_large_seq else (False, True)):
 				for codomain in codomains:
 					yield str(codomain), PyAlignImplementation(
 						codomain, encoded=encoded, batch=batch)
 
-	path = Path(f"runtimes_{seq_len}.json")
+	path = Path(f"runtimes_{seq_lens[0]}_{seq_lens[1]}.json")
 	if path.exists():
 		with open(path, "r") as f:
 			runtimes_μs = json.loads(f.read())
@@ -195,9 +243,9 @@ def benchmark(num_runs=1000, seq_len=20):
 
 	def variant_sort_order(s):
 		if s == "pure python":
-			return 1
+			return ""
 		else:
-			return 2 + len(s)
+			return s
 
 	variants = set()
 	for codomain, times in runtimes_μs.items():
@@ -207,22 +255,30 @@ def benchmark(num_runs=1000, seq_len=20):
 
 	y = dict()
 	for variant in variants:
-		y[variant] = []
+		ys = []
 		for codomain in codomains:
-			y[variant].append(runtimes_μs[str(codomain)].get(variant, np.nan))
+			ys.append(runtimes_μs[str(codomain)].get(variant, np.nan))
+		y[variant] = np.array(ys, dtype=np.float32)
+
+	y_median = np.nanmedian(np.concatenate(list(y.values())))
+	if y_median > 1000:
+		time_unit = 'ms'
+		y = dict((k, v / 1000) for k, v in y.items())
+	else:
+		time_unit = 'μs'
 
 	x = np.arange(0, len(codomains) * len(variants), len(variants))  # the label locations
-	width = 0.9
+	width = 0.6
 	x_c = x - ((len(variants) - 1) / 2) * width
 
-	cmap = matplotlib.cm.get_cmap('Set3')
+	cmap = matplotlib.cm.get_cmap('Set2')
 	norm = matplotlib.colors.Normalize(vmin=0, vmax=len(variants) - 1)
 
-	fig, ax = plt.subplots(figsize=(10, 7))
+	fig, ax = plt.subplots(figsize=(12, 6))
 	for i, variant in enumerate(variants):
 		ax.bar(x_c + width * i, y[variant], width, label=variant, color=cmap(norm(i)))
 
-	ax.set_ylabel('time in μs')
+	ax.set_ylabel(f'time in {time_unit}')
 	ax.set_yscale('log')
 
 	from matplotlib.ticker import StrMethodFormatter, LogLocator
@@ -233,18 +289,17 @@ def benchmark(num_runs=1000, seq_len=20):
 	ax.set_xticks(x)
 	ax.set_xticklabels([codomain_names[str(s)] for s in codomains])
 
-	ax.legend(loc="center right", bbox_to_anchor=(1.6, 0.9))
-	plt.xticks(rotation=45)
+	ax.legend(loc="center right", bbox_to_anchor=(1.3, 0.9))
+	#plt.yticks(rotation=45)
 	plt.grid(which="both", alpha=0.25)
 
-	plt.title(f"local alignment with linear gap cost\nsequence length = {seq_len}")
+	plt.title(f"local alignment, linear gap cost\nsequence lengths {seq_lens[0]} and {seq_lens[1]}")
 
 	fig.tight_layout()
 
-	plt.savefig(f'benchmark_{seq_len}.svg', bbox_inches='tight')
+	plt.savefig(f'benchmark_{seq_lens[0]}_{seq_lens[1]}.svg', bbox_inches='tight')
 
 
 if __name__ == "__main__":
-	benchmark(seq_len=10)
-	benchmark(seq_len=20)
-	benchmark(seq_len=50)
+	benchmark(seq_lens=(10, 100), is_large_seq=False)
+	benchmark(seq_lens=(1000, 10000), is_large_seq=True, num_runs=10)

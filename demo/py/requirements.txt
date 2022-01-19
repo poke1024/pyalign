@@ -1,0 +1,5 @@
+matplotlib
+alignment
+biopython
+parasail
+tqdm

@@ -169,15 +169,18 @@ The following benchmarks were done on an Apple M1 Max. SIMD-128 refers to the M1
 
 The benchmark code can be found under [benchmark.py](demo/py/benchmark.py).
 
-![traceback and path](docs/benchmark_10.svg)
+![traceback and path](docs/benchmark_10_100.svg)
 
-![traceback and path](docs/benchmark_20.svg)
-
-![traceback and path](docs/benchmark_50.svg)
+![traceback and path](docs/benchmark_1000_10000.svg)
 
 # Other Alignment Libraries
 
 Here is a short overview of other libraries.
+
+## great bio alignment libraries
+
+* https://github.com/jeffdaily/parasail
+* https://biopython.org/docs/latest/api/Bio.pairwise2.html
 
 ## similar to pyalign
 
