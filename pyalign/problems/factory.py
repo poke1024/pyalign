@@ -2,7 +2,8 @@ from pyalign.problems.instance import MatrixProblem, IndexedMatrixProblem, Binar
 from pyalign.problems.function import *
 from pyalign.problems.function import Function
 
-from typing import Sequence
+from typing import Sequence, Union
+import codecs
 
 
 class Problem(MatrixProblem):
@@ -89,6 +90,36 @@ class AlphabetProblem(IndexedMatrixProblem):
 		encoder.encode(self._t, out=b)
 
 
+def _try_encoding(s, encoding):
+	if not isinstance(s, str):
+		return False
+	try:
+		s.encode(encoding)
+	except UnicodeEncodeError:
+		return False
+	return True
+
+
+class ByteAlphabetEncoder:
+	def __init__(self, alphabet, encoding):
+		self._encoder = codecs.getencoder(encoding)
+		self._alphabet = tuple(set(alphabet))
+		index = np.zeros(256, dtype=np.uint8)
+		for i, k in enumerate(self._alphabet):
+			index[k.encode(encoding)[0]] = i
+		self._index = index
+
+	def encode(self, s, out=None):
+		t = np.frombuffer(self._encoder(s)[0], dtype=np.uint8)
+		r = self._index[t]
+		if out is not None:
+			out[:] = r
+
+	@property
+	def alphabet(self):
+		return self._alphabet
+
+
 class AlphabetEncoder:
 	def __init__(self, alphabet):
 		self._alphabet = tuple(set(alphabet))
@@ -119,7 +150,7 @@ class AlphabetProblemFactory:
 	\Omega\), \(∀j: t_j \in \Omega\).
 	"""
 
-	def __init__(self, alphabet: Sequence, w: callable, direction="maximize", dtype=np.float32):
+	def __init__(self, alphabet: Union[str, Sequence], w: callable, direction="maximize", dtype=np.float32):
 		"""
 		Parameters
 		----------
@@ -135,7 +166,11 @@ class AlphabetProblemFactory:
 			dtype of values returned by \(f\)
 		"""
 
-		self._encoder = AlphabetEncoder(alphabet)
+		if _try_encoding(alphabet, "latin1"):
+			self._encoder = ByteAlphabetEncoder(alphabet, "latin1")
+		else:
+			self._encoder = AlphabetEncoder(alphabet)
+
 		ordered_alphabet = self._encoder.alphabet
 		n = len(ordered_alphabet)
 		self._matrix = np.zeros((n, n), dtype=np.float32)
