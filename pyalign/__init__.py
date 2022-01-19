@@ -13,3 +13,5 @@ from .gaps import *
 from .solve import *
 from .problems import *
 from .simple import global_alignment, semiglobal_alignment, local_alignment
+
+from . import utils
