@@ -104,7 +104,9 @@ class ByteAlphabetEncoder:
 	def __init__(self, alphabet, encoding):
 		self._encoder = codecs.getencoder(encoding)
 		self._alphabet = tuple(set(alphabet))
-		index = np.zeros(256, dtype=np.uint8)
+		assert len(self._alphabet) < 0x10 - 1
+		index = np.empty(256, dtype=np.uint8)
+		index.fill(0xff)
 		for i, k in enumerate(self._alphabet):
 			index[k.encode(encoding)[0]] = i
 		self._index = index
@@ -116,8 +118,12 @@ class ByteAlphabetEncoder:
 			self._encoder(s)[0],
 			dtype=np.uint8)
 		r = self._index[t]
+		if np.max(r) == 0xff:
+			raise ValueError("item not in alphabet")
 		if out is not None:
 			out[:] = r
+		else:
+			return r
 
 	@property
 	def alphabet(self):
@@ -170,7 +176,7 @@ class AlphabetProblemFactory:
 			dtype of values returned by \(f\)
 		"""
 
-		if False and _try_encoding(alphabet, "latin1"):
+		if _try_encoding(alphabet, "latin1"):
 			self._encoder = ByteAlphabetEncoder(alphabet, "latin1")
 		else:
 			self._encoder = AlphabetEncoder(alphabet)
