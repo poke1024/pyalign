@@ -106,7 +106,7 @@ setup(
 		'pyalign.gaps',
 		'pyalign.io',
 		'pyalign.tests']),
-	python_requires='>=3.8',
+	python_requires='>=3.7',
 	license='GPLv2',
 	author='Bernhard Liebl',
 	author_email='liebl@informatik.uni-leipzig.de',
