@@ -178,7 +178,7 @@ Here is a short overview of other libraries.
 ## great bio alignment libraries
 
 * https://github.com/jeffdaily/parasail
-* https://biopython.org/docs/latest/api/Bio.pairwise2.html
+* https://biopython.org/docs/latest/api/Bio.Align.html
 
 ## similar to pyalign
 
