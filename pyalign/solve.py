@@ -191,7 +191,7 @@ class SolverCache:
 			solver = bits_algo.create_solver(
 				self._max_lim_s, self._max_lim_t, parsed_options)
 
-			self._solvers[batch] = solver
+			self._solvers[key] = solver
 
 		return solver
 
