@@ -11,7 +11,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import json
-import Bio.pairwise2
+import Bio.Align
+from Bio import Align
 import parasail
 
 from tqdm import tqdm
@@ -155,12 +156,19 @@ class Pairwise2:
 		self._b = b
 
 	def solve(self):
-		Bio.pairwise2.align.localxs(
-			self._a, self._b, **self._kwargs, open=-1, extend=-1)
+		aligner = Bio.Align.PairwiseAligner()
+
+		aligner.mode = 'local'
+		aligner.match_score = 1
+		aligner.mismatch_score = 0
+		aligner.open_gap_score = -1
+		aligner.extend_gap_score = -1
+
+		aligner.align(self._a, self._b)
 
 	@property
 	def name(self):
-		return "Bio.pairwise2.localxs"
+		return "Bio.Align.PairwiseAligner"
 
 	@property
 	def num_problems(self):
@@ -279,12 +287,12 @@ def benchmark(num_runs=1000, seq_lens=(20, 20), is_large_seq=False):
 		ax.bar(x_c + width * i, y[variant], width, label=variant, color=cmap(norm(i)))
 
 	ax.set_ylabel(f'time in {time_unit}')
-	ax.set_yscale('log')
+	#ax.set_yscale('log')
 
 	from matplotlib.ticker import StrMethodFormatter, LogLocator
 	ax.yaxis.set_major_formatter(StrMethodFormatter('{x:.0f}'))
 	ax.yaxis.set_minor_formatter(StrMethodFormatter('{x:.0f}'))
-	ax.yaxis.set_major_locator(LogLocator(subs=(0.5,)))
+	#ax.yaxis.set_major_locator(LogLocator(subs=(0.75,)))
 
 	ax.set_xticks(x)
 	ax.set_xticklabels([codomain_names[str(s)] for s in codomains])
@@ -302,4 +310,4 @@ def benchmark(num_runs=1000, seq_lens=(20, 20), is_large_seq=False):
 
 if __name__ == "__main__":
 	benchmark(seq_lens=(10, 100), is_large_seq=False)
-	benchmark(seq_lens=(1000, 10000), is_large_seq=True, num_runs=10)
+	benchmark(seq_lens=(5000, 10000), is_large_seq=True, num_runs=10)

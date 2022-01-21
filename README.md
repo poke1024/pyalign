@@ -155,8 +155,6 @@ To learn more about the API, take a look at
 Here are a few benchmarks. The "pure python" implementation seen in this
 benchmark is found at https://github.com/eseraygun/python-alignment.
 
-The y axis is logarithmic. 1000 μs = 1 / 1000 s.
-
 `+alphabet` means using `pyalign.problems.alphabetic` instead of
 the simpler `pyalign.problems.general` to construct a problem.
 
@@ -171,7 +169,7 @@ The benchmark code can be found under [benchmark.py](demo/py/benchmark.py).
 
 ![traceback and path](docs/benchmark_10_100.svg)
 
-![traceback and path](docs/benchmark_1000_10000.svg)
+![traceback and path](docs/benchmark_5000_10000.svg)
 
 # Other Alignment Libraries
 
