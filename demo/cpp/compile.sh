@@ -7,7 +7,7 @@ export CPLUS_INCLUDE_PATH="$CONDA_PREFIX/include:$CONDA_PREFIX/include/python3.9
 #clang++ -std=c++17 -g demo2.cpp -o build/demo2
 #clang++ -std=c++17 -g demo3.cpp -o build/demo3
 
-clang++ -std=c++17 -O3 perf1.cpp -o build/perf1
+clang++ -std=c++17 -g -O3 perf1.cpp -o build/perf1
 #clang++ -std=c++17 -g -O3 perf1.cpp -S -mllvm --x86-asm-syntax=intel -o build/perf1.s
 #clang++ -std=c++17 -O3 perf1.cpp -S -o build/perf1.s
 #g++ -std=c++17 -S -fverbose-asm -g -O2 perf1.cpp -o build/perf1.s
