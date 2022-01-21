@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 import Bio.Align
-from Bio import Align
 import parasail
 
 from tqdm import tqdm
