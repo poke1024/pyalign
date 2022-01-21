@@ -405,6 +405,10 @@ struct machine_batch_size {
 	};
 };
 
+template <class T, class FSH>
+using tiny_vector = xt::xtensor_fixed<T, FSH, xt::layout_type::row_major, false>;
+
+
 template<typename Value, typename Index, typename Batch = no_batch>
 struct cell_type {
 	typedef Value value_type;
@@ -412,9 +416,9 @@ struct cell_type {
 
 	static constexpr int batch_size = Batch::template size<Value, Index>::s;
 
-	typedef xt::xtensor_fixed<Value, xt::xshape<batch_size>> value_vec_type;
-	typedef xt::xtensor_fixed<Index, xt::xshape<batch_size>> index_vec_type;
-	typedef xt::xtensor_fixed<bool, xt::xshape<batch_size>> mask_vec_type;
+	typedef tiny_vector<Value, xt::xshape<batch_size>> value_vec_type;
+	typedef tiny_vector<Index, xt::xshape<batch_size>> index_vec_type;
+	typedef tiny_vector<bool, xt::xshape<batch_size>> mask_vec_type;
 };
 
 template<typename Goal, typename Direction>
