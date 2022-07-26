@@ -107,7 +107,7 @@ setup(
 		'pyalign.io',
 		'pyalign.tests']),
 	python_requires='>=3.7',
-	license='GPLv2',
+	license='MIT',
 	author='Bernhard Liebl',
 	author_email='liebl@informatik.uni-leipzig.de',
 	ext_modules=ext_modules,
