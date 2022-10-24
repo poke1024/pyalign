@@ -2,7 +2,7 @@
 
 Fast and simple alignments in Python:
 
-![Example inside Jupyter](https://github.com/poke1024/pyalign/blob/main/docs/jupyter_example.png)
+![Example inside Jupyter](https://github.com/poke1024/pyalign/raw/main/docs/jupyter_example.png)
 
 <hr>
 
@@ -167,9 +167,9 @@ The following benchmarks were done on an Apple M1 Max. SIMD-128 refers to the M1
 
 The benchmark code can be found under [benchmark.py](demo/py/benchmark.py).
 
-![traceback and path](docs/benchmark_10_100.svg)
+![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/benchmark_10_100.svg)
 
-![traceback and path](docs/benchmark_5000_10000.svg)
+![traceback and path](https://raw.githubusercontent.com/poke1024/pyalign/main/docs/benchmark_5000_10000.svg)
 
 # Other Alignment Libraries
 
