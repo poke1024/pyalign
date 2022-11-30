@@ -121,7 +121,7 @@ class ByteAlphabetEncoder:
 		if np.max(r) == 0xff:
 			raise ValueError("item not in alphabet")
 		if out is not None:
-			out[:] = r
+			out[:len(r)] = r
 		else:
 			return r
 
