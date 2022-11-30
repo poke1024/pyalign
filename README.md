@@ -187,6 +187,7 @@ Here is a short overview of other libraries.
 * https://github.com/mbreese/swalign/
 * https://github.com/seqan/seqan3
 * https://github.com/wannesm/dtaidistance
+* https://github.com/maxbachmann/RapidFuzz
 
 ## for large scale problems
 
