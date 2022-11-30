@@ -164,6 +164,8 @@ class AffineGapCost(GapCost):
 	def __init__(self, open=None, extend=0, u=None, v=None):
 		if open is not None:
 			assert u is None and v is None
+			if open < extend:
+				raise RuntimeError(f"please ensure {open} = open >= extend = {extend}")
 			self._u = open - extend
 			self._v = extend
 		else:
