@@ -110,6 +110,7 @@ setup(
 	license='MIT',
 	author='Bernhard Liebl',
 	author_email='liebl@informatik.uni-leipzig.de',
+	url='https://github.com/poke1024/pyalign',
 	ext_modules=ext_modules,
 	cmdclass={"build_ext": build_ext},
 	install_requires=required,
