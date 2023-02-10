@@ -8,7 +8,7 @@ import codecs
 
 class Problem(MatrixProblem):
 	"""
-	A Problem induced by some binary function \(f(x, y)\).
+	A Problem induced by some binary function \\(f(x, y)\\).
 	"""
 
 	def __init__(self, f, s, t, **kwargs):
@@ -24,7 +24,7 @@ class Problem(MatrixProblem):
 class ProblemFactory:
 	"""
 	A factory for problems that can be built from some binary function
-	\(f(x, y)\).
+	\\(f(x, y)\\).
 	"""
 
 	def __init__(self, w: callable, direction="maximize", dtype=np.float32):
@@ -33,13 +33,13 @@ class ProblemFactory:
 		Parameters
 		----------
 		w : callable
-			\(w(x, y)\) that gives a measure of affinity (or distance) between
-			two arbitrary elements (e.g. characters) \(x\) and \(y\).
+			\\(w(x, y)\\) that gives a measure of affinity (or distance) between
+			two arbitrary elements (e.g. characters) \\(x\\) and \\(y\\).
 		direction : {'minimize', 'maximize'}
 			direction of problems created by this factory, i.e. whether
-			\(w\) gives affinity or distance
+			\\(w\\) gives affinity or distance
 		dtype : type
-			dtype of values returned by \(f\)
+			dtype of values returned by \\(f\\)
 		"""
 
 		if w is None and direction == "minimize":
@@ -52,7 +52,7 @@ class ProblemFactory:
 
 	def new_problem(self, s, t):
 		"""
-		Creates a new alignment problem for the sequences \(s\) and \(t\)
+		Creates a new alignment problem for the sequences \\(s\\) and \\(t\\)
 
 		Parameters
 		----------
@@ -63,7 +63,7 @@ class ProblemFactory:
 
 		Returns
 		-------
-		Problem modelling optimal alignment between \(s\) and \(t\)
+		Problem modelling optimal alignment between \\(s\\) and \\(t\\)
 		"""
 
 		return Problem(
@@ -155,9 +155,9 @@ class AlphabetEncoder:
 
 class AlphabetProblemFactory:
 	"""
-	A factory for alignment problems involving sequences \(s, t\) that can be
-	written using a small fixed alphabet \(\Omega\) such that \(∀i: s_i \in
-	\Omega\), \(∀j: t_j \in \Omega\).
+	A factory for alignment problems involving sequences \\(s, t\\) that can be
+	written using a small fixed alphabet \\(\\Omega\\) such that \\(∀i: s_i \\in
+	\\Omega\\), \\(∀j: t_j \\in \\Omega\\).
 	"""
 
 	def __init__(self, alphabet: Union[str, Sequence], w: callable, direction="maximize", dtype=np.float32):
@@ -165,15 +165,15 @@ class AlphabetProblemFactory:
 		Parameters
 		----------
 		alphabet : Sequence
-			fixed alphabet \Omega
+			fixed alphabet \\Omega
 		w : callable
-			\(w(x, y)\) that gives a measure of affinity (or distance) between
-			two arbitrary elements (e.g. characters) \(x\) and \(y\).
+			\\(w(x, y)\\) that gives a measure of affinity (or distance) between
+			two arbitrary elements (e.g. characters) \\(x\\) and \\(y\\).
 		direction : {'minimize', 'maximize'}
 			direction of problems created by this factory, i.e. whether
-			\(w\) gives affinity or distance
+			\\(w\\) gives affinity or distance
 		dtype
-			dtype of values returned by \(f\)
+			dtype of values returned by \\(f\\)
 		"""
 
 		if _try_encoding(alphabet, "latin1"):

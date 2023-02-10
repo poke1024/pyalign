@@ -1,4 +1,4 @@
-from pyalign.tests import TestCase
+from pyalign.test import TestCase
 from typing import Iterator
 
 import pyalign.problems

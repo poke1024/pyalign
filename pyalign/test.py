@@ -2,6 +2,8 @@ from collections.abc import Sequence
 import numpy as np
 import unittest
 
+from .problems import general, alphabetic, binary
+
 
 def to_tuple(x):
 	if isinstance(x, Sequence):
@@ -12,8 +14,6 @@ def to_tuple(x):
 
 class TestCase(unittest.TestCase):
 	def _problems(self, alphabet, sim, **kwargs):
-		from ..problems import general, alphabetic, binary
-
 		yield general(sim, **kwargs)
 		yield alphabetic(alphabet, sim, **kwargs)
 
