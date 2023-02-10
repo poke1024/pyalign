@@ -1,3 +1,8 @@
 [build-system]
 requires = ["setuptools>=42", "wheel", "pybind11~=2.6", "numpy~=1.19", "pyyaml>=5.4.1"]
 build-backend = "setuptools.build_meta"
+
+[tool.cibuildwheel]
+test-command = "python -m unittest discover -s {project}/pyalign/tests"
+# test-skip = "*-macosx_*"
+build-verbosity = 1
