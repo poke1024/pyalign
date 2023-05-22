@@ -4,6 +4,9 @@ Fast and simple alignments in Python:
 
 ![Example inside Jupyter](https://github.com/poke1024/pyalign/raw/main/docs/jupyter_example.png)
 
+Make sure to take a look at "other alignment libraries" below to better understand if this is
+the right library for you.
+
 <hr>
 
 Alignments have been a staple algorithm in bioinformatics for decades now,
@@ -175,21 +178,14 @@ The benchmark code can be found under [benchmark.py](demo/py/benchmark.py).
 
 Here is a short overview of other libraries.
 
-## great bio alignment libraries
+## Nice General Purpose Implementations
 
-* https://github.com/jeffdaily/parasail
-* https://biopython.org/docs/latest/api/Bio.Align.html
-
-## similar to pyalign
-
-* https://edist.readthedocs.io/en/latest/
+* https://github.com/stanfordnlp/string2string (RECOMMENDED!)
 * https://pypi.org/project/textdistance/
-* https://github.com/mbreese/swalign/
-* https://github.com/seqan/seqan3
-* https://github.com/wannesm/dtaidistance
+* https://edist.readthedocs.io/en/latest/
 * https://github.com/maxbachmann/RapidFuzz
 
-## for large scale problems
+## For large scale / bioinformatics problems
 
 What you will *not* find in pyalign:
 
@@ -200,8 +196,21 @@ What you will *not* find in pyalign:
 
 If you need any of the above, you might want to take a look at:
 
+* https://pypi.org/project/edlib/
+* https://github.com/smarco/WFA2-lib and https://github.com/kcleal/pywfa
+* https://github.com/vishnubob/ssw
+* https://github.com/lh3/ksw2
+* https://github.com/Daniel-Liu-c0deb0t/block-aligner
+* https://github.com/jeffdaily/parasail
+* https://biopython.org/docs/latest/api/Bio.Align.html
 * http://cudasw.sourceforge.net/homepage.htm
 * https://blast.ncbi.nlm.nih.gov/Blast.cgi
+
+## Even more alignment libraries
+
+* https://github.com/mbreese/swalign/
+* https://github.com/seqan/seqan3
+* https://github.com/wannesm/dtaidistance
 
 # References
 
