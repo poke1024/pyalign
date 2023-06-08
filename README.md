@@ -54,6 +54,22 @@ and  macOS (Intel).
 
 `pip install pyalign`
 
+## on Google Colab
+
+First install conda via:
+
+```
+!pip install -q condacolab
+import condacolab
+condacolab.install()
+```
+
+Then run:
+
+```
+!git clone https://github.com/poke1024/pyalign && cd pyalign && conda env create -f environment.yml && conda activate pyalign && python setup.py install
+```
+
 ## locally
 
 Installing pyalign locally will require a modern C++ compiler. It also requires
